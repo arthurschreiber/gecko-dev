@@ -1,21 +1,11 @@
 "use strict";
 
-var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://gre/modules/ExtensionUtils.jsm");
-var {
-  EventManager,
-} = ExtensionUtils;
-
-// WeakMap[Extension -> Map[name -> Alarm]]
-var alarmsMap = new WeakMap();
-
-// WeakMap[Extension -> Set[callback]]
-var alarmCallbacksMap = new WeakMap();
+// The ext-* files are imported into the same scopes.
+/* import-globals-from ext-toolkit.js */
 
 // Manages an alarm created by the extension (alarms API).
-function Alarm(extension, name, alarmInfo) {
-  this.extension = extension;
+function Alarm(api, name, alarmInfo) {
+  this.api = api;
   this.name = name;
   this.when = alarmInfo.when;
   this.delayInMinutes = alarmInfo.delayInMinutes;
@@ -44,7 +34,7 @@ function Alarm(extension, name, alarmInfo) {
 Alarm.prototype = {
   clear() {
     this.timer.cancel();
-    alarmsMap.get(this.extension).delete(this.name);
+    this.api.alarms.delete(this.name);
     this.canceled = true;
   },
 
@@ -53,7 +43,7 @@ Alarm.prototype = {
       return;
     }
 
-    for (let callback of alarmCallbacksMap.get(this.extension)) {
+    for (let callback of this.api.callbacks) {
       callback(this);
     }
 
@@ -76,80 +66,76 @@ Alarm.prototype = {
   },
 };
 
-/* eslint-disable mozilla/balanced-listeners */
-extensions.on("startup", (type, extension) => {
-  alarmsMap.set(extension, new Map());
-  alarmCallbacksMap.set(extension, new Set());
-});
+this.alarms = class extends ExtensionAPI {
+  constructor(extension) {
+    super(extension);
 
-extensions.on("shutdown", (type, extension) => {
-  if (alarmsMap.has(extension)) {
-    for (let alarm of alarmsMap.get(extension).values()) {
+    this.alarms = new Map();
+    this.callbacks = new Set();
+  }
+
+  onShutdown() {
+    for (let alarm of this.alarms.values()) {
       alarm.clear();
     }
-    alarmsMap.delete(extension);
-    alarmCallbacksMap.delete(extension);
   }
-});
-/* eslint-enable mozilla/balanced-listeners */
 
-extensions.registerSchemaAPI("alarms", "addon_parent", context => {
-  let {extension} = context;
-  return {
-    alarms: {
-      create: function(name, alarmInfo) {
-        name = name || "";
-        let alarms = alarmsMap.get(extension);
-        if (alarms.has(name)) {
-          alarms.get(name).clear();
-        }
-        let alarm = new Alarm(extension, name, alarmInfo);
-        alarms.set(alarm.name, alarm);
+  getAPI(context) {
+    const self = this;
+
+    return {
+      alarms: {
+        create: function(name, alarmInfo) {
+          name = name || "";
+          if (self.alarms.has(name)) {
+            self.alarms.get(name).clear();
+          }
+          let alarm = new Alarm(self, name, alarmInfo);
+          self.alarms.set(alarm.name, alarm);
+        },
+
+        get: function(name) {
+          name = name || "";
+          if (self.alarms.has(name)) {
+            return Promise.resolve(self.alarms.get(name).data);
+          }
+          return Promise.resolve();
+        },
+
+        getAll: function() {
+          let result = Array.from(self.alarms.values(), alarm => alarm.data);
+          return Promise.resolve(result);
+        },
+
+        clear: function(name) {
+          name = name || "";
+          if (self.alarms.has(name)) {
+            self.alarms.get(name).clear();
+            return Promise.resolve(true);
+          }
+          return Promise.resolve(false);
+        },
+
+        clearAll: function() {
+          let cleared = false;
+          for (let alarm of self.alarms.values()) {
+            alarm.clear();
+            cleared = true;
+          }
+          return Promise.resolve(cleared);
+        },
+
+        onAlarm: new EventManager(context, "alarms.onAlarm", fire => {
+          let callback = alarm => {
+            fire.sync(alarm.data);
+          };
+
+          self.callbacks.add(callback);
+          return () => {
+            self.callbacks.delete(callback);
+          };
+        }).api(),
       },
-
-      get: function(name) {
-        name = name || "";
-        let alarms = alarmsMap.get(extension);
-        if (alarms.has(name)) {
-          return Promise.resolve(alarms.get(name).data);
-        }
-        return Promise.resolve();
-      },
-
-      getAll: function() {
-        let result = Array.from(alarmsMap.get(extension).values(), alarm => alarm.data);
-        return Promise.resolve(result);
-      },
-
-      clear: function(name) {
-        name = name || "";
-        let alarms = alarmsMap.get(extension);
-        if (alarms.has(name)) {
-          alarms.get(name).clear();
-          return Promise.resolve(true);
-        }
-        return Promise.resolve(false);
-      },
-
-      clearAll: function() {
-        let cleared = false;
-        for (let alarm of alarmsMap.get(extension).values()) {
-          alarm.clear();
-          cleared = true;
-        }
-        return Promise.resolve(cleared);
-      },
-
-      onAlarm: new EventManager(context, "alarms.onAlarm", fire => {
-        let callback = alarm => {
-          fire(alarm.data);
-        };
-
-        alarmCallbacksMap.get(extension).add(callback);
-        return () => {
-          alarmCallbacksMap.get(extension).delete(callback);
-        };
-      }).api(),
-    },
-  };
-});
+    };
+  }
+};

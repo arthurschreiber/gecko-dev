@@ -1,238 +1,134 @@
-<!DOCTYPE html>
-<meta charset="utf-8">
-<title>IDBCursor.continuePrimaryKey()</title>
-<link rel="author" title="Mozilla" href="https://www.mozilla.org">
-<link rel="help" href="http://w3c.github.io/IndexedDB/#dom-idbcursor-continueprimarykey">
+<!doctype html>
+<meta charset="utf8">
+<title>IndexedDB: IDBCursor method continuePrimaryKey()</title>
+<link rel="help"
+      href="http://w3c.github.io/IndexedDB/#dom-idbcursor-continueprimarykey">
 <script src="/resources/testharness.js"></script>
 <script src="/resources/testharnessreport.js"></script>
 <script src="support.js"></script>
 
 <script>
-function setup_test_store(db) {
-  var records = [ { iKey: "A", pKey: 1 },
-                  { iKey: "A", pKey: 2 },
-                  { iKey: "A", pKey: 3 },
-                  { iKey: "A", pKey: 4 },
-                  { iKey: "B", pKey: 5 },
-                  { iKey: "B", pKey: 6 },
-                  { iKey: "B", pKey: 7 },
-                  { iKey: "C", pKey: 8 },
-                  { iKey: "C", pKey: 9 },
-                  { iKey: "D", pKey: 10 } ];
-
-    var store = db.createObjectStore("test", { keyPath: "pKey" });
-    store.createIndex("idx", "iKey");
-
-    for(var i = 0; i < records.length; i++) {
-        store.add(records[i]);
-    }
-}
+'use strict';
 
 indexeddb_test(
-    function(t, db, txn) {
-        setup_test_store(db);
+    (t, db, txn) => {
+      const store = db.createObjectStore('store');
+      const index = store.createIndex('index', 'indexKey', {multiEntry: true});
+
+      store.put({indexKey: ['a', 'b']}, 1);
+      store.put({indexKey: ['a', 'b']}, 2);
+      store.put({indexKey: ['a', 'b']}, 3);
+      store.put({indexKey: ['b']}, 4);
+
+      const expectedIndexEntries = [
+        {key: "a", primaryKey: 1},
+        {key: "a", primaryKey: 2},
+        {key: "a", primaryKey: 3},
+        {key: "b", primaryKey: 1},
+        {key: "b", primaryKey: 2},
+        {key: "b", primaryKey: 3},
+        {key: "b", primaryKey: 4},
+      ];
+
+      const request = index.openCursor();
+      request.onerror = t.unreached_func('IDBIndex.openCursor should not fail');
+      request.onsuccess = t.step_func(() => {
+        const cursor = request.result;
+        const expectedEntry = expectedIndexEntries.shift();
+        if (expectedEntry) {
+          assert_equals(cursor.key, expectedEntry.key,
+              'The index entry keys should reflect the object store contents');
+          assert_equals(cursor.primaryKey, expectedEntry.primaryKey,
+              'The index entry primary keys should reflect the object store ' +
+              'contents');
+          cursor.continue();
+        } else {
+          assert_equals(cursor, null,
+              'The index should not have entries that do not reflect the ' +
+              'object store contents');
+        }
+      });
     },
-    function(t, db) {
-        var cursor_rq = db.transaction("test")
-                          .objectStore("test")
-                          .index("idx")
-                          .openCursor();
+    (t, db) => {
+      const testCases = [
+        // Continuing index key
+        { call: cursor => { cursor.continue(); },
+          result: { key: "a", primaryKey: 2 } },
+        { call: cursor => { cursor.continue('a'); },
+          exception: 'DataError' },
+        { call: cursor => { cursor.continue('b'); },
+          result: { key: "b", primaryKey: 1 } },
+        { call: cursor => { cursor.continue('c'); }, result: null },
 
-        var expectedResults = [ { iKey: "A", pKey: 1 },
-                                { iKey: "A", pKey: 2 },
-                                { iKey: "A", pKey: 4 },
-                                { iKey: "B", pKey: 6 },
-                                { iKey: "C", pKey: 8 },
-                                { iKey: "D", pKey: 10 } ];
-        var results = [];
+        // Called w/ index key and primary key:
+        { call: cursor => { cursor.continuePrimaryKey('a', 3); },
+          result: { key: 'a', primaryKey: 3 } },
+        { call: cursor => { cursor.continuePrimaryKey('a', 4); },
+          result: { key: 'b', primaryKey: 1 } },
+        { call: cursor => { cursor.continuePrimaryKey('b', 1); },
+          result: {key: 'b', primaryKey: 1} },
+        { call: cursor => { cursor.continuePrimaryKey('b', 4); },
+          result: {key: 'b', primaryKey: 4} },
+        { call: cursor => { cursor.continuePrimaryKey('b', 5); },
+          result: null },
+        { call: cursor => { cursor.continuePrimaryKey('c', 1); },
+          result: null },
 
-        cursor_rq.onerror = t.unreached_func('openCursor should succeed');
-        cursor_rq.onsuccess = t.step_func(function(e) {
-            var cursor = e.target.result;
-            if (!cursor) {
-                assert_equals(JSON.stringify(results),
-                              JSON.stringify(expectedResults)
-                              ,"check iternation results");
-                t.done();
-                return;
-            }
+        // Called w/ primary key but w/o index key
+        { call: cursor => { cursor.continuePrimaryKey(null, 1); },
+          exception: 'DataError' },
+        { call: cursor => { cursor.continuePrimaryKey(null, 2); },
+          exception: 'DataError' },
+        { call: cursor => { cursor.continuePrimaryKey(null, 3); },
+          exception: 'DataError' },
+        { call: cursor => { cursor.continuePrimaryKey(null, 4); },
+          exception: 'DataError' },
+        { call: cursor => { cursor.continuePrimaryKey(null, 5); },
+          exception: 'DataError' },
 
-            if (results.length == 0) {
-                cursor.continuePrimaryKey("A", 2);
-            } else if (results.length == 1) {
-                cursor.continuePrimaryKey("A", 4);
-            } else if (results.length == 2) {
-                cursor.continuePrimaryKey("B", 6);
-            } else if (results.length == 3) {
-                cursor.continuePrimaryKey("C", 8);
-            } else if (results.length == 4) {
-                cursor.continuePrimaryKey("D", 10);
-            } else if (results.length == 5) {
-                cursor.continue();
+        // Called w/ index key but w/o primary key
+        { call: cursor => { cursor.continuePrimaryKey('a', null); },
+          exception: 'DataError' },
+      ];
+
+      const verifyContinueCalls = () => {
+        if (!testCases.length) {
+          t.done();
+          return;
+        }
+
+        const testCase = testCases.shift();
+
+        const txn = db.transaction('store');
+        txn.oncomplete = t.step_func(verifyContinueCalls);
+
+        const request = txn.objectStore('store').index('index').openCursor();
+        let calledContinue = false;
+        request.onerror =
+            t.unreached_func('IDBIndex.openCursor should not fail');
+        request.onsuccess = t.step_func(() => {
+          const cursor = request.result;
+          if (calledContinue) {
+            if (testCase.result) {
+              assert_equals(cursor.key, testCase.result.key,
+                  `${testCase.call.toString()} - result key`);
+              assert_equals(cursor.primaryKey, testCase.result.primaryKey,
+                  `${testCase.call.toString()} - result primary key`);
             } else {
-                assert_unreached('the iternation shall be done');
+              assert_equals(cursor, null);
             }
-
-            results.push(cursor.value);
-        });
-    },
-    "continuePrimaryKey() on cursor, direction: 'next'"
-);
-
-indexeddb_test(
-    function(t, db, txn) {
-        setup_test_store(db);
-    },
-    function(t, db) {
-        var cursor_rq = db.transaction("test")
-                          .objectStore("test")
-                          .index("idx")
-                          .openKeyCursor();
-
-        var expectedResults = [ { iKey: "A", pKey: 1 },
-                                { iKey: "A", pKey: 2 },
-                                { iKey: "A", pKey: 4 },
-                                { iKey: "B", pKey: 6 },
-                                { iKey: "C", pKey: 8 },
-                                { iKey: "D", pKey: 10 } ];
-        var results = [];
-
-        cursor_rq.onerror = t.unreached_func('openCursor should succeed');
-        cursor_rq.onsuccess = t.step_func(function(e) {
-            var cursor = e.target.result;
-            if (!cursor) {
-                assert_equals(JSON.stringify(results),
-                              JSON.stringify(expectedResults)
-                              ,"check iternation results");
-                t.done();
-                return;
-            }
-
-            if (results.length == 0) {
-                cursor.continuePrimaryKey("A", 2);
-            } else if (results.length == 1) {
-                cursor.continuePrimaryKey("A", 4);
-            } else if (results.length == 2) {
-                cursor.continuePrimaryKey("B", 6);
-            } else if (results.length == 3) {
-                cursor.continuePrimaryKey("C", 8);
-            } else if (results.length == 4) {
-                cursor.continuePrimaryKey("D", 10);
-            } else if (results.length == 5) {
-                cursor.continue();
+          } else {
+            calledContinue = true;
+            if('exception' in testCase) {
+              assert_throws(
+                  testCase.exception, () => { testCase.call(cursor); },
+                  testCase.call.toString());
             } else {
-                assert_unreached('the iternation shall be done');
+              testCase.call(cursor);
             }
-
-            assert_equals(cursor.value, undefined, "cursor.value shall be undefined");
-            results.push({iKey: cursor.key, pKey: cursor.primaryKey });
+          }
         });
-    },
-    "continuePrimaryKey() on key cursor, direction: 'next'"
-);
-
-indexeddb_test(
-    function(t, db, txn) {
-        setup_test_store(db);
-    },
-    function(t, db) {
-        var cursor_rq = db.transaction("test")
-                          .objectStore("test")
-                          .index("idx")
-                          .openCursor(null, "prev");
-
-        var expectedResults = [ { iKey: "D", pKey: 10 },
-                                { iKey: "C", pKey: 8 },
-                                { iKey: "B", pKey: 6 },
-                                { iKey: "A", pKey: 4 },
-                                { iKey: "A", pKey: 2 },
-                                { iKey: "A", pKey: 1 } ];
-        var results = [];
-
-        cursor_rq.onerror = t.unreached_func('openCursor should succeed');
-        cursor_rq.onsuccess = t.step_func(function(e) {
-            var cursor = e.target.result;
-            if (!cursor) {
-                assert_equals(JSON.stringify(results),
-                              JSON.stringify(expectedResults)
-                              ,"check iternation results");
-              t.done();
-              return;
-            }
-
-            if (results.length == 0) {
-                cursor.continuePrimaryKey("C", 8);
-            } else if (results.length == 1) {
-                cursor.continuePrimaryKey("B", 6);
-            } else if (results.length == 2) {
-                cursor.continuePrimaryKey("A", 4);
-            } else if (results.length == 3) {
-                cursor.continuePrimaryKey("A", 2);
-            } else if (results.length == 4) {
-                cursor.continuePrimaryKey("A", 1);
-            } else if (results.length == 5) {
-                cursor.continue();
-            } else {
-                assert_unreached('the iternation shall be done');
-            }
-
-            results.push(cursor.value);
-        });
-    },
-    "continuePrimaryKey() on cursor, direction: 'prev'"
-);
-
-indexeddb_test(
-    function(t, db, txn) {
-        setup_test_store(db);
-    },
-    function(t, db) {
-        var cursor_rq = db.transaction("test")
-                          .objectStore("test")
-                          .index("idx")
-                          .openKeyCursor(null, "prev");
-
-        var expectedResults = [ { iKey: "D", pKey: 10 },
-                                { iKey: "C", pKey: 8 },
-                                { iKey: "B", pKey: 6 },
-                                { iKey: "A", pKey: 4 },
-                                { iKey: "A", pKey: 2 },
-                                { iKey: "A", pKey: 1 } ];
-        var results = [];
-
-        cursor_rq.onerror = t.unreached_func('openCursor should succeed');
-        cursor_rq.onsuccess = t.step_func(function(e) {
-            var cursor = e.target.result;
-            if (!cursor) {
-                assert_equals(JSON.stringify(results),
-                              JSON.stringify(expectedResults)
-                              ,"check iternation results");
-                t.done();
-                return;
-            }
-
-            if (results.length == 0) {
-                cursor.continuePrimaryKey("C", 8);
-            } else if (results.length == 1) {
-                cursor.continuePrimaryKey("B", 6);
-            } else if (results.length == 2) {
-                cursor.continuePrimaryKey("A", 4);
-            } else if (results.length == 3) {
-                cursor.continuePrimaryKey("A", 2);
-            } else if (results.length == 4) {
-                cursor.continuePrimaryKey("A", 1);
-            } else if (results.length == 5) {
-                cursor.continue();
-            } else {
-                assert_unreached('the iternation shall be done');
-            }
-
-            assert_equals(cursor.value, undefined, "cursor.value shall be undefined");
-            results.push({iKey: cursor.key, pKey: cursor.primaryKey });
-        });
-    },
-    "continuePrimaryKey() on key cursor, direction: 'prev'"
-);
+      };
+      verifyContinueCalls();
+    });
 </script>
-
-<div id="log"></div>

@@ -6,6 +6,9 @@ if (self.importScripts) {
   self.importScripts('/resources/testharness.js');
 }
 
+const error1 = new Error('error1');
+error1.name = 'error1';
+
 test(() => {
 
   new ReadableStream(); // ReadableStream constructed with no parameters
@@ -32,6 +35,8 @@ test(() => {
     'constructor should throw when the type is empty string');
   assert_throws(new RangeError(), () => new ReadableStream({ type: 'asdf' }),
     'constructor should throw when the type is asdf');
+  assert_throws(error1, () => new ReadableStream({ type: { get toString() {throw error1;} } }), 'constructor should throw when ToString() throws');
+  assert_throws(error1, () => new ReadableStream({ type: { toString() {throw error1;} } }), 'constructor should throw when ToString() throws');
 
 }, 'ReadableStream can\'t be constructed with an invalid type');
 
@@ -51,6 +56,8 @@ test(() => {
     assert_true(propDesc.configurable, 'method should be configurable');
     assert_true(propDesc.writable, 'method should be writable');
     assert_equals(typeof rs[m], 'function', 'method should be a function');
+    const expectedName = m === 'constructor' ? 'ReadableStream' : m;
+    assert_equals(rs[m].name, expectedName, 'method should have the correct name');
   }
 
   const lockedPropDesc = Object.getOwnPropertyDescriptor(proto, 'locked');
@@ -79,15 +86,15 @@ test(() => {
 
 test(() => {
 
-  new ReadableStream({ cancel: '2' });
+  assert_throws(new TypeError(), () => new ReadableStream({ cancel: '2' }), 'constructor should throw');
 
-}, 'ReadableStream constructor can get initial garbage as cancel argument');
+}, 'ReadableStream constructor will not tolerate initial garbage as cancel argument');
 
 test(() => {
 
-  new ReadableStream({ pull: { } });
+  assert_throws(new TypeError(), () => new ReadableStream({ pull: { } }), 'constructor should throw');
 
-}, 'ReadableStream constructor can get initial garbage as pull argument');
+}, 'ReadableStream constructor will not tolerate initial garbage as pull argument');
 
 test(() => {
 
@@ -110,6 +117,8 @@ test(() => {
         assert_false(propDesc.enumerable, m + ' should be non-enumerable');
         assert_true(propDesc.configurable, m + ' should be configurable');
         assert_true(propDesc.writable, m + ' should be writable');
+        const expectedName = m === 'constructor' ? 'ReadableStreamDefaultController' : m;
+        assert_equals(controller[m].name, expectedName, 'method should have the correct name');
       }
 
       const desiredSizePropDesc = Object.getOwnPropertyDescriptor(proto, 'desiredSize');
@@ -120,7 +129,7 @@ test(() => {
       assert_true(desiredSizePropDesc.configurable, 'desiredSize should be configurable');
 
       assert_equals(controller.close.length, 0, 'close should have no parameters');
-      assert_equals(controller.constructor.length, 4, 'constructor should have 4 parameter');
+      assert_equals(controller.constructor.length, 0, 'constructor should have no parameters');
       assert_equals(controller.enqueue.length, 1, 'enqueue should have 1 parameter');
       assert_equals(controller.error.length, 1, 'error should have 1 parameter');
 
@@ -156,6 +165,13 @@ test(() => {
   assert_true(startCalled);
 
 }, 'ReadableStream start controller parameter should be extensible');
+
+test(() => {
+  (new ReadableStream()).getReader(undefined);
+  (new ReadableStream()).getReader({});
+  (new ReadableStream()).getReader({ mode: undefined, notmode: 'ignored' });
+  assert_throws(new RangeError(), () => (new ReadableStream()).getReader({ mode: 'potato' }));
+}, 'default ReadableStream getReader() should only accept mode:undefined');
 
 promise_test(() => {
 
@@ -195,7 +211,9 @@ promise_test(() => {
   const theError = new Error('rejected!');
   const rs = new ReadableStream({
     start() {
-      return delay(1).then(() => { throw theError; });
+      return delay(1).then(() => {
+        throw theError;
+      });
     }
   });
 
@@ -731,6 +749,30 @@ promise_test(() => {
   });
 
 }, 'ReadableStream: should call underlying source methods as methods');
+
+test(() => {
+  new ReadableStream({
+    start(c) {
+      assert_equals(c.desiredSize, 10, 'desiredSize must start at highWaterMark');
+      c.close();
+      assert_equals(c.desiredSize, 0, 'after closing, desiredSize must be 0');
+    }
+  }, {
+    highWaterMark: 10
+  });
+}, 'ReadableStream: desiredSize when closed');
+
+test(() => {
+  new ReadableStream({
+    start(c) {
+      assert_equals(c.desiredSize, 10, 'desiredSize must start at highWaterMark');
+      c.error();
+      assert_equals(c.desiredSize, null, 'after erroring, desiredSize must be null');
+    }
+  }, {
+    highWaterMark: 10
+  });
+}, 'ReadableStream: desiredSize when errored');
 
 test(() => {
 

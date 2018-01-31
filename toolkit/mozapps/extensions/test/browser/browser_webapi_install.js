@@ -1,5 +1,6 @@
 const TESTPAGE = `${SECURE_TESTROOT}webapi_checkavailable.html`;
 const XPI_URL = `${SECURE_TESTROOT}addons/browser_webapi_install.xpi`;
+const XPI_SHA = "sha256:d4bab17ff9ba5f635e97c84021f4c527c502250d62ab7f6e6c9e8ee28822f772";
 
 const ID = "webapi_install@tests.mozilla.org";
 // eh, would be good to just stat the real file instead of this...
@@ -9,20 +10,20 @@ function waitForClear() {
   const MSG = "WebAPICleanup";
   return new Promise(resolve => {
     let listener = {
-      receiveMessage: function(msg) {
+      receiveMessage(msg) {
         if (msg.name == MSG) {
-          Services.ppmm.removeMessageListener(MSG, listener);
+          Services.mm.removeMessageListener(MSG, listener);
           resolve();
         }
       }
     };
 
-    Services.ppmm.addMessageListener(MSG, listener);
+    Services.mm.addMessageListener(MSG, listener, true);
   });
 }
 
-add_task(function* setup() {
-  yield SpecialPowers.pushPrefEnv({
+add_task(async function setup() {
+  await SpecialPowers.pushPrefEnv({
     set: [["extensions.webapi.testing", true],
           ["extensions.install.requireBuiltInCerts", false]],
   });
@@ -36,20 +37,20 @@ add_task(function* setup() {
 // Steps that look for a specific event may also include a "props" property
 // with properties that the AddonInstall object is expected to have when
 // that event is triggered.
-function* testInstall(browser, url, steps, description) {
-  let success = yield ContentTask.spawn(browser, {url, steps}, function* (opts) {
-    let { url, steps } = opts;
-    let install = yield content.navigator.mozAddonManager.createInstall({url});
+async function testInstall(browser, args, steps, description) {
+  let success = await ContentTask.spawn(browser, {args, steps}, async function(opts) {
+    let { args, steps } = opts;
+    let install = await content.navigator.mozAddonManager.createInstall(args);
     if (!install) {
-      yield Promise.reject("createInstall() did not return an install object");
+      await Promise.reject("createInstall() did not return an install object");
     }
 
     // Check that the initial state of the AddonInstall is sane.
     if (install.state != "STATE_AVAILABLE") {
-      yield Promise.reject("new install should be in STATE_AVAILABLE");
+      await Promise.reject("new install should be in STATE_AVAILABLE");
     }
     if (install.error != null) {
-      yield Promise.reject("new install should have null error");
+      await Promise.reject("new install should have null error");
     }
 
     const events = [
@@ -99,7 +100,7 @@ function* testInstall(browser, url, steps, description) {
             eventWaiter = () => {
               eventWaiter = null;
               check();
-            }
+            };
             return;
           }
           prevEvent = received.event;
@@ -124,14 +125,23 @@ function* testInstall(browser, url, steps, description) {
       let nextStep = steps.shift();
       if (nextStep.action) {
         if (nextStep.action == "install") {
-          yield install.install();
+          try {
+            await install.install();
+            if (nextStep.expectError) {
+              throw new Error("Expected install to fail but it did not");
+            }
+          } catch (err) {
+            if (!nextStep.expectError) {
+              throw new Error("Install failed unexpectedly");
+            }
+          }
         } else if (nextStep.action == "cancel") {
-          yield install.cancel();
+          await install.cancel();
         } else {
           throw new Error(`unknown action ${nextStep.action}`);
         }
       } else {
-        yield expectEvent(nextStep.event, nextStep.props);
+        await expectEvent(nextStep.event, nextStep.props);
       }
     }
 
@@ -142,7 +152,7 @@ function* testInstall(browser, url, steps, description) {
 }
 
 function makeInstallTest(task) {
-  return function*() {
+  return async function() {
     // withNewTab() will close the test tab before returning, at which point
     // the cleanup event will come from the content process.  We need to see
     // that event but don't want to race to install a listener for it after
@@ -150,62 +160,72 @@ function makeInstallTest(task) {
     // listening promise until below.
     let clearPromise = waitForClear();
 
-    yield BrowserTestUtils.withNewTab(TESTPAGE, task);
+    await BrowserTestUtils.withNewTab(TESTPAGE, task);
 
-    yield clearPromise;
+    await clearPromise;
     is(AddonManager.webAPI.installs.size, 0, "AddonInstall was cleaned up");
   };
 }
 
-// Check the happy path for installing an add-on using the mozAddonManager API.
-add_task(makeInstallTest(function* (browser) {
-  let steps = [
-    {action: "install"},
-    {
-      event: "onDownloadStarted",
-      props: {state: "STATE_DOWNLOADING"},
-    },
-    {
-      event: "onDownloadProgress",
-      props: {maxProgress: XPI_LEN},
-    },
-    {
-      event: "onDownloadEnded",
-      props: {
-        state: "STATE_DOWNLOADED",
-        progress: XPI_LEN,
-        maxProgress: XPI_LEN,
+function makeRegularTest(options, what) {
+  return makeInstallTest(async function(browser) {
+    let steps = [
+      {action: "install"},
+      {
+        event: "onDownloadStarted",
+        props: {state: "STATE_DOWNLOADING"},
       },
-    },
-    {
-      event: "onInstallStarted",
-      props: {state: "STATE_INSTALLING"},
-    },
-    {
-      event: "onInstallEnded",
-      props: {state: "STATE_INSTALLED"},
-    },
-  ];
+      {
+        event: "onDownloadProgress",
+        props: {maxProgress: XPI_LEN},
+      },
+      {
+        event: "onDownloadEnded",
+        props: {
+          state: "STATE_DOWNLOADED",
+          progress: XPI_LEN,
+          maxProgress: XPI_LEN,
+        },
+      },
+      {
+        event: "onInstallStarted",
+        props: {state: "STATE_INSTALLING"},
+      },
+      {
+        event: "onInstallEnded",
+        props: {state: "STATE_INSTALLED"},
+      },
+    ];
 
-  yield testInstall(browser, XPI_URL, steps, "a basic install works");
+    let promptPromise = promiseNotification("addon-installed");
 
-  let version = Services.prefs.getIntPref("webapitest.active_version");
-  is(version, 1, "the install really did work");
+    await testInstall(browser, options, steps, what);
 
-  // Sanity check to ensure that the test in makeInstallTest() that
-  // installs.size == 0 means we actually did clean up.
-  ok(AddonManager.webAPI.installs.size > 0, "webAPI is tracking the AddonInstall");
+    await promptPromise;
 
-  let addons = yield promiseAddonsByIDs([ID]);
-  isnot(addons[0], null, "Found the addon");
+    let version = Services.prefs.getIntPref("webapitest.active_version");
+    is(version, 1, "the install really did work");
 
-  yield addons[0].uninstall();
+    // Sanity check to ensure that the test in makeInstallTest() that
+    // installs.size == 0 means we actually did clean up.
+    ok(AddonManager.webAPI.installs.size > 0, "webAPI is tracking the AddonInstall");
 
-  addons = yield promiseAddonsByIDs([ID]);
-  is(addons[0], null, "Addon was uninstalled");
-}));
+    let addons = await promiseAddonsByIDs([ID]);
+    isnot(addons[0], null, "Found the addon");
 
-add_task(makeInstallTest(function* (browser) {
+    await addons[0].uninstall();
+
+    addons = await promiseAddonsByIDs([ID]);
+    is(addons[0], null, "Addon was uninstalled");
+  });
+}
+
+add_task(makeRegularTest({url: XPI_URL}, "a basic install works"));
+add_task(makeRegularTest({url: XPI_URL, hash: null}, "install with hash=null works"));
+add_task(makeRegularTest({url: XPI_URL, hash: ""}, "install with empty string for hash works"));
+add_task(makeRegularTest({url: XPI_URL, hash: XPI_SHA}, "install with hash works"));
+
+add_task(makeInstallTest(async function(browser) {
   let steps = [
     {action: "cancel"},
     {
@@ -217,17 +237,17 @@ add_task(makeInstallTest(function* (browser) {
     }
   ];
 
-  yield testInstall(browser, XPI_URL, steps, "canceling an install works");
+  await testInstall(browser, {url: XPI_URL}, steps, "canceling an install works");
 
-  let addons = yield promiseAddonsByIDs([ID]);
+  let addons = await promiseAddonsByIDs([ID]);
   is(addons[0], null, "The addon was not installed");
 
   ok(AddonManager.webAPI.installs.size > 0, "webAPI is tracking the AddonInstall");
 }));
 
-add_task(makeInstallTest(function* (browser) {
+add_task(makeInstallTest(async function(browser) {
   let steps = [
-    {action: "install"},
+    {action: "install", expectError: true},
     {
       event: "onDownloadStarted",
       props: {state: "STATE_DOWNLOADING"},
@@ -242,18 +262,43 @@ add_task(makeInstallTest(function* (browser) {
     }
   ];
 
-  yield testInstall(browser, XPI_URL + "bogus", steps, "install of a bad url fails");
+  await testInstall(browser, {url: XPI_URL + "bogus"}, steps, "install of a bad url fails");
 
-  let addons = yield promiseAddonsByIDs([ID]);
+  let addons = await promiseAddonsByIDs([ID]);
   is(addons[0], null, "The addon was not installed");
 
   ok(AddonManager.webAPI.installs.size > 0, "webAPI is tracking the AddonInstall");
 }));
 
-add_task(function* test_permissions() {
+add_task(makeInstallTest(async function(browser) {
+  let steps = [
+    {action: "install", expectError: true},
+    {
+      event: "onDownloadStarted",
+      props: {state: "STATE_DOWNLOADING"},
+    },
+    {event: "onDownloadProgress"},
+    {
+      event: "onDownloadFailed",
+      props: {
+        state: "STATE_DOWNLOAD_FAILED",
+        error: "ERROR_INCORRECT_HASH",
+      },
+    }
+  ];
+
+  await testInstall(browser, {url: XPI_URL, hash: "sha256:bogus"}, steps, "install with bad hash fails");
+
+  let addons = await promiseAddonsByIDs([ID]);
+  is(addons[0], null, "The addon was not installed");
+
+  ok(AddonManager.webAPI.installs.size > 0, "webAPI is tracking the AddonInstall");
+}));
+
+add_task(async function test_permissions() {
   function testBadUrl(url, pattern, successMessage) {
-    return BrowserTestUtils.withNewTab(TESTPAGE, function* (browser) {
-      let result = yield ContentTask.spawn(browser, {url, pattern}, function (opts) {
+    return BrowserTestUtils.withNewTab(TESTPAGE, async function(browser) {
+      let result = await ContentTask.spawn(browser, {url, pattern}, function(opts) {
         return new Promise(resolve => {
           content.navigator.mozAddonManager.createInstall({url: opts.url})
             .then(() => {
@@ -270,10 +315,10 @@ add_task(function* test_permissions() {
     });
   }
 
-  yield testBadUrl("i am not a url", "NS_ERROR_MALFORMED_URI",
+  await testBadUrl("i am not a url", "NS_ERROR_MALFORMED_URI",
                    "Installing from an unparseable URL fails");
 
-  yield testBadUrl("https://addons.not-really-mozilla.org/impostor.xpi",
+  await testBadUrl("https://addons.not-really-mozilla.org/impostor.xpi",
                    "not permitted",
                    "Installing from non-approved URL fails");
 });

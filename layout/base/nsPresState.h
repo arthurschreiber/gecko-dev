@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,6 +22,7 @@ public:
   nsPresState()
     : mContentData(nullptr)
     , mScrollState(0, 0)
+    , mAllowScrollOriginDowngrade(true)
     , mResolution(1.0)
     , mScaleToResolution(false)
     , mDisabledSet(false)
@@ -36,6 +38,16 @@ public:
   nsPoint GetScrollPosition() const
   {
     return mScrollState;
+  }
+
+  void SetAllowScrollOriginDowngrade(bool aAllowScrollOriginDowngrade)
+  {
+    mAllowScrollOriginDowngrade = aAllowScrollOriginDowngrade;
+  }
+
+  bool GetAllowScrollOriginDowngrade()
+  {
+    return mAllowScrollOriginDowngrade;
   }
 
   void SetResolution(float aSize)
@@ -104,6 +116,7 @@ public:
 protected:
   nsCOMPtr<nsISupports> mContentData;
   nsPoint mScrollState;
+  bool mAllowScrollOriginDowngrade;
   float mResolution;
   bool mScaleToResolution;
   bool mDisabledSet;

@@ -10,17 +10,54 @@
 
 #include "angle_gl.h"
 #include "compiler/translator/Compiler.h"
+#include "compiler/translator/IntermTraverse.h"
+
+namespace sh
+{
+
+namespace
+{
+
+class FunctionCallFinder : public TIntermTraverser
+{
+  public:
+    FunctionCallFinder(const TString &functionMangledName)
+        : TIntermTraverser(true, false, false),
+          mFunctionMangledName(functionMangledName),
+          mNodeFound(nullptr)
+    {
+    }
+
+    bool visitAggregate(Visit visit, TIntermAggregate *node) override
+    {
+        if (node->isFunctionCall() && node->getSymbolTableMangledName() == mFunctionMangledName)
+        {
+            mNodeFound = node;
+            return false;
+        }
+        return true;
+    }
+
+    bool isFound() const { return mNodeFound != nullptr; }
+    const TIntermAggregate *getNode() const { return mNodeFound; }
+
+  private:
+    TString mFunctionMangledName;
+    TIntermAggregate *mNodeFound;
+};
+
+}  // anonymous namespace
 
 bool compileTestShader(GLenum type,
                        ShShaderSpec spec,
                        ShShaderOutput output,
                        const std::string &shaderString,
                        ShBuiltInResources *resources,
-                       int compileOptions,
+                       ShCompileOptions compileOptions,
                        std::string *translatedCode,
                        std::string *infoLog)
 {
-    TCompiler *translator = ConstructCompiler(type, spec, output);
+    sh::TCompiler *translator = sh::ConstructCompiler(type, spec, output);
     if (!translator->Init(*resources))
     {
         SafeDelete(translator);
@@ -43,21 +80,21 @@ bool compileTestShader(GLenum type,
                        ShShaderSpec spec,
                        ShShaderOutput output,
                        const std::string &shaderString,
-                       int compileOptions,
+                       ShCompileOptions compileOptions,
                        std::string *translatedCode,
                        std::string *infoLog)
 {
     ShBuiltInResources resources;
-    ShInitBuiltInResources(&resources);
+    sh::InitBuiltInResources(&resources);
     return compileTestShader(type, spec, output, shaderString, &resources, compileOptions, translatedCode, infoLog);
 }
 
 MatchOutputCodeTest::MatchOutputCodeTest(GLenum shaderType,
-                                         int defaultCompileOptions,
+                                         ShCompileOptions defaultCompileOptions,
                                          ShShaderOutput outputType)
     : mShaderType(shaderType), mDefaultCompileOptions(defaultCompileOptions)
 {
-    ShInitBuiltInResources(&mResources);
+    sh::InitBuiltInResources(&mResources);
     mOutputCode[outputType] = std::string();
 }
 
@@ -76,7 +113,8 @@ void MatchOutputCodeTest::compile(const std::string &shaderString)
     compile(shaderString, mDefaultCompileOptions);
 }
 
-void MatchOutputCodeTest::compile(const std::string &shaderString, const int compileOptions)
+void MatchOutputCodeTest::compile(const std::string &shaderString,
+                                  const ShCompileOptions compileOptions)
 {
     std::string infoLog;
     for (auto &code : mOutputCode)
@@ -92,7 +130,7 @@ void MatchOutputCodeTest::compile(const std::string &shaderString, const int com
 
 bool MatchOutputCodeTest::compileWithSettings(ShShaderOutput output,
                                               const std::string &shaderString,
-                                              const int compileOptions,
+                                              const ShCompileOptions compileOptions,
                                               std::string *translatedCode,
                                               std::string *infoLog)
 {
@@ -102,14 +140,19 @@ bool MatchOutputCodeTest::compileWithSettings(ShShaderOutput output,
 
 bool MatchOutputCodeTest::foundInCode(ShShaderOutput output, const char *stringToFind) const
 {
+    return findInCode(output, stringToFind) != std::string::npos;
+}
+
+size_t MatchOutputCodeTest::findInCode(ShShaderOutput output, const char *stringToFind) const
+{
     const auto code = mOutputCode.find(output);
     EXPECT_NE(mOutputCode.end(), code);
     if (code == mOutputCode.end())
     {
-        return false;
+        return std::string::npos;
     }
 
-    return code->second.find(stringToFind) != std::string::npos;
+    return code->second.find(stringToFind);
 }
 
 bool MatchOutputCodeTest::foundInCode(ShShaderOutput output,
@@ -172,3 +215,12 @@ bool MatchOutputCodeTest::notFoundInCode(const char *stringToFind) const
     }
     return true;
 }
+
+const TIntermAggregate *FindFunctionCallNode(TIntermNode *root, const TString &functionMangledName)
+{
+    FunctionCallFinder finder(functionMangledName);
+    root->traverse(&finder);
+    return finder.getNode();
+}
+
+}  // namespace sh

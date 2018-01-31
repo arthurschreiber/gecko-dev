@@ -11,7 +11,7 @@
 #include <cmath>
 #include <cstdlib>
 
-#include "compiler/translator/IntermNode.h"
+#include "compiler/translator/IntermTraverse.h"
 
 namespace sh
 {
@@ -22,10 +22,10 @@ namespace
 class Traverser : public TIntermTraverser
 {
   public:
-    static void Apply(TIntermNode *root, unsigned int *tempIndex);
+    static void Apply(TIntermNode *root, TSymbolTable *symbolTable);
 
   private:
-    Traverser();
+    Traverser(TSymbolTable *symbolTable);
     bool visitAggregate(Visit visit, TIntermAggregate *node) override;
     void nextIteration();
 
@@ -33,10 +33,9 @@ class Traverser : public TIntermTraverser
 };
 
 // static
-void Traverser::Apply(TIntermNode *root, unsigned int *tempIndex)
+void Traverser::Apply(TIntermNode *root, TSymbolTable *symbolTable)
 {
-    Traverser traverser;
-    traverser.useTemporaryIndex(tempIndex);
+    Traverser traverser(symbolTable);
     do
     {
         traverser.nextIteration();
@@ -48,14 +47,14 @@ void Traverser::Apply(TIntermNode *root, unsigned int *tempIndex)
     } while (traverser.mFound);
 }
 
-Traverser::Traverser() : TIntermTraverser(true, false, false)
+Traverser::Traverser(TSymbolTable *symbolTable) : TIntermTraverser(true, false, false, symbolTable)
 {
 }
 
 void Traverser::nextIteration()
 {
     mFound = false;
-    nextTemporaryIndex();
+    nextTemporaryId();
 }
 
 bool Traverser::visitAggregate(Visit visit, TIntermAggregate *node)
@@ -111,23 +110,20 @@ bool Traverser::visitAggregate(Visit visit, TIntermAggregate *node)
     }
 
     // Potential problem case detected, apply workaround.
-    nextTemporaryIndex();
+    nextTemporaryId();
 
     TIntermTyped *lhs = sequence->at(0)->getAsTyped();
     ASSERT(lhs);
 
-    TIntermAggregate *init = createTempInitDeclaration(lhs);
-    TIntermTyped *current  = createTempSymbol(lhs->getType());
+    TIntermDeclaration *init = createTempInitDeclaration(lhs);
+    TIntermTyped *current    = createTempSymbol(lhs->getType());
 
     insertStatementInParentBlock(init);
 
     // Create a chain of n-1 multiples.
     for (int i = 1; i < n; ++i)
     {
-        TIntermBinary *mul = new TIntermBinary(EOpMul);
-        mul->setLeft(current);
-        mul->setRight(createTempSymbol(lhs->getType()));
-        mul->setType(node->getType());
+        TIntermBinary *mul = new TIntermBinary(EOpMul, current, createTempSymbol(lhs->getType()));
         mul->setLine(node->getLine());
         current = mul;
     }
@@ -138,22 +134,20 @@ bool Traverser::visitAggregate(Visit visit, TIntermAggregate *node)
         TConstantUnion *oneVal = new TConstantUnion();
         oneVal->setFConst(1.0f);
         TIntermConstantUnion *oneNode = new TIntermConstantUnion(oneVal, node->getType());
-        TIntermBinary *div            = new TIntermBinary(EOpDiv);
-        div->setLeft(oneNode);
-        div->setRight(current);
-        current = div;
+        TIntermBinary *div            = new TIntermBinary(EOpDiv, oneNode, current);
+        current                       = div;
     }
 
-    queueReplacement(node, current, OriginalNode::IS_DROPPED);
+    queueReplacement(current, OriginalNode::IS_DROPPED);
     mFound = true;
     return false;
 }
 
 }  // anonymous namespace
 
-void ExpandIntegerPowExpressions(TIntermNode *root, unsigned int *tempIndex)
+void ExpandIntegerPowExpressions(TIntermNode *root, TSymbolTable *symbolTable)
 {
-    Traverser::Apply(root, tempIndex);
+    Traverser::Apply(root, symbolTable);
 }
 
 }  // namespace sh

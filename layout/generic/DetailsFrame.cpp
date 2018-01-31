@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,14 +23,16 @@ NS_QUERYFRAME_HEAD(DetailsFrame)
   NS_QUERYFRAME_ENTRY(nsIAnonymousContentCreator)
 NS_QUERYFRAME_TAIL_INHERITING(nsBlockFrame)
 
-DetailsFrame*
+nsBlockFrame*
 NS_NewDetailsFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 {
   return new (aPresShell) DetailsFrame(aContext);
 }
 
+namespace mozilla {
+
 DetailsFrame::DetailsFrame(nsStyleContext* aContext)
-  : nsBlockFrame(aContext)
+  : nsBlockFrame(aContext, kClassID)
 {
 }
 
@@ -37,63 +40,52 @@ DetailsFrame::~DetailsFrame()
 {
 }
 
-nsIAtom*
-DetailsFrame::GetType() const
-{
-  return nsGkAtoms::detailsFrame;
-}
-
 void
 DetailsFrame::SetInitialChildList(ChildListID aListID, nsFrameList& aChildList)
 {
-  if (aListID == kPrincipalList) {
-    HTMLDetailsElement* details = HTMLDetailsElement::FromContent(GetContent());
-    bool isOpen = details->Open();
-
-    if (isOpen) {
-      // If details is open, the first summary needs to be rendered as if it is
-      // the first child.
-      for (nsIFrame* child : aChildList) {
-        HTMLSummaryElement* summary =
-          HTMLSummaryElement::FromContent(child->GetContent());
-
-        if (summary && summary->IsMainSummary()) {
-          // Take out the first summary frame and insert it to the beginning of
-          // the list.
-          aChildList.RemoveFrame(child);
-          aChildList.InsertFrame(nullptr, nullptr, child);
-          break;
-        }
-      }
-    }
-
 #ifdef DEBUG
-    for (nsIFrame* child : aChildList) {
-      HTMLSummaryElement* summary =
-        HTMLSummaryElement::FromContent(child->GetContent());
-
-      if (child == aChildList.FirstChild()) {
-        if (summary && summary->IsMainSummary()) {
-          break;
-        }
-      } else {
-        MOZ_ASSERT(!summary || !summary->IsMainSummary(),
-                   "Rest of the children are neither summary elements nor"
-                   "the main summary!");
-      }
-    }
-#endif
-
+  if (aListID == kPrincipalList) {
+    CheckValidMainSummary(aChildList);
   }
+#endif
 
   nsBlockFrame::SetInitialChildList(aListID, aChildList);
 }
 
-void
-DetailsFrame::DestroyFrom(nsIFrame* aDestructRoot)
+#ifdef DEBUG
+bool
+DetailsFrame::CheckValidMainSummary(const nsFrameList& aFrameList) const
 {
-  nsContentUtils::DestroyAnonymousContent(&mDefaultSummary);
-  nsBlockFrame::DestroyFrom(aDestructRoot);
+  for (nsIFrame* child : aFrameList) {
+    HTMLSummaryElement* summary =
+      HTMLSummaryElement::FromContent(child->GetContent());
+
+    if (child == aFrameList.FirstChild()) {
+      if (summary && summary->IsMainSummary()) {
+        return true;
+      } else if (child->GetContent() == GetContent()) {
+        // The child frame's content is the same as our content, which means
+        // it's a kind of wrapper frame. Descend into its child list to find
+        // main summary.
+        if (CheckValidMainSummary(child->PrincipalChildList())) {
+          return true;
+        }
+      }
+    } else {
+      NS_ASSERTION(!summary || !summary->IsMainSummary(),
+                   "Rest of the children are either not summary element "
+                   "or are not the main summary!");
+    }
+  }
+  return false;
+}
+#endif
+
+void
+DetailsFrame::DestroyFrom(nsIFrame* aDestructRoot, PostDestroyData& aPostDestroyData)
+{
+  aPostDestroyData.AddAnonymousContent(mDefaultSummary.forget());
+  nsBlockFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
 nsresult
@@ -111,10 +103,10 @@ DetailsFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
 
   already_AddRefed<NodeInfo> nodeInfo =
     nodeInfoManager->GetNodeInfo(nsGkAtoms::summary, nullptr, kNameSpaceID_XHTML,
-                                 nsIDOMNode::ELEMENT_NODE);
+                                 nsINode::ELEMENT_NODE);
   mDefaultSummary = new HTMLSummaryElement(nodeInfo);
 
-  nsXPIDLString defaultSummaryText;
+  nsAutoString defaultSummaryText;
   nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
                                      "DefaultSummary", defaultSummaryText);
   RefPtr<nsTextNode> description = new nsTextNode(nodeInfoManager);
@@ -134,3 +126,14 @@ DetailsFrame::AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
     aElements.AppendElement(mDefaultSummary);
   }
 }
+
+bool
+DetailsFrame::HasMainSummaryFrame(nsIFrame* aSummaryFrame)
+{
+  nsIFrame* firstChild =
+    nsPlaceholderFrame::GetRealFrameFor(mFrames.FirstChild());
+
+  return aSummaryFrame == firstChild;
+}
+
+} // namespace mozilla

@@ -6,24 +6,24 @@
 
 #include "MediaTimer.h"
 
-#include <math.h>
-
-#include "nsComponentManagerUtils.h"
-#include "nsThreadUtils.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SharedThreadPool.h"
+#include "nsComponentManagerUtils.h"
+#include "nsThreadUtils.h"
+#include <math.h>
 
 namespace mozilla {
 
 NS_IMPL_ADDREF(MediaTimer)
 NS_IMPL_RELEASE_WITH_DESTROY(MediaTimer, DispatchDestroy())
 
-MediaTimer::MediaTimer()
+MediaTimer::MediaTimer(bool aFuzzy)
   : mMonitor("MediaTimer Monitor")
-  , mTimer(do_CreateInstance("@mozilla.org/timer;1"))
+  , mTimer(NS_NewTimer())
   , mCreationTimeStamp(TimeStamp::Now())
   , mUpdateScheduled(false)
+  , mFuzzy(aFuzzy)
 {
   TIMER_LOG("MediaTimer::MediaTimer");
 
@@ -42,9 +42,12 @@ MediaTimer::DispatchDestroy()
   // Destroy(), which may run completely before the stack if Dispatch() begins
   // to unwind.
   nsCOMPtr<nsIEventTarget> thread = mThread;
-  nsresult rv = thread->Dispatch(NewNonOwningRunnableMethod(this, &MediaTimer::Destroy),
-                                 NS_DISPATCH_NORMAL);
+  nsresult rv =
+    thread->Dispatch(NewNonOwningRunnableMethod(
+                       "MediaTimer::Destroy", this, &MediaTimer::Destroy),
+                     NS_DISPATCH_NORMAL);
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
+  Unused << rv;
   (void) rv;
 }
 
@@ -80,7 +83,7 @@ RefPtr<MediaTimerPromise>
 MediaTimer::WaitUntil(const TimeStamp& aTimeStamp, const char* aCallSite)
 {
   MonitorAutoLock mon(mMonitor);
-  TIMER_LOG("MediaTimer::WaitUntil %lld", RelativeMicroseconds(aTimeStamp));
+  TIMER_LOG("MediaTimer::WaitUntil %" PRId64, RelativeMicroseconds(aTimeStamp));
   Entry e(aTimeStamp, aCallSite);
   RefPtr<MediaTimerPromise> p = e.mPromise.get();
   mEntries.push(e);
@@ -97,9 +100,11 @@ MediaTimer::ScheduleUpdate()
   }
   mUpdateScheduled = true;
 
-  nsresult rv = mThread->Dispatch(NewRunnableMethod(this, &MediaTimer::Update),
-                                  NS_DISPATCH_NORMAL);
+  nsresult rv = mThread->Dispatch(
+    NewRunnableMethod("MediaTimer::Update", this, &MediaTimer::Update),
+    NS_DISPATCH_NORMAL);
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
+  Unused << rv;
   (void) rv;
 }
 
@@ -108,6 +113,19 @@ MediaTimer::Update()
 {
   MonitorAutoLock mon(mMonitor);
   UpdateLocked();
+}
+
+bool
+MediaTimer::IsExpired(const TimeStamp& aTarget, const TimeStamp& aNow)
+{
+  MOZ_ASSERT(OnMediaTimerThread());
+  mMonitor.AssertCurrentThreadOwns();
+  // Treat this timer as expired in fuzzy mode even if it is fired
+  // slightly (< 1ms) before the schedule target. So we don't need to schedule a
+  // timer with very small timeout again when the client doesn't need a high-res
+  // timer.
+  TimeStamp t = mFuzzy ? aTarget - TimeDuration::FromMilliseconds(1) : aTarget;
+  return t <= aNow;
 }
 
 void
@@ -121,7 +139,7 @@ MediaTimer::UpdateLocked()
 
   // Resolve all the promises whose time is up.
   TimeStamp now = TimeStamp::Now();
-  while (!mEntries.empty() && mEntries.top().mTimeStamp <= now) {
+  while (!mEntries.empty() && IsExpired(mEntries.top().mTimeStamp, now)) {
     mEntries.top().mPromise->Resolve(true, __func__);
     DebugOnly<TimeStamp> poppedTimeStamp = mEntries.top().mTimeStamp;
     mEntries.pop();
@@ -178,6 +196,7 @@ MediaTimer::ArmTimer(const TimeStamp& aTarget, const TimeStamp& aNow)
                                                   nsITimer::TYPE_ONE_SHOT,
                                                   "MediaTimer::TimerCallback");
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
+  Unused << rv;
   (void) rv;
 }
 

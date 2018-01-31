@@ -43,32 +43,38 @@ AnyArrayBufferByteLength(const ArrayBufferObjectMaybeShared* buf)
     return buf->as<SharedArrayBufferObject>().byteLength();
 }
 
-inline size_t
-WasmArrayBufferMappedSize(const ArrayBufferObjectMaybeShared* buf)
-{
-    if (buf->is<ArrayBufferObject>())
-        return buf->as<ArrayBufferObject>().wasmMappedSize();
-#ifdef WASM_HUGE_MEMORY
-    return wasm::HugeMappedSize;
-#else
-    return buf->as<SharedArrayBufferObject>().byteLength();
-#endif
-}
-
 inline uint32_t
-WasmArrayBufferActualByteLength(const ArrayBufferObjectMaybeShared* buf)
+ArrayBufferObjectMaybeShared::byteLength()
 {
-    if (buf->is<ArrayBufferObject>())
-        return buf->as<ArrayBufferObject>().wasmActualByteLength();
-    return buf->as<SharedArrayBufferObject>().byteLength();
+    return AnyArrayBufferByteLength(this);
 }
 
-inline mozilla::Maybe<uint32_t>
-WasmArrayBufferMaxSize(const ArrayBufferObjectMaybeShared* buf)
+inline bool
+AnyArrayBufferIsPreparedForAsmJS(const ArrayBufferObjectMaybeShared* buf)
 {
     if (buf->is<ArrayBufferObject>())
-        return buf->as<ArrayBufferObject>().wasmMaxSize();
-    return mozilla::Some(buf->as<SharedArrayBufferObject>().byteLength());
+        return buf->as<ArrayBufferObject>().isPreparedForAsmJS();
+    return buf->as<SharedArrayBufferObject>().isPreparedForAsmJS();
+}
+
+inline bool
+ArrayBufferObjectMaybeShared::isPreparedForAsmJS() const
+{
+    return AnyArrayBufferIsPreparedForAsmJS(this);
+}
+
+inline bool
+AnyArrayBufferIsWasm(const ArrayBufferObjectMaybeShared* buf)
+{
+    if (buf->is<ArrayBufferObject>())
+        return buf->as<ArrayBufferObject>().isWasm();
+    return buf->as<SharedArrayBufferObject>().isWasm();
+}
+
+inline bool
+ArrayBufferObjectMaybeShared::isWasm() const
+{
+    return AnyArrayBufferIsWasm(this);
 }
 
 inline ArrayBufferObjectMaybeShared&

@@ -14,10 +14,10 @@ const caList = [ "ca-no-keyUsage-extension", "ca-missing-keyCertSign",
 const eeList = [ "ee-no-keyUsage-extension", "ee-keyCertSign-only",
                  "ee-keyEncipherment-only", "ee-keyCertSign-and-keyEncipherment" ];
 
-const caUsage = [ certificateUsageSSLCA, certificateUsageVerifyCA ];
+const caUsage = [ certificateUsageSSLCA ];
 const allEEUsages = [ certificateUsageSSLClient, certificateUsageSSLServer,
-                      certificateUsageEmailSigner, certificateUsageEmailRecipient,
-                      certificateUsageObjectSigner ];
+                      certificateUsageEmailSigner,
+                      certificateUsageEmailRecipient ];
 const serverEEUsages = [ certificateUsageSSLServer,
                          certificateUsageEmailRecipient ];
 
@@ -43,15 +43,15 @@ const expectedUsagesMap = {
   "ee-keyCertSign-and-keyEncipherment-ca-all-usages": serverEEUsages,
 };
 
-add_task(function* () {
+add_task(async function() {
   for (let ca of caList) {
     addCertFromFile(certdb, "test_cert_keyUsage/" + ca + ".pem", "CTu,CTu,CTu");
-    let cert = constructCertFromFile("test_cert_keyUsage/" + ca + ".pem");
-    yield asyncTestCertificateUsages(certdb, cert, expectedUsagesMap[ca]);
+    let caCert = constructCertFromFile("test_cert_keyUsage/" + ca + ".pem");
+    await asyncTestCertificateUsages(certdb, caCert, expectedUsagesMap[ca]);
     for (let ee of eeList) {
       let eeFullName = ee + "-" + ca;
-      let cert = constructCertFromFile("test_cert_keyUsage/" + eeFullName + ".pem");
-      yield asyncTestCertificateUsages(certdb, cert, expectedUsagesMap[eeFullName]);
+      let eeCert = constructCertFromFile("test_cert_keyUsage/" + eeFullName + ".pem");
+      await asyncTestCertificateUsages(certdb, eeCert, expectedUsagesMap[eeFullName]);
     }
   }
 });

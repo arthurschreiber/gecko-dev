@@ -8,23 +8,20 @@ package org.mozilla.gecko;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.util.concurrent.SynchronousQueue;
 
-import org.mozilla.gecko.AppConstants.Versions;
-import org.mozilla.gecko.gfx.DynamicToolbarAnimator;
-import org.mozilla.gecko.util.Clipboard;
+import org.mozilla.gecko.util.ActivityUtils;
 import org.mozilla.gecko.util.GamepadUtils;
 import org.mozilla.gecko.util.ThreadUtils;
-import org.mozilla.gecko.util.ThreadUtils.AssertBehavior;
 
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
+import android.app.Activity;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.media.AudioManager;
-import android.os.Bundle;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -32,6 +29,7 @@ import android.text.Editable;
 import android.text.InputType;
 import android.text.Selection;
 import android.text.SpannableString;
+import android.text.Spanned;
 import android.text.method.KeyListener;
 import android.text.method.TextKeyListener;
 import android.util.DisplayMetrics;
@@ -46,9 +44,10 @@ import android.view.inputmethod.ExtractedTextRequest;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 
-class GeckoInputConnection
+/* package */ class GeckoInputConnection
     extends BaseInputConnection
-    implements InputConnectionListener, GeckoEditableListener {
+    implements TextInputController.Delegate,
+               TextInputController.EditableListener {
 
     private static final boolean DEBUG = false;
     protected static final String LOGTAG = "GeckoInputConnection";
@@ -66,33 +65,39 @@ class GeckoInputConnection
     private String mIMETypeHint = "";
     private String mIMEModeHint = "";
     private String mIMEActionHint = "";
+    private int mIMEFlags;
+    private boolean mFocused;
 
     private String mCurrentInputMethod = "";
 
+    private final GeckoSession mSession;
     private final View mView;
-    private final GeckoEditableClient mEditableClient;
+    private final TextInputController.EditableClient mEditableClient;
     protected int mBatchEditCount;
     private ExtractedTextRequest mUpdateRequest;
     private final ExtractedText mUpdateExtract = new ExtractedText();
-    private boolean mBatchSelectionChanged;
-    private boolean mBatchTextChanged;
     private final InputConnection mKeyInputConnection;
     private CursorAnchorInfo.Builder mCursorAnchorInfoBuilder;
 
     // Prevent showSoftInput and hideSoftInput from causing reentrant calls on some devices.
     private volatile boolean mSoftInputReentrancyGuard;
 
-    public static GeckoEditableListener create(View targetView,
-                                               GeckoEditableClient editable) {
-        if (DEBUG)
-            return DebugGeckoInputConnection.create(targetView, editable);
-        else
-            return new GeckoInputConnection(targetView, editable);
+    public static TextInputController.Delegate create(
+            final GeckoSession session,
+            final View targetView,
+            final TextInputController.EditableClient editable) {
+        if (DEBUG) {
+            return DebugGeckoInputConnection.create(session, targetView, editable);
+        } else {
+            return new GeckoInputConnection(session, targetView, editable);
+        }
     }
 
-    protected GeckoInputConnection(View targetView,
-                                   GeckoEditableClient editable) {
+    protected GeckoInputConnection(final GeckoSession session,
+                                   final View targetView,
+                                   final TextInputController.EditableClient editable) {
         super(targetView, true);
+        mSession = session;
         mView = targetView;
         mEditableClient = editable;
         mIMEState = IME_STATE_DISABLED;
@@ -103,30 +108,26 @@ class GeckoInputConnection
     @Override
     public synchronized boolean beginBatchEdit() {
         mBatchEditCount++;
-        mEditableClient.setBatchMode(true);
+        if (mBatchEditCount == 1) {
+            mEditableClient.setBatchMode(true);
+        }
         return true;
     }
 
     @Override
     public synchronized boolean endBatchEdit() {
-        if (mBatchEditCount > 0) {
-            mBatchEditCount--;
-            if (mBatchEditCount == 0) {
-                if (mBatchTextChanged) {
-                    notifyTextChange();
-                    mBatchTextChanged = false;
-                }
-                if (mBatchSelectionChanged) {
-                    Editable editable = getEditable();
-                    notifySelectionChange(Selection.getSelectionStart(editable),
-                                           Selection.getSelectionEnd(editable));
-                    mBatchSelectionChanged = false;
-                }
-                mEditableClient.setBatchMode(false);
-            }
-        } else {
-            Log.w(LOGTAG, "endBatchEdit() called, but mBatchEditCount == 0?!");
+        if (mBatchEditCount <= 0) {
+            Log.w(LOGTAG, "endBatchEdit() called, but mBatchEditCount <= 0?!");
+            return true;
         }
+
+        mBatchEditCount--;
+        if (mBatchEditCount != 0) {
+            return true;
+        }
+
+        // setBatchMode will call onTextChange and/or onSelectionChange for us.
+        mEditableClient.setBatchMode(false);
         return true;
     }
 
@@ -137,8 +138,9 @@ class GeckoInputConnection
 
     @Override
     public boolean performContextMenuAction(int id) {
-        Editable editable = getEditable();
-        if (editable == null) {
+        final View view = getView();
+        final Editable editable = getEditable();
+        if (view == null || editable == null) {
             return false;
         }
         int selStart = Selection.getSelectionStart(editable);
@@ -152,18 +154,17 @@ class GeckoInputConnection
                 // If selection is empty, we'll select everything
                 if (selStart == selEnd) {
                     // Fill the clipboard
-                    Clipboard.setText(editable);
+                    Clipboard.setText(view.getContext(), editable);
                     editable.clear();
                 } else {
-                    Clipboard.setText(
-                            editable.toString().substring(
-                                Math.min(selStart, selEnd),
-                                Math.max(selStart, selEnd)));
+                    Clipboard.setText(view.getContext(),
+                                      editable.subSequence(Math.min(selStart, selEnd),
+                                                           Math.max(selStart, selEnd)));
                     editable.delete(selStart, selEnd);
                 }
                 break;
             case android.R.id.paste:
-                commitText(Clipboard.getText(), 1);
+                commitText(Clipboard.getText(view.getContext()), 1);
                 break;
             case android.R.id.copy:
                 // Copy the current selection or the empty string if nothing is selected.
@@ -171,33 +172,10 @@ class GeckoInputConnection
                                     editable.toString().substring(
                                         Math.min(selStart, selEnd),
                                         Math.max(selStart, selEnd));
-                Clipboard.setText(copiedText);
+                Clipboard.setText(view.getContext(), copiedText);
                 break;
         }
         return true;
-    }
-
-    @Override
-    public boolean performPrivateCommand(final String action, final Bundle data) {
-        switch (action) {
-            case "process-gecko-events":
-                // Process all currently pending Gecko thread events before returning.
-
-                final Editable editable = getEditable();
-                if (editable == null) {
-                    return false;
-                }
-
-                // Removing an invalid span is essentially a no-op, but it does force the
-                // current thread to wait for the Gecko thread when we call length(), in order
-                // to process the removeSpan event. Once Gecko thread processes the removeSpan
-                // event, all previous events in the Gecko event queue would have been
-                // processed as well.
-                editable.removeSpan(null);
-                editable.length();
-                return true;
-        }
-        return false;
     }
 
     @Override
@@ -230,7 +208,8 @@ class GeckoInputConnection
         return extract;
     }
 
-    private View getView() {
+    @Override // TextInputController.Delegate
+    public View getView() {
         return mView;
     }
 
@@ -243,7 +222,7 @@ class GeckoInputConnection
         return InputMethods.getInputMethodManager(context);
     }
 
-    private void showSoftInput() {
+    private void showSoftInputWithToolbar(final boolean showToolbar) {
         if (mSoftInputReentrancyGuard) {
             return;
         }
@@ -262,7 +241,12 @@ class GeckoInputConnection
                     v.clearFocus();
                     v.requestFocus();
                 }
-                GeckoAppShell.getLayerView().getDynamicToolbarAnimator().showToolbar(/*immediately*/true);
+
+                if (showToolbar) {
+                    mSession.getDynamicToolbarAnimator().showToolbar(/* immediately */ true);
+                }
+                mSession.getEventDispatcher().dispatch("GeckoView:ZoomToInput", null);
+
                 mSoftInputReentrancyGuard = true;
                 imm.showSoftInput(v, 0);
                 mSoftInputReentrancyGuard = false;
@@ -316,35 +300,18 @@ class GeckoInputConnection
             Log.w(LOGTAG, "resetting with mBatchEditCount = " + mBatchEditCount);
             mBatchEditCount = 0;
         }
-        mBatchSelectionChanged = false;
-        mBatchTextChanged = false;
 
         // Do not reset mIMEState here; see comments in notifyIMEContext
+
+        restartInput();
     }
 
-    @Override
-    public void onTextChange(CharSequence text, int start, int oldEnd, int newEnd) {
+    @Override // TextInputController.EditableListener
+    public void onTextChange() {
 
         if (mUpdateRequest == null) {
-            // Android always expects selection updates when not in extracted mode;
-            // in extracted mode, the selection is reported through updateExtractedText
-            final Editable editable = getEditable();
-            if (editable != null) {
-                onSelectionChange(Selection.getSelectionStart(editable),
-                                  Selection.getSelectionEnd(editable));
-            }
             return;
         }
-
-        if (mBatchEditCount > 0) {
-            // Delay notification until after the batch edit
-            mBatchTextChanged = true;
-            return;
-        }
-        notifyTextChange();
-    }
-
-    private void notifyTextChange() {
 
         final InputMethodManager imm = getInputMethodManager();
         final View v = getView();
@@ -356,28 +323,19 @@ class GeckoInputConnection
         // Update the entire Editable range
         mUpdateExtract.partialStartOffset = -1;
         mUpdateExtract.partialEndOffset = -1;
-        mUpdateExtract.selectionStart =
-                Selection.getSelectionStart(editable);
-        mUpdateExtract.selectionEnd =
-                Selection.getSelectionEnd(editable);
+        mUpdateExtract.selectionStart = Selection.getSelectionStart(editable);
+        mUpdateExtract.selectionEnd = Selection.getSelectionEnd(editable);
         mUpdateExtract.startOffset = 0;
         if ((mUpdateRequest.flags & GET_TEXT_WITH_STYLES) != 0) {
             mUpdateExtract.text = new SpannableString(editable);
         } else {
             mUpdateExtract.text = editable.toString();
         }
-        imm.updateExtractedText(v, mUpdateRequest.token,
-                                mUpdateExtract);
+        imm.updateExtractedText(v, mUpdateRequest.token, mUpdateExtract);
     }
 
-    @Override
-    public void onSelectionChange(int start, int end) {
-
-        if (mBatchEditCount > 0) {
-            // Delay notification until after the batch edit
-            mBatchSelectionChanged = true;
-            return;
-        }
+    @Override // TextInputController.EditableListener
+    public void onSelectionChange() {
 
         final Editable editable = getEditable();
         if (editable != null) {
@@ -398,45 +356,25 @@ class GeckoInputConnection
                             getComposingSpanEnd(editable));
     }
 
-    @Override
-    public void updateCompositionRects(final RectF[] aRects) {
-        if (!Versions.feature21Plus) {
+    @TargetApi(21)
+    @Override // TextInputController.EditableListener
+    public void updateCompositionRects(final RectF[] rects) {
+        if (!(Build.VERSION.SDK_INT >= 21)) {
             return;
         }
 
-        if (mCursorAnchorInfoBuilder == null) {
-            mCursorAnchorInfoBuilder = new CursorAnchorInfo.Builder();
-        }
-        mCursorAnchorInfoBuilder.reset();
-
-        // Calculate Gecko logical coords to screen coords
-        final View v = getView();
-        if (v == null) {
+        final View view = getView();
+        if (view == null) {
             return;
         }
-
-        int[] viewCoords = new int[2];
-        v.getLocationOnScreen(viewCoords);
-
-        DynamicToolbarAnimator animator = GeckoAppShell.getLayerView().getDynamicToolbarAnimator();
-        float toolbarHeight = animator.getMaxTranslation() - animator.getToolbarTranslation();
-
-        Matrix matrix = GeckoAppShell.getLayerView().getMatrixForLayerRectToViewRect();
-        if (matrix == null) {
-            if (DEBUG) {
-                Log.d(LOGTAG, "Cannot get Matrix to convert from Gecko coords to layer view coords");
-            }
-            return;
-        }
-        matrix.postTranslate(viewCoords[0], viewCoords[1] + toolbarHeight);
-        mCursorAnchorInfoBuilder.setMatrix(matrix);
 
         final Editable content = getEditable();
         if (content == null) {
             return;
         }
-        int composingStart = getComposingSpanStart(content);
-        int composingEnd = getComposingSpanEnd(content);
+
+        final int composingStart = getComposingSpanStart(content);
+        final int composingEnd = getComposingSpanEnd(content);
         if (composingStart < 0 || composingEnd < 0) {
             if (DEBUG) {
                 Log.d(LOGTAG, "No composition for updates");
@@ -444,51 +382,64 @@ class GeckoInputConnection
             return;
         }
 
-        for (int i = 0; i < aRects.length; i++) {
-            mCursorAnchorInfoBuilder.addCharacterBounds(i,
-                                                        aRects[i].left,
-                                                        aRects[i].top,
-                                                        aRects[i].right,
-                                                        aRects[i].bottom,
-                                                        CursorAnchorInfo.FLAG_HAS_VISIBLE_REGION);
-        }
+        final CharSequence composition = content.subSequence(composingStart, composingEnd);
 
-        mCursorAnchorInfoBuilder.setComposingText(0, content.subSequence(composingStart, composingEnd));
-
-        updateCursor();
+        view.post(new Runnable() {
+            @Override
+            public void run() {
+                updateCompositionRectsOnUi(view, rects, composition);
+            }
+        });
     }
 
     @TargetApi(21)
-    private void updateCursor() {
+    /* package */ void updateCompositionRectsOnUi(final View view,
+                                                  final RectF[] rects,
+                                                  final CharSequence composition) {
         if (mCursorAnchorInfoBuilder == null) {
-            return;
+            mCursorAnchorInfoBuilder = new CursorAnchorInfo.Builder();
         }
+        mCursorAnchorInfoBuilder.reset();
+
+        final Matrix matrix = new Matrix();
+        mSession.getClientToScreenMatrix(matrix);
+        mCursorAnchorInfoBuilder.setMatrix(matrix);
+
+        for (int i = 0; i < rects.length; i++) {
+            mCursorAnchorInfoBuilder.addCharacterBounds(
+                    i, rects[i].left, rects[i].top, rects[i].right, rects[i].bottom,
+                    CursorAnchorInfo.FLAG_HAS_VISIBLE_REGION);
+        }
+
+        mCursorAnchorInfoBuilder.setComposingText(0, composition);
 
         final InputMethodManager imm = getInputMethodManager();
-        final View v = getView();
-        if (imm == null || v == null) {
+        if (imm == null) {
             return;
         }
 
-        imm.updateCursorAnchorInfo(v, mCursorAnchorInfoBuilder.build());
+        imm.updateCursorAnchorInfo(view, mCursorAnchorInfoBuilder.build());
     }
 
     @Override
     public boolean requestCursorUpdates(int cursorUpdateMode) {
 
         if ((cursorUpdateMode & InputConnection.CURSOR_UPDATE_IMMEDIATE) != 0) {
-            mEditableClient.requestCursorUpdates(GeckoEditableClient.ONE_SHOT);
+            mEditableClient.requestCursorUpdates(
+                    TextInputController.EditableClient.ONE_SHOT);
         }
 
         if ((cursorUpdateMode & InputConnection.CURSOR_UPDATE_MONITOR) != 0) {
-            mEditableClient.requestCursorUpdates(GeckoEditableClient.START_MONITOR);
+            mEditableClient.requestCursorUpdates(
+                    TextInputController.EditableClient.START_MONITOR);
         } else {
-            mEditableClient.requestCursorUpdates(GeckoEditableClient.END_MONITOR);
+            mEditableClient.requestCursorUpdates(
+                    TextInputController.EditableClient.END_MONITOR);
         }
         return true;
     }
 
-    @Override
+    @Override // TextInputController.EditableListener
     public void onDefaultKeyEvent(final KeyEvent event) {
         ThreadUtils.postToUiThread(new Runnable() {
             @Override
@@ -531,7 +482,7 @@ class GeckoInputConnection
         return sBackgroundHandler;
     }
 
-    private boolean canReturnCustomHandler() {
+    private synchronized boolean canReturnCustomHandler() {
         if (mIMEState == IME_STATE_DISABLED) {
             return false;
         }
@@ -544,8 +495,8 @@ class GeckoInputConnection
             // changes, we gracefully fall back to using the regular Handler.
             if ("startInputInner".equals(frame.getMethodName()) &&
                 "android.view.inputmethod.InputMethodManager".equals(frame.getClassName())) {
-                // only return our own Handler to InputMethodManager
-                return true;
+                // Only return our own Handler to InputMethodManager and only prior to 24.
+                return Build.VERSION.SDK_INT < 24;
             }
             if (CUSTOM_HANDLER_TEST_METHOD.equals(frame.getMethodName()) &&
                 CUSTOM_HANDLER_TEST_CLASS.equals(frame.getClassName())) {
@@ -571,24 +522,26 @@ class GeckoInputConnection
     // Once we update to 24, we can use the actual override annotation and remove the lint suppression.
     @SuppressLint("Override")
     public Handler getHandler() {
+        final Handler handler;
         if (isPhysicalKeyboardPresent()) {
-            return ThreadUtils.getUiHandler();
+            handler = ThreadUtils.getUiHandler();
+        } else {
+            handler = getBackgroundHandler();
         }
-
-        return getBackgroundHandler();
+        return mEditableClient.setInputConnectionHandler(handler);
     }
 
-    @Override // InputConnectionListener
+    @Override // TextInputController.Delegate
     public Handler getHandler(Handler defHandler) {
         if (!canReturnCustomHandler()) {
             return defHandler;
         }
 
-        return mEditableClient.setInputConnectionHandler(getHandler());
+        return getHandler();
     }
 
-    @Override
-    public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+    @Override // TextInputController.Delegate
+    public synchronized InputConnection onCreateInputConnection(EditorInfo outAttrs) {
         // Some keyboards require us to fill out outAttrs even if we return null.
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT;
         outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE;
@@ -602,9 +555,8 @@ class GeckoInputConnection
         if (mIMEState == IME_STATE_PASSWORD ||
             "password".equalsIgnoreCase(mIMETypeHint))
             outAttrs.inputType |= InputType.TYPE_TEXT_VARIATION_PASSWORD;
-        else if (mIMEState == IME_STATE_PLUGIN)
-            outAttrs.inputType = InputType.TYPE_NULL; // "send key events" mode
-        else if (mIMETypeHint.equalsIgnoreCase("url"))
+        else if (mIMETypeHint.equalsIgnoreCase("url") ||
+                 mIMETypeHint.equalsIgnoreCase("mozAwesomebar"))
             outAttrs.inputType |= InputType.TYPE_TEXT_VARIATION_URI;
         else if (mIMETypeHint.equalsIgnoreCase("email"))
             outAttrs.inputType |= InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS;
@@ -663,6 +615,10 @@ class GeckoInputConnection
             outAttrs.actionLabel = mIMEActionHint;
         }
 
+        if ((mIMEFlags & IME_FLAG_PRIVATE_BROWSING) != 0) {
+            outAttrs.imeOptions |= InputMethods.IME_FLAG_NO_PERSONALIZED_LEARNING;
+        }
+
         Context context = getView().getContext();
         DisplayMetrics metrics = context.getResources().getDisplayMetrics();
         if (Math.min(metrics.widthPixels, metrics.heightPixels) > INLINE_IME_MIN_DISPLAY_SIZE) {
@@ -684,25 +640,18 @@ class GeckoInputConnection
             Log.d(LOGTAG, "IME: CurrentInputMethod=" + mCurrentInputMethod);
         }
 
-        // If the user has changed IMEs, then notify input method observers.
-        if (!mCurrentInputMethod.equals(prevInputMethod) && GeckoAppShell.getGeckoInterface() != null) {
-            FormAssistPopup popup = GeckoAppShell.getGeckoInterface().getFormAssistPopup();
-            if (popup != null) {
-                popup.onInputMethodChanged(mCurrentInputMethod);
-            }
-        }
-
-        if (mIMEState == IME_STATE_PLUGIN) {
-            // Since we are using a temporary string as the editable, the selection is at 0
-            outAttrs.initialSelStart = 0;
-            outAttrs.initialSelEnd = 0;
-            return mKeyInputConnection;
-        }
         Editable editable = getEditable();
         outAttrs.initialSelStart = Selection.getSelectionStart(editable);
         outAttrs.initialSelEnd = Selection.getSelectionEnd(editable);
 
-        showSoftInput();
+        if ((mIMEFlags & IME_FLAG_USER_ACTION) != 0) {
+            if ((context instanceof Activity) &&
+                    ActivityUtils.isFullScreen((Activity) context)) {
+                showSoftInputWithToolbar(false);
+            } else {
+                showSoftInputWithToolbar(true);
+            }
+        }
         return this;
     }
 
@@ -797,7 +746,7 @@ class GeckoInputConnection
         return false; // seems to always return false
     }
 
-    @Override
+    @Override // TextInputController.Delegate
     public boolean onKeyPreIme(int keyCode, KeyEvent event) {
         return false;
     }
@@ -817,8 +766,7 @@ class GeckoInputConnection
     }
 
     private boolean shouldSkipKeyListener(int keyCode, KeyEvent event) {
-        if (mIMEState == IME_STATE_DISABLED ||
-            mIMEState == IME_STATE_PLUGIN) {
+        if (mIMEState == IME_STATE_DISABLED) {
             return true;
         }
         // Preserve enter and tab keys for the browser
@@ -873,7 +821,7 @@ class GeckoInputConnection
                 // Does the same thing as Chromium
                 // https://chromium.googlesource.com/chromium/src/+/49.0.2623.67/chrome/android/java/src/org/chromium/chrome/browser/tab/TabWebContentsDelegateAndroid.java#445
                 // These are all the keys dispatchMediaKeyEvent supports.
-                if (AppConstants.Versions.feature19Plus) {
+                if (Build.VERSION.SDK_INT >= 19) {
                     // dispatchMediaKeyEvent is only available on Android 4.4+
                     Context viewContext = getView().getContext();
                     AudioManager am = (AudioManager)viewContext.getSystemService(Context.AUDIO_SERVICE);
@@ -898,12 +846,12 @@ class GeckoInputConnection
         return true;
     }
 
-    @Override
+    @Override // TextInputController.Delegate
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         return processKey(KeyEvent.ACTION_DOWN, keyCode, event);
     }
 
-    @Override
+    @Override // TextInputController.Delegate
     public boolean onKeyUp(int keyCode, KeyEvent event) {
         return processKey(KeyEvent.ACTION_UP, keyCode, event);
     }
@@ -927,7 +875,7 @@ class GeckoInputConnection
         };
     }
 
-    @Override
+    @Override // TextInputController.Delegate
     public boolean onKeyMultiple(int keyCode, int repeatCount, final KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_UNKNOWN) {
             // KEYCODE_UNKNOWN means the characters are in KeyEvent.getCharacters()
@@ -951,7 +899,7 @@ class GeckoInputConnection
         return true;
     }
 
-    @Override
+    @Override // TextInputController.Delegate
     public boolean onKeyLongPress(int keyCode, KeyEvent event) {
         View v = getView();
         switch (keyCode) {
@@ -966,25 +914,54 @@ class GeckoInputConnection
         return false;
     }
 
-    @Override
-    public boolean isIMEEnabled() {
-        // make sure this picks up PASSWORD and PLUGIN states as well
+    @Override // TextInputController.Delegate
+    public synchronized boolean isInputActive() {
+        // Make sure this picks up PASSWORD state as well.
         return mIMEState != IME_STATE_DISABLED;
     }
 
-    @Override
+    @Override // TextInputController.EditableListener
     public void notifyIME(int type) {
         switch (type) {
 
             case NOTIFY_IME_OF_FOCUS:
-            case NOTIFY_IME_OF_BLUR:
                 // Showing/hiding vkb is done in notifyIMEContext
+                mFocused = true;
                 resetInputConnection();
                 break;
 
-            case NOTIFY_IME_OPEN_VKB:
-                showSoftInput();
+            case NOTIFY_IME_OF_BLUR:
+                // Showing/hiding vkb is done in notifyIMEContext
+                mFocused = false;
                 break;
+
+            case NOTIFY_IME_OPEN_VKB:
+                showSoftInputWithToolbar(false);
+                break;
+
+            case NOTIFY_IME_TO_COMMIT_COMPOSITION: {
+                // Gecko already committed its composition. However, Android keyboards
+                // have trouble dealing with us removing the composition manually on the
+                // Java side. Therefore, we keep the composition intact on the Java side.
+                // The text content should still be in-sync on both sides.
+                //
+                // Nevertheless, if we somehow lost the composition, we must force the
+                // keyboard to reset.
+                final Editable editable = getEditable();
+                if (editable == null) {
+                    break;
+                }
+                final Object[] spans = editable.getSpans(0, editable.length(), Object.class);
+                for (final Object span : spans) {
+                    if ((editable.getSpanFlags(span) & Spanned.SPAN_COMPOSING) != 0) {
+                        // Still have composition; no need to reset.
+                        return;
+                    }
+                }
+                // No longer have composition; perform reset.
+                restartInput();
+                break;
+            }
 
             default:
                 if (DEBUG) {
@@ -994,18 +971,20 @@ class GeckoInputConnection
         }
     }
 
-    @Override
-    public void notifyIMEContext(int state, String typeHint, String modeHint, String actionHint) {
+    @Override // TextInputController.EditableListener
+    public synchronized void notifyIMEContext(int state, final String typeHint,
+                                              final String modeHint, final String actionHint,
+                                              final int flags) {
         // For some input type we will use a widget to display the ui, for those we must not
         // display the ime. We can display a widget for date and time types and, if the sdk version
         // is 11 or greater, for datetime/month/week as well.
         if (typeHint != null &&
             (typeHint.equalsIgnoreCase("date") ||
              typeHint.equalsIgnoreCase("time") ||
-             (Versions.feature11Plus && (typeHint.equalsIgnoreCase("datetime") ||
-                                         typeHint.equalsIgnoreCase("month") ||
-                                         typeHint.equalsIgnoreCase("week") ||
-                                         typeHint.equalsIgnoreCase("datetime-local"))))) {
+             typeHint.equalsIgnoreCase("datetime") ||
+             typeHint.equalsIgnoreCase("month") ||
+             typeHint.equalsIgnoreCase("week") ||
+             typeHint.equalsIgnoreCase("datetime-local"))) {
             state = IME_STATE_DISABLED;
         }
 
@@ -1022,6 +1001,7 @@ class GeckoInputConnection
         mIMETypeHint = (typeHint == null) ? "" : typeHint;
         mIMEModeHint = (modeHint == null) ? "" : modeHint;
         mIMEActionHint = (actionHint == null) ? "" : actionHint;
+        mIMEFlags = flags;
 
         // These fields are reset here and will be updated when restartInput is called below
         mUpdateRequest = null;
@@ -1035,7 +1015,15 @@ class GeckoInputConnection
             // the keyboard.
             return;
         }
-        restartInput();
+
+        // On focus, the notifyIMEContext call comes *before* the
+        // notifyIME(NOTIFY_IME_OF_FOCUS) call, but we need to call restartInput during
+        // notifyIME, so we skip restartInput here. On blur, the notifyIMEContext call
+        // comes *after* the notifyIME(NOTIFY_IME_OF_BLUR) call, and we need to call
+        // restartInput here.
+        if (mIMEState == IME_STATE_DISABLED || mFocused) {
+            restartInput();
+        }
     }
 }
 
@@ -1046,23 +1034,26 @@ final class DebugGeckoInputConnection
     private InputConnection mProxy;
     private final StringBuilder mCallLevel;
 
-    private DebugGeckoInputConnection(View targetView,
-                                      GeckoEditableClient editable) {
-        super(targetView, editable);
+    private DebugGeckoInputConnection(final GeckoSession session,
+                                      final View targetView,
+                                      final TextInputController.EditableClient editable) {
+        super(session, targetView, editable);
         mCallLevel = new StringBuilder();
     }
 
-    public static GeckoEditableListener create(View targetView,
-                                               GeckoEditableClient editable) {
+    public static TextInputController.Delegate create(
+            final GeckoSession session,
+            final View targetView,
+            final TextInputController.EditableClient editable) {
         final Class<?>[] PROXY_INTERFACES = { InputConnection.class,
-                InputConnectionListener.class,
-                GeckoEditableListener.class };
+                TextInputController.Delegate.class,
+                TextInputController.EditableListener.class };
         DebugGeckoInputConnection dgic =
-                new DebugGeckoInputConnection(targetView, editable);
-        dgic.mProxy = (InputConnection)Proxy.newProxyInstance(
+                new DebugGeckoInputConnection(session, targetView, editable);
+        dgic.mProxy = (InputConnection) Proxy.newProxyInstance(
                 GeckoInputConnection.class.getClassLoader(),
                 PROXY_INTERFACES, dgic);
-        return (GeckoEditableListener)dgic.mProxy;
+        return (TextInputController.Delegate) dgic.mProxy;
     }
 
     @Override
@@ -1076,10 +1067,10 @@ final class DebugGeckoInputConnection
                 // translate argument values to constant names
                 if ("notifyIME".equals(method.getName()) && arg == args[0]) {
                     log.append(GeckoEditable.getConstantName(
-                        GeckoEditableListener.class, "NOTIFY_IME_", arg));
+                        TextInputController.EditableListener.class, "NOTIFY_IME_", arg));
                 } else if ("notifyIMEContext".equals(method.getName()) && arg == args[0]) {
                     log.append(GeckoEditable.getConstantName(
-                        GeckoEditableListener.class, "IME_STATE_", arg));
+                        TextInputController.EditableListener.class, "IME_STATE_", arg));
                 } else {
                     GeckoEditable.debugAppend(log, arg);
                 }

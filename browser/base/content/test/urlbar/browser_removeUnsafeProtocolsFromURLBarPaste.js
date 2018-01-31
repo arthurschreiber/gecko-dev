@@ -7,6 +7,11 @@ var pairs = [
   ["javascript:", ""],
   ["javascript:1+1", "1+1"],
   ["javascript:document.domain", "document.domain"],
+  [" \u0001\u0002\u0003\u0004\u0005\u0006\u0007\u0008\u0009javascript:document.domain", "document.domain"],
+  ["java\nscript:foo", "foo"],
+  ["java\tscript:foo", "foo"],
+  ["http://\nexample.com", "http://example.com"],
+  ["http://\nexample.com\n", "http://example.com"],
   ["data:text/html,<body>hi</body>", "data:text/html,<body>hi</body>"],
   // Nested things get confusing because some things don't parse as URIs:
   ["javascript:javascript:alert('hi!')", "alert('hi!')"],
@@ -15,6 +20,20 @@ var pairs = [
   ["javascript:data:text/html,javascript:alert('hi!')", "data:text/html,javascript:alert('hi!')"],
   ["data:data:text/html,javascript:alert('hi!')", "data:data:text/html,javascript:alert('hi!')"],
 ];
+
+let supportsNullBytes = AppConstants.platform == "macosx";
+// Note that \u000d (\r) is missing here; we test it separately because it
+// makes the test sad on Windows.
+let gobbledygook = "\u000a\u000b\u000c\u000e\u000f\u0010\u0011\u0012\u0013\u0014javascript:foo";
+if (supportsNullBytes) {
+  gobbledygook = "\u0000" + gobbledygook;
+}
+pairs.push([gobbledygook, "foo"]);
+
+let supportsReturnWithoutNewline = AppConstants.platform != "win";
+if (supportsReturnWithoutNewline) {
+  pairs.push(["java\rscript:foo", "foo"]);
+}
 
 var clipboardHelper = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper);
 
@@ -31,7 +50,7 @@ function paste(input, cb) {
 }
 
 function testNext() {
-  gURLBar.value = '';
+  gURLBar.value = "";
   if (!pairs.length) {
     finish();
     return;

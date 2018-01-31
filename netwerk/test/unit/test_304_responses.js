@@ -1,8 +1,8 @@
 "use strict";
 // https://bugzilla.mozilla.org/show_bug.cgi?id=761228
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpServer.identity.primaryPort;
@@ -22,7 +22,7 @@ const existingCached304 = "existingCached304";
 function make_uri(url) {
   var ios = Cc["@mozilla.org/network/io-service;1"].
             getService(Ci.nsIIOService);
-  return ios.newURI(url, null, null);
+  return ios.newURI(url);
 }
 
 function make_channel(url) {
@@ -59,8 +59,8 @@ function finish_test(request, buffer) {
 
 function consume304(request, buffer) {
   request.QueryInterface(Components.interfaces.nsIHttpChannel);
-  do_check_eq(request.responseStatus, 304);
-  do_check_eq(request.getResponseHeader("Returned-From-Handler"), "1");
+  Assert.equal(request.responseStatus, 304);
+  Assert.equal(request.getResponseHeader("Returned-From-Handler"), "1");
   run_next_test();
 }
 

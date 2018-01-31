@@ -11,14 +11,14 @@
 const {Ci, Cc} = require("chrome");
 const {CanvasFrameAnonymousContentHelper, createNode} = require("./utils/markup");
 const Services = require("Services");
-const EventEmitter = require("devtools/shared/event-emitter");
-const {rgbToHsl, rgbToColorName} = require("devtools/shared/css-color").colorUtils;
+const EventEmitter = require("devtools/shared/old-event-emitter");
+const {rgbToHsl, rgbToColorName} = require("devtools/shared/css/color").colorUtils;
 const {getCurrentZoom, getFrameOffsets} = require("devtools/shared/layout/utils");
 
 loader.lazyGetter(this, "clipboardHelper",
   () => Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper));
 loader.lazyGetter(this, "l10n",
-  () => Services.strings.createBundle("chrome://devtools/locale/eyedropper.properties"));
+  () => Services.strings.createBundle("chrome://devtools-shared/locale/eyedropper.properties"));
 
 const ZOOM_LEVEL_PREF = "devtools.eyedropper.zoom";
 const FORMAT_PREF = "devtools.defaultColorUnit";
@@ -144,7 +144,7 @@ EyeDropper.prototype = {
     // Start listening for user events.
     let {pageListenerTarget} = this.highlighterEnv;
     pageListenerTarget.addEventListener("mousemove", this);
-    pageListenerTarget.addEventListener("click", this);
+    pageListenerTarget.addEventListener("click", this, true);
     pageListenerTarget.addEventListener("keydown", this);
     pageListenerTarget.addEventListener("DOMMouseScroll", this);
     pageListenerTarget.addEventListener("FullZoomChange", this);
@@ -178,11 +178,14 @@ EyeDropper.prototype = {
     this.pageImage = null;
 
     let {pageListenerTarget} = this.highlighterEnv;
-    pageListenerTarget.removeEventListener("mousemove", this);
-    pageListenerTarget.removeEventListener("click", this);
-    pageListenerTarget.removeEventListener("keydown", this);
-    pageListenerTarget.removeEventListener("DOMMouseScroll", this);
-    pageListenerTarget.removeEventListener("FullZoomChange", this);
+
+    if (pageListenerTarget) {
+      pageListenerTarget.removeEventListener("mousemove", this);
+      pageListenerTarget.removeEventListener("click", this, true);
+      pageListenerTarget.removeEventListener("keydown", this);
+      pageListenerTarget.removeEventListener("DOMMouseScroll", this);
+      pageListenerTarget.removeEventListener("FullZoomChange", this);
+    }
 
     this.getElement("root").setAttribute("hidden", "true");
     this.getElement("root").removeAttribute("drawn");
@@ -380,7 +383,7 @@ EyeDropper.prototype = {
     }
 
     this.emit("selected", toColorString(this.centerColor, this.format));
-    onColorSelected.then(() => this.hide(), e => console.error(e));
+    onColorSelected.then(() => this.hide(), console.error);
   },
 
   /**
@@ -507,12 +510,7 @@ function toColorString(rgb, format) {
       let [h, s, l] = rgbToHsl(rgb);
       return "hsl(" + h + ", " + s + "%, " + l + "%)";
     case "name":
-      let str;
-      try {
-        str = rgbToColorName(r, g, b);
-      } catch (e) {
-        str = hexString(rgb);
-      }
+      let str = rgbToColorName(r, g, b) || hexString(rgb);
       return str;
     default:
       return hexString(rgb);
@@ -526,7 +524,7 @@ function toColorString(rgb, format) {
  */
 function hexString([r, g, b]) {
   let val = (1 << 24) + (r << 16) + (g << 8) + (b << 0);
-  return "#" + val.toString(16).substr(-6).toUpperCase();
+  return "#" + val.toString(16).substr(-6);
 }
 
 function cap(value, min, max) {

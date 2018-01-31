@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,7 +39,7 @@ nsMathMLmpaddedFrame::~nsMathMLmpaddedFrame()
 }
 
 NS_IMETHODIMP
-nsMathMLmpaddedFrame::InheritAutomaticData(nsIFrame* aParent) 
+nsMathMLmpaddedFrame::InheritAutomaticData(nsIFrame* aParent)
 {
   // let the base class get the default from our parent
   nsMathMLContainerFrame::InheritAutomaticData(aParent);
@@ -65,16 +66,16 @@ nsMathMLmpaddedFrame::ProcessAttributes()
 
   // width
   mWidthSign = NS_MATHML_SIGN_INVALID;
-  mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::width, value);
+  mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::width, value);
   if (!value.IsEmpty()) {
-    if (!ParseAttribute(value, mWidthSign, mWidth, mWidthPseudoUnit)) {      
+    if (!ParseAttribute(value, mWidthSign, mWidth, mWidthPseudoUnit)) {
       ReportParseError(nsGkAtoms::width->GetUTF16String(), value.get());
     }
   }
 
   // height
   mHeightSign = NS_MATHML_SIGN_INVALID;
-  mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::height, value);
+  mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::height, value);
   if (!value.IsEmpty()) {
     if (!ParseAttribute(value, mHeightSign, mHeight, mHeightPseudoUnit)) {
       ReportParseError(nsGkAtoms::height->GetUTF16String(), value.get());
@@ -83,7 +84,7 @@ nsMathMLmpaddedFrame::ProcessAttributes()
 
   // depth
   mDepthSign = NS_MATHML_SIGN_INVALID;
-  mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::depth_, value);
+  mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::depth_, value);
   if (!value.IsEmpty()) {
     if (!ParseAttribute(value, mDepthSign, mDepth, mDepthPseudoUnit)) {
       ReportParseError(nsGkAtoms::depth_->GetUTF16String(), value.get());
@@ -92,9 +93,9 @@ nsMathMLmpaddedFrame::ProcessAttributes()
 
   // lspace
   mLeadingSpaceSign = NS_MATHML_SIGN_INVALID;
-  mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::lspace_, value);
+  mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::lspace_, value);
   if (!value.IsEmpty()) {
-    if (!ParseAttribute(value, mLeadingSpaceSign, mLeadingSpace, 
+    if (!ParseAttribute(value, mLeadingSpaceSign, mLeadingSpace,
                         mLeadingSpacePseudoUnit)) {
       ReportParseError(nsGkAtoms::lspace_->GetUTF16String(), value.get());
     }
@@ -102,14 +103,14 @@ nsMathMLmpaddedFrame::ProcessAttributes()
 
   // voffset
   mVerticalOffsetSign = NS_MATHML_SIGN_INVALID;
-  mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::voffset_, value);
+  mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::voffset_, value);
   if (!value.IsEmpty()) {
     if (!ParseAttribute(value, mVerticalOffsetSign, mVerticalOffset,
                         mVerticalOffsetPseudoUnit)) {
       ReportParseError(nsGkAtoms::voffset_->GetUTF16String(), value.get());
     }
   }
-  
+
 }
 
 // parse an input string in the following format (see bug 148326 for testcases):
@@ -191,7 +192,7 @@ nsMathMLmpaddedFrame::ParseAttribute(nsString&   aString,
 
   if (unit.IsEmpty()) {
     if (gotPercent) {
-      // case ["+"|"-"] unsigned-number "%" 
+      // case ["+"|"-"] unsigned-number "%"
       aCSSValue.SetPercentValue(floatValue / 100.0f);
       aPseudoUnit = NS_MATHML_PSEUDO_UNIT_ITSELF;
       return true;
@@ -225,7 +226,7 @@ nsMathMLmpaddedFrame::ParseAttribute(nsString&   aString,
     // We are not supposed to have a unitless, percent, negative or namedspace
     // value here.
     number.Append(unit); // leave the sign out if it was there
-    if (nsMathMLElement::ParseNumericValue(number, aCSSValue, 
+    if (nsMathMLElement::ParseNumericValue(number, aCSSValue,
                                            nsMathMLElement::
                                            PARSE_SUPPRESS_WARNINGS, nullptr))
       return true;
@@ -278,7 +279,7 @@ nsMathMLmpaddedFrame::UpdateValue(int32_t                  aSign,
              break;
 
         default:
-          // if we ever reach here, it would mean something is wrong 
+          // if we ever reach here, it would mean something is wrong
           // somewhere with the setup and/or the caller
           NS_ERROR("Unexpected Pseudo Unit");
           return;
@@ -308,6 +309,8 @@ nsMathMLmpaddedFrame::Reflow(nsPresContext*          aPresContext,
                              const ReflowInput& aReflowInput,
                              nsReflowStatus&          aStatus)
 {
+  MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
+
   mPresentationData.flags &= ~NS_MATHML_ERROR;
   ProcessAttributes();
 
@@ -315,7 +318,7 @@ nsMathMLmpaddedFrame::Reflow(nsPresContext*          aPresContext,
   // Let the base class format our content like an inferred mrow
   nsMathMLContainerFrame::Reflow(aPresContext, aDesiredSize,
                                  aReflowInput, aStatus);
-  //NS_ASSERTION(NS_FRAME_IS_COMPLETE(aStatus), "bad status");
+  //NS_ASSERTION(aStatus.IsComplete(), "bad status");
 }
 
 /* virtual */ nsresult
@@ -347,7 +350,7 @@ nsMathMLmpaddedFrame::Place(DrawTarget*          aDrawTarget,
   // linebreaking occurs within the mpadded element."
   //
   // (http://www.w3.org/TR/MathML/chapter3.html#presm.mpadded)
-  // 
+  //
   // "In those discussions, the terms leading and trailing are used to specify
   // a side of an object when which side to use depends on the directionality;
   // ie. leading means left in LTR but right in RTL."
@@ -421,7 +424,7 @@ nsMathMLmpaddedFrame::Place(DrawTarget*          aDrawTarget,
 
   nscoord dx = (StyleVisibility()->mDirection ?
                 width - initialWidth - lspace : lspace);
-    
+
   aDesiredSize.SetBlockStartAscent(height);
   aDesiredSize.Width() = mBoundingMetrics.width;
   aDesiredSize.Height() = depth + aDesiredSize.BlockStartAscent();

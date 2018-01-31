@@ -6,6 +6,8 @@
 #ifndef nsNSSCertificate_h
 #define nsNSSCertificate_h
 
+#include <functional>
+
 #include "ScopedNSSTypes.h"
 #include "certt.h"
 #include "nsCOMPtr.h"
@@ -17,10 +19,10 @@
 #include "nsIX509CertDB.h"
 #include "nsIX509CertList.h"
 #include "nsNSSShutDown.h"
+#include "nsStringFwd.h"
 
 namespace mozilla { namespace pkix { class DERArray; } }
 
-class nsAutoString;
 class nsINSSComponent;
 class nsIASN1Sequence;
 
@@ -35,23 +37,10 @@ public:
   NS_DECL_NSISERIALIZABLE
   NS_DECL_NSICLASSINFO
 
-  friend class nsNSSCertificateFakeTransport;
-
-  explicit nsNSSCertificate(CERTCertificate* cert, SECOidTag* evOidPolicy = nullptr);
+  explicit nsNSSCertificate(CERTCertificate* cert);
   nsNSSCertificate();
-  nsresult FormatUIStrings(const nsAutoString& nickname,
-                           nsAutoString& nickWithSerial,
-                           nsAutoString& details);
-  static nsNSSCertificate* Create(CERTCertificate*cert = nullptr,
-                                  SECOidTag* evOidPolicy = nullptr);
+  static nsNSSCertificate* Create(CERTCertificate* cert = nullptr);
   static nsNSSCertificate* ConstructFromDER(char* certDER, int derLen);
-  nsresult GetIsExtendedValidation(bool* aIsEV);
-
-  enum EVStatus {
-    ev_status_invalid = 0,
-    ev_status_valid = 1,
-    ev_status_unknown = 2
-  };
 
   // This is a separate static method so nsNSSComponent can use it during NSS
   // initialization. Other code should probably not use it.
@@ -65,19 +54,13 @@ private:
   bool             mPermDelete;
   uint32_t         mCertType;
   nsresult CreateASN1Struct(nsIASN1Object** aRetVal);
-  nsresult CreateTBSCertificateASN1Struct(nsIASN1Sequence** retSequence,
-                                          nsINSSComponent* nssComponent);
+  nsresult CreateTBSCertificateASN1Struct(nsIASN1Sequence** retSequence);
   nsresult GetSortableDate(PRTime aTime, nsAString& _aSortableDate);
   virtual void virtualDestroyNSSReference() override;
   void destructorSafeDestroyNSSReference();
   bool InitFromDER(char* certDER, int derLen);  // return false on failure
 
   nsresult GetCertificateHash(nsAString& aFingerprint, SECOidTag aHashAlg);
-
-  EVStatus mCachedEVStatus;
-  SECOidTag mCachedEVOidTag;
-  nsresult hasValidEVOidTag(SECOidTag& resultOidTag, bool& validEV);
-  nsresult getValidEVOidTag(SECOidTag& resultOidTag, bool& validEV);
 };
 
 namespace mozilla {
@@ -87,6 +70,9 @@ SECStatus ConstructCERTCertListFromReversedDERArray(
             /*out*/ mozilla::UniqueCERTCertList& certList);
 
 } // namespace mozilla
+
+typedef const std::function<nsresult(nsCOMPtr<nsIX509Cert>& aCert,
+                bool aHasMore, /* out */ bool& aContinue)> ForEachCertOperation;
 
 class nsNSSCertList: public nsIX509CertList,
                      public nsISerializable,
@@ -106,6 +92,26 @@ public:
   static mozilla::UniqueCERTCertList DupCertList(
     const mozilla::UniqueCERTCertList& certList,
     const nsNSSShutDownPreventionLock& proofOfLock);
+
+  // For each certificate in this CertList, run the operation aOperation.
+  // To end early with NS_OK, set the `aContinue` argument false before
+  // returning. To end early with an error, return anything except NS_OK.
+  // The `aHasMore` argument is false when this is the last certificate in the
+  // chain.
+  nsresult ForEachCertificateInChain(ForEachCertOperation& aOperation);
+
+  // Split a certificate chain into the root, intermediates (if any), and end
+  // entity. This method does so blindly, assuming that the current list object
+  // is ordered [end entity, intermediates..., root]. If that isn't true, this
+  // method will return the certificates at the two ends without regard to the
+  // actual chain of trust. Callers are encouraged to check, if there's any
+  // doubt.
+  // Will return error if used on self-signed or empty chains.
+  // This method requires that all arguments be empty, notably the list
+  // `aIntermediates` must be empty.
+  nsresult SegmentCertificateChain(/* out */ nsCOMPtr<nsIX509Cert>& aRoot,
+                           /* out */ nsCOMPtr<nsIX509CertList>& aIntermediates,
+                           /* out */ nsCOMPtr<nsIX509Cert>& aEndEntity);
 
 private:
    virtual ~nsNSSCertList();

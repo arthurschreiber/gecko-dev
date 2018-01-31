@@ -1,8 +1,8 @@
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function run_test() {
-  var base = NetUtil.newURI("http://www.example.com", null, null);
-  var about1 = NetUtil.newURI("about:blank", null, null);
+  var base = NetUtil.newURI("http://www.example.com");
+  var about1 = NetUtil.newURI("about:blank");
   var about2 = NetUtil.newURI("about:blank", null, base);
 
   var chan1 = NetUtil.newChannel({
@@ -21,12 +21,15 @@ function run_test() {
     propVal = chan1.getPropertyAsInterface("baseURI",
                                            Components.interfaces.nsIURI);
     haveProp = true;
-  } catch (e if e.result == Components.results.NS_ERROR_NOT_AVAILABLE) {
+  } catch (e) {
+    if (e.result != Components.results.NS_ERROR_NOT_AVAILABLE) {
+      throw e;
+    }
     // Property shouldn't be there.
   }
-  do_check_eq(propVal, null);
-  do_check_eq(haveProp, false);
-  do_check_eq(chan2.getPropertyAsInterface("baseURI",
-                                           Components.interfaces.nsIURI),
-              base);
+  Assert.equal(propVal, null);
+  Assert.equal(haveProp, false);
+  Assert.equal(chan2.getPropertyAsInterface("baseURI",
+                                            Components.interfaces.nsIURI),
+               base);
 }

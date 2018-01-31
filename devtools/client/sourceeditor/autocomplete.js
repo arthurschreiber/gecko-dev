@@ -5,8 +5,8 @@
 
 "use strict";
 
+const AutocompletePopup = require("devtools/client/shared/autocomplete-popup");
 const CSSCompleter = require("devtools/client/sourceeditor/css-autocompleter");
-const { AutocompletePopup } = require("devtools/client/shared/autocomplete-popup");
 const {KeyCodes} = require("devtools/client/shared/keycodes");
 
 const CM_TERN_SCRIPTS = [
@@ -130,7 +130,7 @@ function initializeAutoCompletion(ctx, options = {}) {
 
   // Give each popup a new name to avoid sharing the elements.
 
-  let popup = new AutocompletePopup({ doc: win.parent.document }, {
+  let popup = new AutocompletePopup(win.parent.document, {
     position: "bottom",
     theme: "auto",
     autoSelect: true,
@@ -237,7 +237,7 @@ function autoComplete({ ed, cm }) {
     });
     popup.openPopup(cursorElement, -1 * left, 0);
     autocompleteOpts.suggestionInsertedOnce = false;
-  }).then(null, e => console.error(e));
+  }).catch(console.error);
 }
 
 /**

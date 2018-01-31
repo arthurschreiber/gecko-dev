@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 var pass = 0;
@@ -29,7 +29,7 @@ Listener.prototype = {
   },
 
   onStartRequest: function(request, ctx) {
-    do_check_eq(request.status, Cr.NS_OK);
+    Assert.equal(request.status, Cr.NS_OK);
     this._buffer = "";
   },
 
@@ -48,7 +48,7 @@ Listener.prototype = {
 
   onStopRequest: function(request, ctx, status) {
     if (pass == 0) {
-      do_check_eq(this._buffer.length, responseLen);
+      Assert.equal(this._buffer.length, responseLen);
       pass++;
 
       var channel = setupChannel();
@@ -70,6 +70,9 @@ function run_test() {
   cePref = prefs.getCharPref("network.http.accept-encoding");
   prefs.setCharPref("network.http.accept-encoding", "gzip, deflate, br");
 
+  // Disable rcwn to make cache behavior deterministic.
+  prefs.setBoolPref("network.http.rcwn.enabled", false);
+
   httpserver.registerPathHandler(testUrl, handler);
   httpserver.start(-1);
 
@@ -80,7 +83,7 @@ function run_test() {
 }
 
 function handler(metadata, response) {
-  do_check_eq(pass, 0); // the second response must be server from the cache
+  Assert.equal(pass, 0); // the second response must be server from the cache
 
   response.setStatusLine(metadata.httpVersion, 200, "OK");
   response.setHeader("Content-Type", "text/plain", false);

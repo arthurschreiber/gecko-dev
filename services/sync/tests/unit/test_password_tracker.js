@@ -1,26 +1,27 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://services-sync/engines/passwords.js");
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://services-sync/constants.js");
+ChromeUtils.import("resource://services-sync/engines/passwords.js");
+ChromeUtils.import("resource://services-sync/engines.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
-Service.engineManager.register(PasswordEngine);
-var engine = Service.engineManager.get("passwords");
-var store  = engine._store;
-var tracker = engine._tracker;
+let engine;
+let store;
+let tracker;
 
-// Don't do asynchronous writes.
-tracker.persistChangedIDs = false;
+add_task(async function setup() {
+  await Service.engineManager.register(PasswordEngine);
+  engine = Service.engineManager.get("passwords");
+  store  = engine._store;
+  tracker = engine._tracker;
 
-function run_test() {
-  initTestLogging("Trace");
-  run_next_test();
-}
+  // Don't do asynchronous writes.
+  tracker.persistChangedIDs = false;
+});
 
-add_test(function test_tracking() {
+add_task(async function test_tracking() {
   let recordNum = 0;
 
   _("Verify we've got an empty tracker to work with.");
@@ -44,19 +45,19 @@ add_test(function test_tracking() {
     _("Create a password record. Won't show because we haven't started tracking yet");
     createPassword();
     do_check_empty(tracker.changedIDs);
-    do_check_eq(tracker.score, 0);
+    Assert.equal(tracker.score, 0);
 
     _("Tell the tracker to start tracking changes.");
     Svc.Obs.notify("weave:engine:start-tracking");
     createPassword();
     do_check_attribute_count(tracker.changedIDs, 1);
-    do_check_eq(tracker.score, SCORE_INCREMENT_XLARGE);
+    Assert.equal(tracker.score, SCORE_INCREMENT_XLARGE);
 
     _("Notifying twice won't do any harm.");
     Svc.Obs.notify("weave:engine:start-tracking");
     createPassword();
     do_check_attribute_count(tracker.changedIDs, 2);
-    do_check_eq(tracker.score, SCORE_INCREMENT_XLARGE * 2);
+    Assert.equal(tracker.score, SCORE_INCREMENT_XLARGE * 2);
 
     _("Let's stop tracking again.");
     tracker.clearChangedIDs();
@@ -64,38 +65,36 @@ add_test(function test_tracking() {
     Svc.Obs.notify("weave:engine:stop-tracking");
     createPassword();
     do_check_empty(tracker.changedIDs);
-    do_check_eq(tracker.score, 0);
+    Assert.equal(tracker.score, 0);
 
     _("Notifying twice won't do any harm.");
     Svc.Obs.notify("weave:engine:stop-tracking");
     createPassword();
     do_check_empty(tracker.changedIDs);
-    do_check_eq(tracker.score, 0);
+    Assert.equal(tracker.score, 0);
 
   } finally {
     _("Clean up.");
-    store.wipe();
+    await store.wipe();
     tracker.clearChangedIDs();
     tracker.resetScore();
     Svc.Obs.notify("weave:engine:stop-tracking");
-    run_next_test();
   }
 });
 
-add_test(function test_onWipe() {
+add_task(async function test_onWipe() {
   _("Verify we've got an empty tracker to work with.");
   do_check_empty(tracker.changedIDs);
-  do_check_eq(tracker.score, 0);
+  Assert.equal(tracker.score, 0);
 
   try {
     _("A store wipe should increment the score");
     Svc.Obs.notify("weave:engine:start-tracking");
-    store.wipe();
+    await store.wipe();
 
-    do_check_eq(tracker.score, SCORE_INCREMENT_XLARGE);
+    Assert.equal(tracker.score, SCORE_INCREMENT_XLARGE);
   } finally {
     tracker.resetScore();
     Svc.Obs.notify("weave:engine:stop-tracking");
-    run_next_test();
   }
 });

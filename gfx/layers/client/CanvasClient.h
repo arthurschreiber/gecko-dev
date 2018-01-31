@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -15,8 +16,6 @@
 #include "mozilla/layers/TextureClient.h"  // for TextureClient, etc
 #include "mozilla/layers/PersistentBufferProvider.h"
 
-// Fix X11 header brain damage that conflicts with MaybeOneOf::None
-#undef None
 #include "mozilla/MaybeOneOf.h"
 
 #include "mozilla/mozalloc.h"           // for operator delete
@@ -28,7 +27,7 @@ namespace mozilla {
 namespace layers {
 
 class AsyncCanvasRenderer;
-class ClientCanvasLayer;
+class ShareableCanvasRenderer;
 class CompositableForwarder;
 class ShadowableLayer;
 class SharedSurfaceTextureClient;
@@ -39,7 +38,7 @@ class SharedSurfaceTextureClient;
 class CanvasClient : public CompositableClient
 {
 public:
-  typedef MaybeOneOf<ClientCanvasLayer*, AsyncCanvasRenderer*> Renderer;
+  typedef MaybeOneOf<ShareableCanvasRenderer*, AsyncCanvasRenderer*> Renderer;
 
   /**
    * Creates, configures, and returns a new canvas client. If necessary, a
@@ -67,7 +66,7 @@ public:
 
   virtual void Clear() {};
 
-  virtual void Update(gfx::IntSize aSize, ClientCanvasLayer* aLayer) = 0;
+  virtual void Update(gfx::IntSize aSize, ShareableCanvasRenderer* aCanvasRenderer) = 0;
 
   virtual bool AddTextureClient(TextureClient* aTexture) override
   {
@@ -102,10 +101,10 @@ public:
 
   virtual void Clear() override
   {
-    mBackBuffer = mFrontBuffer = nullptr;
+    mBackBuffer = mFrontBuffer = mBufferProviderTexture = nullptr;
   }
 
-  virtual void Update(gfx::IntSize aSize, ClientCanvasLayer* aLayer) override;
+  virtual void Update(gfx::IntSize aSize, ShareableCanvasRenderer* aCanvasRenderer) override;
 
   virtual void UpdateFromTexture(TextureClient* aBuffer) override;
 
@@ -124,7 +123,7 @@ private:
     CreateTextureClientForCanvas(gfx::SurfaceFormat aFormat,
                                  gfx::IntSize aSize,
                                  TextureFlags aFlags,
-                                 ClientCanvasLayer* aLayer);
+                                 ShareableCanvasRenderer* aCanvasRenderer);
 
   RefPtr<TextureClient> mBackBuffer;
   RefPtr<TextureClient> mFrontBuffer;
@@ -163,7 +162,7 @@ public:
   }
 
   virtual void Update(gfx::IntSize aSize,
-                      ClientCanvasLayer* aLayer) override;
+                      ShareableCanvasRenderer* aCanvasRenderer) override;
   void UpdateRenderer(gfx::IntSize aSize, Renderer& aRenderer);
 
   virtual void UpdateAsync(AsyncCanvasRenderer* aRenderer) override;
@@ -184,7 +183,6 @@ public:
   CanvasClientBridge(CompositableForwarder* aLayerForwarder,
                      TextureFlags aFlags)
     : CanvasClient(aLayerForwarder, aFlags)
-    , mAsyncID(0)
     , mLayer(nullptr)
   {
   }
@@ -194,7 +192,7 @@ public:
     return TextureInfo(CompositableType::IMAGE);
   }
 
-  virtual void Update(gfx::IntSize aSize, ClientCanvasLayer* aLayer) override
+  virtual void Update(gfx::IntSize aSize, ShareableCanvasRenderer* aCanvasRenderer) override
   {
   }
 
@@ -206,7 +204,7 @@ public:
   }
 
 protected:
-  uint64_t mAsyncID;
+  CompositableHandle mAsyncHandle;
   ShadowableLayer* mLayer;
 };
 

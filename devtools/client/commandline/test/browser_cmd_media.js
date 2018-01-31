@@ -43,11 +43,27 @@ var tests = {
         exec: {
           output: ""
         },
-        post: function () {
-          let body = options.window.document.body;
-          let style = options.window.getComputedStyle(body);
-          is(style.backgroundColor, "rgb(255, 255, 0)", "media correctly emulated");
-        }
+        post: Task.async(function* () {
+          yield ContentTask.spawn(options.browser, {}, function* () {
+            let color = content.getComputedStyle(content.document.body).backgroundColor;
+            is(color, "rgb(255, 255, 0)", "media correctly emulated");
+          });
+        })
+      }
+    ]);
+  },
+
+  testEmulateBadMedia: function (options) {
+    return helpers.audit(options, [
+      {
+        setup: "media emulate nonsense",
+        check: {
+          input:  "media emulate nonsense",
+          markup: "VVVVVVVVVVVVVVEEEEEEEE",
+          status: "ERROR",
+        },
+        output: "Can't use `nonsense`",
+        error: true
       }
     ]);
   },
@@ -63,11 +79,12 @@ var tests = {
         exec: {
           output: ""
         },
-        post: function () {
-          let body = options.window.document.body;
-          let style = options.window.getComputedStyle(body);
-          is(style.backgroundColor, "rgb(255, 255, 255)", "media reset");
-        }
+        post: Task.async(function* () {
+          yield ContentTask.spawn(options.browser, {}, function* () {
+            let color = content.getComputedStyle(content.document.body).backgroundColor;
+            is(color, "rgb(255, 255, 255)", "media reset");
+          });
+        })
       }
     ]);
   }

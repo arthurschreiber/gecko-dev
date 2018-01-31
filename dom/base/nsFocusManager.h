@@ -8,6 +8,7 @@
 #define nsFocusManager_h___
 
 #include "nsCycleCollectionParticipant.h"
+#include "nsIContent.h"
 #include "nsIDocument.h"
 #include "nsIFocusManager.h"
 #include "nsIObserver.h"
@@ -68,6 +69,11 @@ public:
   nsIContent* GetFocusedContent() { return mFocusedContent; }
 
   /**
+   * Returns true if aContent currently has focus.
+   */
+  bool IsFocused(nsIContent* aContent);
+
+  /**
    * Return a focused window. Version of nsIFocusManager::GetFocusedWindow.
    */
   nsPIDOMWindowOuter* GetFocusedWindow() const { return mFocusedWindow; }
@@ -93,6 +99,26 @@ public:
     return handlingDocument.forget();
   }
 
+  void NeedsFlushBeforeEventHandling(nsIContent* aContent)
+  {
+    if (mFocusedContent == aContent) {
+      mEventHandlingNeedsFlush = true;
+    }
+  }
+
+  bool CanSkipFocus(nsIContent* aContent);
+
+  void FlushBeforeEventHandlingIfNeeded(nsIContent* aContent)
+  {
+    if (mEventHandlingNeedsFlush) {
+      nsCOMPtr<nsIDocument> doc = aContent->GetComposedDoc();
+      if (doc) {
+        mEventHandlingNeedsFlush = false;
+        doc->FlushPendingNotifications(mozilla::FlushType::Layout);
+      }
+    }
+  }
+
   /**
    * Update the caret with current mode (whether in caret browsing mode or not).
    */
@@ -108,7 +134,17 @@ public:
    *
    * aWindow and aFocusedWindow must both be non-null.
    */
-  static nsIContent* GetFocusedDescendant(nsPIDOMWindowOuter* aWindow, bool aDeep,
+  enum SearchRange
+  {
+    // Return focused content in aWindow.  So, aFocusedWindow is always aWindow.
+    eOnlyCurrentWindow,
+    // Return focused content in aWindow or one of all sub windows.
+    eIncludeAllDescendants,
+    // Return focused content in aWindow or one of visible sub windows.
+    eIncludeVisibleDescendants,
+  };
+  static nsIContent* GetFocusedDescendant(nsPIDOMWindowOuter* aWindow,
+                                          SearchRange aSearchRange,
                                           nsPIDOMWindowOuter** aFocusedWindow);
 
   /**
@@ -280,7 +316,8 @@ protected:
              nsIContent* aContentLostFocus = nullptr);
 
   /**
-   * Fires a focus or blur event at aTarget.
+   * Send a focus or blur event at aTarget. It may be added to the delayed
+   * event queue if the document is suppressing events.
    *
    * aEventMessage should be either eFocus or eBlur.
    * For blur events, aFocusMethod should normally be non-zero.
@@ -295,6 +332,45 @@ protected:
                             bool aWindowRaised,
                             bool aIsRefocus = false,
                             mozilla::dom::EventTarget* aRelatedTarget = nullptr);
+
+  /**
+   * Fire a focus or blur event at aTarget.
+   *
+   * aEventMessage should be either eFocus or eBlur.
+   * For blur events, aFocusMethod should normally be non-zero.
+   *
+   * aWindowRaised should only be true if called from WindowRaised.
+   */
+  void FireFocusOrBlurEvent(mozilla::EventMessage aEventMessage,
+                            nsIPresShell* aPresShell,
+                            nsISupports* aTarget,
+                            bool aWindowRaised,
+                            bool aIsRefocus = false,
+                            mozilla::dom::EventTarget* aRelatedTarget = nullptr);
+
+  /**
+   *  Fire a focusin or focusout event
+   *
+   *  aEventMessage should be either eFocusIn or eFocusOut.
+   *
+   *  aTarget is the content the event will fire on (the object that gained
+   *  focus for focusin, the object blurred for focusout).
+   *
+   *  aCurrentFocusedWindow is the window focused before the focus/blur event
+   *  was fired.
+   *
+   *  aCurrentFocusedContent is the content focused before the focus/blur event
+   *  was fired.
+   *
+   *  aRelatedTarget is the content related to the event (the object
+   *  losing focus for focusin, the object getting focus for focusout).
+   */
+  void FireFocusInOrOutEvent(mozilla::EventMessage aEventMessage,
+                             nsIPresShell* aPresShell,
+                             nsISupports* aTarget,
+                             nsPIDOMWindowOuter* aCurrentFocusedWindow,
+                             nsIContent* aCurrentFocusedContent,
+                             mozilla::dom::EventTarget* aRelatedTarget = nullptr);
 
   /**
    * Scrolls aContent into view unless the FLAG_NOSCROLL flag is set.
@@ -362,6 +438,77 @@ protected:
                                        nsIContent** aNextContent);
 
   /**
+   * Returns scope owner of aContent.
+   * A scope owner is either a document root, shadow host, or slot.
+   */
+  nsIContent* FindOwner(nsIContent* aContent);
+
+  /**
+   * Returns true if aContent is a shadow host or slot
+   */
+  bool IsHostOrSlot(nsIContent* aContent);
+
+  /**
+   * Retrieve the next tabbable element in scope owned by aOwner, using
+   * focusability and tabindex to determine the tab order.
+   *
+   * aOwner is the owner of scope to search in.
+   *
+   * aStartContent is the starting point for this call of this method.
+   *
+   * aForward should be true for forward navigation or false for backward
+   * navigation.
+   *
+   * aCurrentTabIndex is the current tabindex.
+   *
+   * aIgnoreTabIndex to ignore the current tabindex and find the element
+   * irrespective or the tab index.
+   *
+   * aSkipOwner to skip owner while searching. The flag is set when caller is
+   * |GetNextTabbableContent| in order to let caller handle owner.
+   *
+   * NOTE:
+   *   Consider the method searches downwards in flattened subtree
+   *   rooted at aOwner.
+   */
+  nsIContent* GetNextTabbableContentInScope(nsIContent* aOwner,
+                                            nsIContent* aStartContent,
+                                            bool aForward,
+                                            int32_t aCurrentTabIndex,
+                                            bool aIgnoreTabIndex,
+                                            bool aSkipOwner);
+
+  /**
+   * Retrieve the next tabbable element in scope including aStartContent
+   * and the scope's ancestor scopes, using focusability and tabindex to
+   * determine the tab order.
+   *
+   * aStartContent an in/out paremeter. It as input is the starting point
+   * for this call of this method; as output it is the shadow host in
+   * light DOM if the next tabbable element is not found in shadow DOM,
+   * in order to continue searching in light DOM.
+   *
+   * aForward should be true for forward navigation or false for backward
+   * navigation.
+   *
+   * aCurrentTabIndex returns tab index of shadow host in light DOM if the
+   * next tabbable element is not found in shadow DOM, in order to continue
+   * searching in light DOM.
+   *
+   * aIgnoreTabIndex to ignore the current tabindex and find the element
+   * irrespective or the tab index.
+   *
+   * NOTE:
+   *   Consider the method searches upwards in all shadow host- or slot-rooted
+   *   flattened subtrees that contains aStartContent as non-root, except
+   *   the flattened subtree rooted at shadow host in light DOM.
+   */
+  nsIContent* GetNextTabbableContentInAncestorScopes(nsIContent** aStartContent,
+                                                     bool aForward,
+                                                     int32_t* aCurrentTabIndex,
+                                                     bool aIgnoreTabIndex);
+
+  /**
    * Retrieve the next tabbable element within a document, using focusability
    * and tabindex to determine the tab order. The element is returned in
    * aResultContent.
@@ -413,7 +560,7 @@ protected:
    */
   nsIContent* GetNextTabbableMapArea(bool aForward,
                                      int32_t aCurrentTabIndex,
-                                     nsIContent* aImageContent,
+                                     mozilla::dom::Element* aImageContent,
                                      nsIContent* aStartContent);
 
   /**
@@ -430,7 +577,7 @@ protected:
    * aRootContent. For content documents, this will be aRootContent itself, but
    * for chrome documents, this will locate the next focusable content.
    */
-  nsresult FocusFirst(nsIContent* aRootContent, nsIContent** aNextContent);
+  nsresult FocusFirst(mozilla::dom::Element* aRootContent, nsIContent** aNextContent);
 
   /**
    * Retrieves and returns the root node from aDocument to be focused. Will
@@ -441,21 +588,21 @@ protected:
    * - if aCheckVisibility is true and the aWindow is not visible.
    * - if aDocument is a frameset document.
    */
-  nsIContent* GetRootForFocus(nsPIDOMWindowOuter* aWindow,
-                              nsIDocument* aDocument,
-                              bool aForDocumentNavigation,
-                              bool aCheckVisibility);
+  mozilla::dom::Element* GetRootForFocus(nsPIDOMWindowOuter* aWindow,
+                                         nsIDocument* aDocument,
+                                         bool aForDocumentNavigation,
+                                         bool aCheckVisibility);
 
   /**
    * Retrieves and returns the root node as with GetRootForFocus but only if
    * aContent is a frame with a valid child document.
    */
-  nsIContent* GetRootForChildDocument(nsIContent* aContent);
+  mozilla::dom::Element* GetRootForChildDocument(nsIContent* aContent);
 
   /**
    * Retreives a focusable element within the current selection of aWindow.
    * Currently, this only detects links.
-   *  
+   *
    * This is used when MoveFocus is called with a type of MOVEFOCUS_CARET,
    * which is used, for example, to focus links as the caret is moved over
    * them.
@@ -475,6 +622,7 @@ private:
   // focus rings: in the losing focus case that information could be
   // wrong..
   static void NotifyFocusStateChange(nsIContent* aContent,
+                                     nsIContent* aContentToFocus,
                                      bool aWindowShouldShowFocusRing,
                                      bool aGettingFocus);
 
@@ -515,6 +663,10 @@ private:
   // and the caller can access the document node, the caller should succeed in
   // moving focus.
   nsCOMPtr<nsIDocument> mMouseButtonEventHandlingDocument;
+
+  // If set to true, layout of the document of the event target should be
+  // flushed before handling focus depending events.
+  bool mEventHandlingNeedsFlush;
 
   static bool sTestMode;
 

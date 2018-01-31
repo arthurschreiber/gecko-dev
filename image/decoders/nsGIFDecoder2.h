@@ -29,7 +29,7 @@ protected:
                        IResumable* aOnResume) override;
   nsresult FinishInternal() override;
 
-  Maybe<Telemetry::ID> SpeedHistogram() const override;
+  Maybe<Telemetry::HistogramID> SpeedHistogram() const override;
 
 private:
   friend class DecoderFactory;
@@ -71,7 +71,10 @@ private:
   bool CheckForTransparency(const gfx::IntRect& aFrameRect);
 
   // @return the clear code used for LZW decompression.
-  int ClearCode() const { return 1 << mGIFStruct.datasize; }
+  int ClearCode() const {
+    MOZ_ASSERT(mGIFStruct.datasize <= MAX_LZW_BITS);
+    return 1 << mGIFStruct.datasize;
+  }
 
   enum class State
   {

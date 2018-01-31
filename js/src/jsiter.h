@@ -48,10 +48,6 @@ struct NativeIterator
     NativeIterator* prev_;
 
   public:
-    bool isKeyIter() const {
-        return (flags & JSITER_FOREACH) == 0;
-    }
-
     inline GCPtrFlatString* begin() const {
         return props_array;
     }
@@ -89,7 +85,6 @@ struct NativeIterator
     void link(NativeIterator* other) {
         /* A NativeIterator cannot appear in the enumerator list twice. */
         MOZ_ASSERT(!next_ && !prev_);
-        MOZ_ASSERT(flags & JSITER_ENUMERATE);
 
         this->next_ = other;
         this->prev_ = other->prev_;
@@ -97,8 +92,6 @@ struct NativeIterator
         other->prev_ = this;
     }
     void unlink() {
-        MOZ_ASSERT(flags & JSITER_ENUMERATE);
-
         next_->prev_ = prev_;
         prev_->next_ = next_;
         next_ = nullptr;
@@ -107,7 +100,7 @@ struct NativeIterator
 
     static NativeIterator* allocateSentinel(JSContext* maybecx);
     static NativeIterator* allocateIterator(JSContext* cx, uint32_t slength, uint32_t plength);
-    void init(JSObject* obj, JSObject* iterObj, unsigned flags, uint32_t slength, uint32_t key);
+    void init(JSObject* obj, JSObject* iterObj, uint32_t slength, uint32_t key);
     bool initProperties(JSContext* cx, Handle<PropertyIteratorObject*> obj,
                         const js::AutoIdVector& props);
 
@@ -139,61 +132,47 @@ class PropertyIteratorObject : public NativeObject
     static void finalize(FreeOp* fop, JSObject* obj);
 };
 
-class ArrayIteratorObject : public JSObject
+class ArrayIteratorObject : public NativeObject
 {
   public:
     static const Class class_;
 };
 
-class StringIteratorObject : public JSObject
+ArrayIteratorObject*
+NewArrayIteratorObject(JSContext* cx, NewObjectKind newKind = GenericObject);
+
+class StringIteratorObject : public NativeObject
 {
   public:
     static const Class class_;
 };
 
-class ListIteratorObject : public JSObject
-{
-  public:
-    static const Class class_;
-};
-
-bool
-GetIterator(JSContext* cx, HandleObject obj, unsigned flags, MutableHandleObject objp);
+StringIteratorObject*
+NewStringIteratorObject(JSContext* cx, NewObjectKind newKind = GenericObject);
 
 JSObject*
-GetIteratorObject(JSContext* cx, HandleObject obj, unsigned flags);
+GetIterator(JSContext* cx, HandleObject obj);
 
-/*
- * Creates either a key or value iterator, depending on flags. For a value
- * iterator, performs value-lookup to convert the given list of jsids.
- */
-bool
-EnumeratedIdVectorToIterator(JSContext* cx, HandleObject obj, unsigned flags, AutoIdVector& props,
-                             MutableHandleObject objp);
+PropertyIteratorObject*
+LookupInIteratorCache(JSContext* cx, HandleObject obj);
 
-bool
-NewEmptyPropertyIterator(JSContext* cx, unsigned flags, MutableHandleObject objp);
+JSObject*
+EnumeratedIdVectorToIterator(JSContext* cx, HandleObject obj, AutoIdVector& props);
 
-/*
- * Convert the value stored in *vp to its iteration object. The flags should
- * contain JSITER_ENUMERATE if js::ValueToIterator is called when enumerating
- * for-in semantics are required, and when the caller can guarantee that the
- * iterator will never be exposed to scripts.
- */
-bool
-ValueToIterator(JSContext* cx, unsigned flags, MutableHandleValue vp);
+JSObject*
+NewEmptyPropertyIterator(JSContext* cx);
+
+JSObject*
+ValueToIterator(JSContext* cx, HandleValue vp);
+
+void
+CloseIterator(JSObject* obj);
 
 bool
-CloseIterator(JSContext* cx, HandleObject iterObj);
-
-bool
-UnwindIteratorForException(JSContext* cx, HandleObject obj);
+IteratorCloseForException(JSContext* cx, HandleObject obj);
 
 void
 UnwindIteratorForUncatchableException(JSContext* cx, JSObject* obj);
-
-bool
-IteratorConstructor(JSContext* cx, unsigned argc, Value* vp);
 
 extern bool
 SuppressDeletedProperty(JSContext* cx, HandleObject obj, jsid id);
@@ -208,21 +187,17 @@ SuppressDeletedElement(JSContext* cx, HandleObject obj, uint32_t index);
 extern bool
 IteratorMore(JSContext* cx, HandleObject iterobj, MutableHandleValue rval);
 
-extern bool
-ThrowStopIteration(JSContext* cx);
-
 /*
  * Create an object of the form { value: VALUE, done: DONE }.
- * ES6 draft from 2013-09-05, section 25.4.3.4.
+ * ES 2017 draft 7.4.7.
  */
 extern JSObject*
-CreateItrResultObject(JSContext* cx, HandleValue value, bool done);
+CreateIterResultObject(JSContext* cx, HandleValue value, bool done);
 
-extern JSObject*
-InitLegacyIteratorClass(JSContext* cx, HandleObject obj);
+bool
+IsPropertyIterator(HandleValue v);
 
-extern JSObject*
-InitStopIterationClass(JSContext* cx, HandleObject obj);
+enum class IteratorKind { Sync, Async };
 
 } /* namespace js */
 

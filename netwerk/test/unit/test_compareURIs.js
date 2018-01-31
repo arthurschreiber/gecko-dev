@@ -1,4 +1,4 @@
-Components.utils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function do_info(text, stack) {
   if (!stack)
@@ -44,6 +44,6 @@ function run_test()
 	} catch (e) {
 	    equal = false
 	}
-	do_check_eq(equal, aTest[2]);
+	Assert.equal(equal, aTest[2]);
     });
 }

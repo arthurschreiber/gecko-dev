@@ -17,6 +17,7 @@
 #include "nsWrapperCache.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/net/ReferrerPolicy.h"
 
 class nsINode;
@@ -29,6 +30,7 @@ class txIGlobalParameter;
 namespace mozilla {
 namespace dom {
 
+class DocGroup;
 class Document;
 class DocumentFragment;
 class GlobalObject;
@@ -74,7 +76,8 @@ public:
     // nsIDocumentTransformer interface
     NS_IMETHOD SetTransformObserver(nsITransformObserver* aObserver) override;
     NS_IMETHOD LoadStyleSheet(nsIURI* aUri, nsIDocument* aLoaderDocument) override;
-    NS_IMETHOD SetSourceContentModel(nsIDOMNode* aSource) override;
+    NS_IMETHOD SetSourceContentModel(nsIDocument* aDocument,
+                                     const nsTArray<nsCOMPtr<nsIContent>>& aSource) override;
     NS_IMETHOD CancelLoads() override {return NS_OK;}
     NS_IMETHOD AddXSLTParamNamespace(const nsString& aPrefix,
                                      const nsString& aNamespace) override;
@@ -102,6 +105,8 @@ public:
         return mOwner;
     }
 
+    mozilla::dom::DocGroup* GetDocGroup() const;
+
     static already_AddRefed<txMozillaXSLTProcessor>
     Constructor(const mozilla::dom::GlobalObject& aGlobal,
                 mozilla::ErrorResult& aRv);
@@ -128,18 +133,14 @@ public:
         aRv = RemoveParameter(aNamespaceURI, aLocalName);
     }
 
-    uint32_t Flags()
-    {
-        uint32_t flags;
-        GetFlags(&flags);
-        return flags;
-    }
+    uint32_t Flags(mozilla::dom::SystemCallerGuarantee);
+    void SetFlags(uint32_t aFlags, mozilla::dom::SystemCallerGuarantee);
 
     nsresult setStylesheet(txStylesheet* aStylesheet);
     void reportError(nsresult aResult, const char16_t *aErrorText,
                      const char16_t *aSourceText);
 
-    nsIDOMNode *GetSourceContentModel()
+    nsINode *GetSourceContentModel()
     {
         return mSource;
     }
@@ -172,7 +173,7 @@ private:
     nsIDocument* mStylesheetDocument; // weak
     nsCOMPtr<nsIContent> mEmbeddedStylesheetRoot;
 
-    nsCOMPtr<nsIDOMNode> mSource;
+    nsCOMPtr<nsINode> mSource;
     nsresult mTransformResult;
     nsresult mCompileResult;
     nsString mErrorText, mSourceText;

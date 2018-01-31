@@ -20,6 +20,7 @@ namespace test_scheduler {
 
 using namespace mozilla::gfx;
 using namespace mozilla;
+using mozilla::gfx::SyncObject;
 
 // Artificially cause threads to yield randomly in an attempt to make racy
 // things more apparent (if any).
@@ -208,6 +209,7 @@ void TestSchedulerChain(uint32_t aNumThreads, uint32_t aNumCmdBuffers)
 
 } // namespace test_scheduler
 
+#if !defined(MOZ_CODE_COVERAGE) || !defined(XP_WIN)
 TEST(Moz2D, JobScheduler_Shutdown) {
   srand(time(nullptr));
   for (uint32_t threads = 1; threads < 16; ++threads) {
@@ -217,6 +219,7 @@ TEST(Moz2D, JobScheduler_Shutdown) {
     }
   }
 }
+#endif
 
 TEST(Moz2D, JobScheduler_Join) {
   srand(time(nullptr));

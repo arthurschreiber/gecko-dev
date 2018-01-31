@@ -71,15 +71,15 @@ public:
     mInitialized = true;
   }
 
-  virtual nsPoint GetTouchEventPosition(WidgetTouchEvent* aEvent,
-                                        int32_t aIdentifier) const override
+  nsPoint GetTouchEventPosition(WidgetTouchEvent* aEvent,
+                                int32_t aIdentifier) const override
   {
     // Return the device point directly.
     LayoutDeviceIntPoint touchIntPoint = aEvent->mTouches[0]->mRefPoint;
     return nsPoint(touchIntPoint.x, touchIntPoint.y);
   }
 
-  virtual nsPoint GetMouseEventPosition(WidgetMouseEvent* aEvent) const override
+  nsPoint GetMouseEventPosition(WidgetMouseEvent* aEvent) const override
   {
     // Return the device point directly.
     LayoutDeviceIntPoint mouseIntPoint = aEvent->AsGUIEvent()->mRefPoint;
@@ -112,7 +112,7 @@ public:
     mHub.get()->AddRef();
   }
 
-  ~AccessibleCaretEventHubTester()
+  ~AccessibleCaretEventHubTester() override
   {
     // Release the ref added in the constructor.
     mHub.get()->Release();
@@ -738,7 +738,7 @@ AccessibleCaretEventHubTester::TestEventDrivenAsyncPanZoomScroll(
   EXPECT_EQ(mHub->GetState(), MockAccessibleCaretEventHub::NoActionState());
 }
 
-TEST_F(AccessibleCaretEventHubTester, TestNoEventAsyncPanZoomScroll)
+TEST_F(AccessibleCaretEventHubTester, TestAsyncPanZoomScroll)
 {
   MockFunction<void(::std::string aCheckPointName)> check;
   {
@@ -748,7 +748,7 @@ TEST_F(AccessibleCaretEventHubTester, TestNoEventAsyncPanZoomScroll)
     EXPECT_CALL(*mHub->GetMockAccessibleCaretManager(), OnScrollStart());
 
     EXPECT_CALL(*mHub->GetMockAccessibleCaretManager(),
-                OnScrollPositionChanged()).Times(0);
+                OnScrollPositionChanged()).Times(2);
 
     EXPECT_CALL(check, Call("2"));
     EXPECT_CALL(*mHub->GetMockAccessibleCaretManager(), OnScrollEnd());

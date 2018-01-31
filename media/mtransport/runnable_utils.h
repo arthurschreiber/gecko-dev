@@ -28,32 +28,15 @@ enum RunnableResult {
 static inline nsresult
 RunOnThreadInternal(nsIEventTarget *thread, nsIRunnable *runnable, uint32_t flags)
 {
-  nsCOMPtr<nsIRunnable> runnable_ref(runnable);
-  if (thread) {
-    bool on;
-    nsresult rv;
-    rv = thread->IsOnCurrentThread(&on);
-
-    // If the target thread has already shut down, we don't want to assert.
-    if (rv != NS_ERROR_NOT_INITIALIZED) {
-      MOZ_ASSERT(NS_SUCCEEDED(rv));
-    }
-
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      // we're going to destroy the runnable on this thread!
-      return rv;
-    }
-    if (!on) {
-      return thread->Dispatch(runnable_ref.forget(), flags);
-    }
-  }
-  return runnable_ref->Run();
+  return thread->Dispatch(runnable, flags);
 }
 
 template<RunnableResult result>
 class runnable_args_base : public Runnable {
  public:
-  NS_IMETHOD Run() = 0;
+  runnable_args_base() : Runnable("media-runnable_args_base") {}
+
+  NS_IMETHOD Run() override = 0;
 };
 
 
@@ -110,11 +93,12 @@ class runnable_args_func : public detail::runnable_args_base<detail::NoResult>
 {
 public:
   // |explicit| to pacify static analysis when there are no |args|.
-  explicit runnable_args_func(FunType f, Args&&... args)
-    : mFunc(f), mArgs(Forward<Args>(args)...)
+  template<typename... Arguments>
+  explicit runnable_args_func(FunType f, Arguments&&... args)
+    : mFunc(f), mArgs(Forward<Arguments>(args)...)
   {}
 
-  NS_IMETHOD Run() {
+  NS_IMETHOD Run() override {
     detail::RunnableFunctionCallHelper<void>::apply(mFunc, mArgs, typename IndexSequenceFor<Args...>::Type());
     return NS_OK;
   }
@@ -125,21 +109,22 @@ private:
 };
 
 template<typename FunType, typename... Args>
-runnable_args_func<FunType, Args...>*
-WrapRunnableNM(FunType f, Args... args)
+runnable_args_func<FunType, typename mozilla::Decay<Args>::Type...>*
+WrapRunnableNM(FunType f, Args&&... args)
 {
-  return new runnable_args_func<FunType, Args...>(f, Move(args)...);
+  return new runnable_args_func<FunType, typename mozilla::Decay<Args>::Type...>(f, Forward<Args>(args)...);
 }
 
 template<typename Ret, typename FunType, typename... Args>
 class runnable_args_func_ret : public detail::runnable_args_base<detail::ReturnsResult>
 {
 public:
-  runnable_args_func_ret(Ret* ret, FunType f, Args&&... args)
-    : mReturn(ret), mFunc(f), mArgs(Forward<Args>(args)...)
+  template<typename... Arguments>
+  runnable_args_func_ret(Ret* ret, FunType f, Arguments&&... args)
+    : mReturn(ret), mFunc(f), mArgs(Forward<Arguments>(args)...)
   {}
 
-  NS_IMETHOD Run() {
+  NS_IMETHOD Run() override {
     *mReturn = detail::RunnableFunctionCallHelper<Ret>::apply(mFunc, mArgs, typename IndexSequenceFor<Args...>::Type());
     return NS_OK;
   }
@@ -151,21 +136,22 @@ private:
 };
 
 template<typename R, typename FunType, typename... Args>
-runnable_args_func_ret<R, FunType, Args...>*
-WrapRunnableNMRet(R* ret, FunType f, Args... args)
+runnable_args_func_ret<R, FunType, typename mozilla::Decay<Args>::Type...>*
+WrapRunnableNMRet(R* ret, FunType f, Args&&... args)
 {
-  return new runnable_args_func_ret<R, FunType, Args...>(ret, f, Move(args)...);
+  return new runnable_args_func_ret<R, FunType, typename mozilla::Decay<Args>::Type...>(ret, f, Forward<Args>(args)...);
 }
 
 template<typename Class, typename M, typename... Args>
 class runnable_args_memfn : public detail::runnable_args_base<detail::NoResult>
 {
 public:
-  runnable_args_memfn(Class obj, M method, Args&&... args)
-    : mObj(obj), mMethod(method), mArgs(Forward<Args>(args)...)
+  template<typename... Arguments>
+  runnable_args_memfn(Class obj, M method, Arguments&&... args)
+    : mObj(obj), mMethod(method), mArgs(Forward<Arguments>(args)...)
   {}
 
-  NS_IMETHOD Run() {
+  NS_IMETHOD Run() override {
     detail::RunnableMethodCallHelper<void>::apply(mObj, mMethod, mArgs, typename IndexSequenceFor<Args...>::Type());
     return NS_OK;
   }
@@ -177,21 +163,22 @@ private:
 };
 
 template<typename Class, typename M, typename... Args>
-runnable_args_memfn<Class, M, Args...>*
-WrapRunnable(Class obj, M method, Args... args)
+runnable_args_memfn<Class, M, typename mozilla::Decay<Args>::Type...>*
+WrapRunnable(Class obj, M method, Args&&... args)
 {
-  return new runnable_args_memfn<Class, M, Args...>(obj, method, Move(args)...);
+  return new runnable_args_memfn<Class, M, typename mozilla::Decay<Args>::Type...>(obj, method, Forward<Args>(args)...);
 }
 
 template<typename Ret, typename Class, typename M, typename... Args>
 class runnable_args_memfn_ret : public detail::runnable_args_base<detail::ReturnsResult>
 {
 public:
-  runnable_args_memfn_ret(Ret* ret, Class obj, M method, Args... args)
-    : mReturn(ret), mObj(obj), mMethod(method), mArgs(Forward<Args>(args)...)
+  template<typename... Arguments>
+  runnable_args_memfn_ret(Ret* ret, Class obj, M method, Arguments... args)
+    : mReturn(ret), mObj(obj), mMethod(method), mArgs(Forward<Arguments>(args)...)
   {}
 
-  NS_IMETHOD Run() {
+  NS_IMETHOD Run() override {
     *mReturn = detail::RunnableMethodCallHelper<Ret>::apply(mObj, mMethod, mArgs, typename IndexSequenceFor<Args...>::Type());
     return NS_OK;
   }
@@ -204,10 +191,10 @@ private:
 };
 
 template<typename R, typename Class, typename M, typename... Args>
-runnable_args_memfn_ret<R, Class, M, Args...>*
-WrapRunnableRet(R* ret, Class obj, M method, Args... args)
+runnable_args_memfn_ret<R, Class, M, typename mozilla::Decay<Args>::Type...>*
+WrapRunnableRet(R* ret, Class obj, M method, Args&&... args)
 {
-  return new runnable_args_memfn_ret<R, Class, M, Args...>(ret, obj, method, Move(args)...);
+  return new runnable_args_memfn_ret<R, Class, M, typename mozilla::Decay<Args>::Type...>(ret, obj, method, Forward<Args>(args)...);
 }
 
 static inline nsresult RUN_ON_THREAD(nsIEventTarget *thread, detail::runnable_args_base<detail::NoResult> *runnable, uint32_t flags) {
@@ -239,7 +226,7 @@ class DispatchedRelease : public detail::runnable_args_base<detail::NoResult> {
 public:
   explicit DispatchedRelease(already_AddRefed<T>& ref) : ref_(ref) {}
 
-  NS_IMETHOD Run() {
+  NS_IMETHOD Run() override {
     ref_ = nullptr;
     return NS_OK;
   }

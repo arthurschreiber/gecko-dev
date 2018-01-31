@@ -14,6 +14,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
+#include "nsINamed.h"
 #include "nsINetworkInfoService.h"
 #include "nsIPresentationControlChannel.h"
 #include "nsIPresentationDevice.h"
@@ -79,11 +80,6 @@ public:
     mDevice = aDevice;
   }
 
-  void SetBuilder(nsIPresentationSessionTransportBuilder* aBuilder)
-  {
-    mBuilder = aBuilder;
-  }
-
   already_AddRefed<nsIPresentationDevice> GetDevice() const
   {
     nsCOMPtr<nsIPresentationDevice> device = mDevice;
@@ -104,6 +100,10 @@ public:
 
   nsresult Send(const nsAString& aData);
 
+  nsresult SendBinaryMsg(const nsACString& aData);
+
+  nsresult SendBlob(nsIDOMBlob* aBlob);
+
   nsresult Close(nsresult aReason,
                  uint32_t aState);
 
@@ -112,6 +112,12 @@ public:
   nsresult ReplyError(nsresult aReason);
 
   virtual bool IsAccessible(base::ProcessId aProcessId);
+
+  void SetTransportBuilderConstructor(
+    nsIPresentationTransportBuilderConstructor* aBuilderConstructor)
+  {
+    mBuilderConstructor = aBuilderConstructor;
+  }
 
 protected:
   virtual ~PresentationSessionInfo()
@@ -149,6 +155,11 @@ protected:
 
   void ContinueTermination();
 
+  void ResetBuilder()
+  {
+    mBuilder = nullptr;
+  }
+
   // Should be nsIPresentationChannelDescription::TYPE_TCP/TYPE_DATACHANNEL
   uint8_t mTransportType = 0;
 
@@ -169,6 +180,7 @@ protected:
   nsCOMPtr<nsIPresentationSessionTransport> mTransport;
   nsCOMPtr<nsIPresentationControlChannel> mControlChannel;
   nsCOMPtr<nsIPresentationSessionTransportBuilder> mBuilder;
+  nsCOMPtr<nsIPresentationTransportBuilderConstructor> mBuilderConstructor;
 };
 
 // Session info with controlling browsing context (sender side) behaviors.
@@ -181,6 +193,7 @@ public:
   NS_DECL_NSIPRESENTATIONCONTROLCHANNELLISTENER
   NS_DECL_NSISERVERSOCKETLISTENER
   NS_DECL_NSILISTNETWORKADDRESSESLISTENER
+  NS_DECL_NSIPRESENTATIONSESSIONTRANSPORTCALLBACK
 
   PresentationControllingInfo(const nsAString& aUrl,
                               const nsAString& aSessionId)
@@ -209,20 +222,25 @@ private:
 
   nsresult ContinueReconnect();
 
+  nsresult NotifyReconnectResult(nsresult aStatus);
+
   nsCOMPtr<nsIServerSocket> mServerSocket;
   nsCOMPtr<nsIPresentationServiceCallback> mReconnectCallback;
   bool mIsReconnecting = false;
+  bool mDoReconnectAfterClose = false;
 };
 
 // Session info with presenting browsing context (receiver side) behaviors.
 class PresentationPresentingInfo final : public PresentationSessionInfo
                                        , public PromiseNativeHandler
                                        , public nsITimerCallback
+                                       , public nsINamed
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIPRESENTATIONCONTROLCHANNELLISTENER
   NS_DECL_NSITIMERCALLBACK
+  NS_DECL_NSINAMED
 
   PresentationPresentingInfo(const nsAString& aUrl,
                              const nsAString& aSessionId,

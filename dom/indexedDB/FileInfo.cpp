@@ -60,7 +60,8 @@ public:
   DoCleanup(FileManager* aFileManager, int64_t aFileId);
 
   CleanupFileRunnable(FileManager* aFileManager, int64_t aFileId)
-    : mFileManager(aFileManager)
+    : Runnable("dom::indexedDB::CleanupFileRunnable")
+    , mFileManager(aFileManager)
     , mFileId(aFileId)
   {
     MOZ_ASSERT(aFileManager);
@@ -253,6 +254,24 @@ CleanupFileRunnable::Run()
   DoCleanup(mFileManager, mFileId);
 
   return NS_OK;
+}
+
+/* static */ already_AddRefed<nsIFile>
+FileInfo::GetFileForFileInfo(FileInfo* aFileInfo)
+{
+  FileManager* fileManager = aFileInfo->Manager();
+  nsCOMPtr<nsIFile> directory = fileManager->GetDirectory();
+  if (NS_WARN_IF(!directory)) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIFile> file = fileManager->GetFileForId(directory,
+                                                     aFileInfo->Id());
+  if (NS_WARN_IF(!file)) {
+    return nullptr;
+  }
+
+  return file.forget();
 }
 
 } // namespace indexedDB

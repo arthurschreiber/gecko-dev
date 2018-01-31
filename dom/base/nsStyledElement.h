@@ -18,9 +18,7 @@
 #include "mozilla/dom/Element.h"
 
 namespace mozilla {
-namespace css {
-class Declaration;
-} // namespace css
+class DeclarationBlock;
 } // namespace mozilla
 
 // IID for nsStyledElement interface
@@ -46,8 +44,7 @@ public:
   NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) override;
 
   // Element interface methods
-  virtual mozilla::css::Declaration* GetInlineStyleDeclaration() override;
-  virtual nsresult SetInlineStyleDeclaration(mozilla::css::Declaration* aDeclaration,
+  virtual nsresult SetInlineStyleDeclaration(mozilla::DeclarationBlock* aDeclaration,
                                              const nsAString* aSerialized,
                                              bool aNotify) override;
 
@@ -64,14 +61,20 @@ protected:
    * document, leave it as a string) and return as nsAttrValue.
    *
    * @param aValue the value to parse
+   * @param aMaybeScriptedPrincipal if available, the scripted principal
+   *        responsible for this attribute value, as passed to
+   *        Element::ParseAttribute.
    * @param aResult the resulting HTMLValue [OUT]
    */
   void ParseStyleAttribute(const nsAString& aValue,
+                           nsIPrincipal* aMaybeScriptedPrincipal,
                            nsAttrValue& aResult,
                            bool aForceInDataDoc);
 
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsIAtom* aAttribute,
-                                const nsAString& aValue, nsAttrValue& aResult) override;
+  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                                const nsAString& aValue,
+                                nsIPrincipal* aMaybeScriptedPrincipal,
+                                nsAttrValue& aResult) override;
 
   friend class mozilla::dom::Element;
 
@@ -79,9 +82,16 @@ protected:
    * Create the style struct from the style attr.  Used when an element is
    * first put into a document.  Only has an effect if the old value is a
    * string.  If aForceInDataDoc is true, will reparse even if we're in a data
-   * document.
+   * document. If aForceIfAlreadyParsed is set, this will always reparse even
+   * if the value has already been parsed.
    */
-  nsresult  ReparseStyleAttribute(bool aForceInDataDoc);
+  nsresult ReparseStyleAttribute(bool aForceInDataDoc, bool aForceIfAlreadyParsed);
+
+  virtual void NodeInfoChanged(nsIDocument* aOldDoc) override;
+
+  virtual nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                 const nsAttrValueOrString* aValue,
+                                 bool aNotify) override;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsStyledElement, NS_STYLED_ELEMENT_IID)

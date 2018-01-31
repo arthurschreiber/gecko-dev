@@ -13,8 +13,8 @@ var Cm = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
 
 this.EXPORTED_SYMBOLS = ["BrowserElementPromptService"];
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const NS_PREFBRANCH_PREFCHANGE_TOPIC_ID = "nsPref:changed";
 const BROWSER_FRAMES_ENABLED_PREF = "dom.mozBrowserFramesEnabled";
@@ -369,7 +369,7 @@ BrowserElementAuthPrompt.prototype = {
       }
     }
 
-    Services.tm.currentThread.dispatch(runnable, Ci.nsIThread.DISPATCH_NORMAL);
+    Services.tm.dispatchToMainThread(runnable);
   },
 
   _getFrameFromChannel: function(channel) {
@@ -381,7 +381,7 @@ BrowserElementAuthPrompt.prototype = {
     let [hostname, httpRealm] = this._getAuthTarget(channel, authInfo);
     return {
       host:             hostname,
-      path:             channel.URI.path,
+      path:             channel.URI.pathQueryRef,
       realm:            httpRealm,
       username:         authInfo.username,
       isProxy:          !!(authInfo.flags & Ci.nsIAuthInformation.AUTH_PROXY),

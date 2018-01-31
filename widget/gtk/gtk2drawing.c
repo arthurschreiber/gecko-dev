@@ -16,6 +16,7 @@
 #include "prinrval.h"
 
 #include <math.h>
+#include <stdbool.h> // for MOZ_ASSERT_UNREACHABLE
 
 #define XTHICKNESS(style) (style->xthickness)
 #define YTHICKNESS(style) (style->ythickness)
@@ -53,7 +54,6 @@ static GtkWidget* gMenuBarWidget;
 static GtkWidget* gMenuBarItemWidget;
 static GtkWidget* gMenuPopupWidget;
 static GtkWidget* gMenuItemWidget;
-static GtkWidget* gImageMenuItemWidget;
 static GtkWidget* gCheckMenuItemWidget;
 static GtkWidget* gTreeViewWidget;
 static GtkTreeViewColumn* gMiddleTreeViewColumn;
@@ -66,7 +66,6 @@ static GtkWidget* gHPanedWidget;
 static GtkWidget* gVPanedWidget;
 static GtkWidget* gScrolledWindowWidget;
 
-static style_prop_t style_prop_func;
 static gboolean have_arrow_scaling;
 static gboolean is_initialized;
 
@@ -77,13 +76,6 @@ static void
 moz_gtk_set_widget_name(GtkWidget* widget)
 {
     gtk_widget_set_name(widget, "MozillaGtkWidget");
-}
-
-gint
-moz_gtk_enable_style_props(style_prop_t styleGetProp)
-{
-    style_prop_func = styleGetProp;
-    return MOZ_GTK_SUCCESS;
 }
 
 static gint
@@ -591,21 +583,6 @@ ensure_menu_item_widget()
 }
 
 static gint
-ensure_image_menu_item_widget()
-{
-    if (!gImageMenuItemWidget) {
-        ensure_menu_popup_widget();
-        gImageMenuItemWidget = gtk_image_menu_item_new();
-        gtk_menu_shell_append(GTK_MENU_SHELL(gMenuPopupWidget),
-                              gImageMenuItemWidget);
-        gtk_widget_realize(gImageMenuItemWidget);
-        g_object_set_data(G_OBJECT(gImageMenuItemWidget),
-                          "transparent-bg-hint", GINT_TO_POINTER(TRUE));
-    }
-    return MOZ_GTK_SUCCESS;
-}
-
-static gint
 ensure_menu_separator_widget()
 {
     if (!gMenuSeparatorWidget) {
@@ -1067,16 +1044,21 @@ moz_gtk_toggle_paint(GdkDrawable* drawable, GdkRectangle* rect,
         w = gCheckboxWidget;
     }
 
-    // XXX we should assert rect->height >= indicator_size too
-    // after bug 369581 is fixed.
-    MOZ_ASSERT(rect->width >= indicator_size,
-               "GetMinimumWidgetSize was ignored");
+    // Clamp the rect and paint it center aligned in the rect.
+    x = rect->x;
+    y = rect->y;
+    width = rect->width;
+    height = rect->height;
 
-    // Paint it center aligned in the rect.
-    x = rect->x + (rect->width - indicator_size) / 2;
-    y = rect->y + (rect->height - indicator_size) / 2;
-    width = indicator_size;
-    height = indicator_size;
+    if (rect->width < rect->height) {
+      y = rect->y + (rect->height - rect->width) / 2;
+      height = rect->width;
+    }
+
+    if (rect->height < rect->width) {
+      x = rect->x + (rect->width - rect->height) / 2;
+      width = rect->height;
+    }
 
     focus_x = x - indicator_spacing;
     focus_y = y - indicator_spacing;
@@ -1157,7 +1139,6 @@ calculate_button_inner_rect(GtkWidget* button, GdkRectangle* rect,
 
     return MOZ_GTK_SUCCESS;
 }
-
 
 static gint
 calculate_arrow_rect(GtkWidget* arrow, GdkRectangle* rect,
@@ -1380,6 +1361,51 @@ moz_gtk_scrollbar_thumb_paint(WidgetNodeType widget,
                      rect->width,  rect->height,
                      (widget == MOZ_GTK_SCROLLBAR_THUMB_HORIZONTAL) ?
                      GTK_ORIENTATION_HORIZONTAL : GTK_ORIENTATION_VERTICAL);
+
+    return MOZ_GTK_SUCCESS;
+}
+
+static gint
+moz_gtk_inner_spin_paint(GdkDrawable* drawable, GdkRectangle* rect,
+                         GtkWidgetState* state,
+                         GtkTextDirection direction)
+{
+    GdkRectangle arrow_rect;
+    GtkStateType state_type = ConvertGtkState(state);
+    GtkShadowType shadow_type = state_type == GTK_STATE_ACTIVE ?
+                                  GTK_SHADOW_IN : GTK_SHADOW_OUT;
+    GtkStyle* style;
+
+    ensure_spin_widget();
+    style = gSpinWidget->style;
+    gtk_widget_set_direction(gSpinWidget, direction);
+
+    TSOffsetStyleGCs(style, rect->x, rect->y);
+    gtk_paint_box(style, drawable, state_type, shadow_type, NULL, gSpinWidget,
+                  "spinbutton", rect->x, rect->y, rect->width, rect->height);
+
+    /* hard code these values */
+    arrow_rect.width = 6;
+    arrow_rect.height = 6;
+
+    // align spin to the left
+    arrow_rect.x = rect->x;
+
+    // up button
+    arrow_rect.y = rect->y + (rect->height - arrow_rect.height) / 2 - 3;
+    gtk_paint_arrow(style, drawable, state_type, shadow_type, NULL,
+                    gSpinWidget, "spinbutton",
+                    GTK_ARROW_UP, TRUE,
+                    arrow_rect.x, arrow_rect.y,
+                    arrow_rect.width, arrow_rect.height);
+
+    // down button
+    arrow_rect.y = rect->y + (rect->height - arrow_rect.height) / 2 + 3;
+    gtk_paint_arrow(style, drawable, state_type, shadow_type, NULL,
+                    gSpinWidget, "spinbutton",
+                    GTK_ARROW_DOWN,
+                    arrow_rect.x, arrow_rect.y,
+                    arrow_rect.width, arrow_rect.height);
 
     return MOZ_GTK_SUCCESS;
 }
@@ -1809,7 +1835,7 @@ moz_gtk_combo_box_paint(GdkDrawable* drawable, GdkRectangle* rect,
                         gboolean ishtml, GtkTextDirection direction)
 {
     GdkRectangle arrow_rect, real_arrow_rect;
-    gint arrow_size, separator_width;
+    gint separator_width;
     gboolean wide_separators;
     GtkStateType state_type = ConvertGtkState(state);
     GtkShadowType shadow_type = state->active ? GTK_SHADOW_IN : GTK_SHADOW_OUT;
@@ -2977,6 +3003,10 @@ moz_gtk_get_widget_border(WidgetNodeType widget, gint* left, gint* top,
         ensure_tab_widget();
         w = gTabWidget;
         break;
+    case MOZ_GTK_TOOLTIP:
+        // In GTK 2 the spacing between box is set to 4.
+        *left = *top = *right = *bottom = 4;
+        return MOZ_GTK_SUCCESS;
     /* These widgets have no borders, since they are not containers. */
     case MOZ_GTK_SPLITTER_HORIZONTAL:
     case MOZ_GTK_SPLITTER_VERTICAL:
@@ -2984,7 +3014,9 @@ moz_gtk_get_widget_border(WidgetNodeType widget, gint* left, gint* top,
     case MOZ_GTK_RADIOBUTTON:
     case MOZ_GTK_SCROLLBAR_BUTTON:
     case MOZ_GTK_SCROLLBAR_HORIZONTAL:
+    case MOZ_GTK_SCROLLBAR_TROUGH_HORIZONTAL:
     case MOZ_GTK_SCROLLBAR_VERTICAL:
+    case MOZ_GTK_SCROLLBAR_TROUGH_VERTICAL:
     case MOZ_GTK_SCROLLBAR_THUMB_HORIZONTAL:
     case MOZ_GTK_SCROLLBAR_THUMB_VERTICAL:
     case MOZ_GTK_SCALE_THUMB_HORIZONTAL:
@@ -2997,8 +3029,8 @@ moz_gtk_get_widget_border(WidgetNodeType widget, gint* left, gint* top,
     case MOZ_GTK_TOOLBAR_SEPARATOR:
     case MOZ_GTK_MENUSEPARATOR:
     /* These widgets have no borders.*/
+    case MOZ_GTK_INNER_SPIN_BUTTON:
     case MOZ_GTK_SPINBUTTON:
-    case MOZ_GTK_TOOLTIP:
     case MOZ_GTK_WINDOW:
     case MOZ_GTK_RESIZER:
     case MOZ_GTK_MENUARROW:
@@ -3199,31 +3231,9 @@ moz_gtk_get_scrollbar_metrics(MozGtkScrollbarMetrics *metrics)
 
     return MOZ_GTK_SUCCESS;
 }
-
-gboolean
-moz_gtk_images_in_menus()
-{
-    gboolean result;
-    GtkSettings* settings;
-
-    ensure_image_menu_item_widget();
-    settings = gtk_widget_get_settings(gImageMenuItemWidget);
-
-    g_object_get(settings, "gtk-menu-images", &result, NULL);
-    return result;
-}
-
-gboolean
-moz_gtk_images_in_buttons()
-{
-    gboolean result;
-    GtkSettings* settings;
-
-    ensure_button_widget();
-    settings = gtk_widget_get_settings(gButtonWidget);
-
-    g_object_get(settings, "gtk-button-images", &result, NULL);
-    return result;
+void
+moz_gtk_get_widget_min_size(WidgetNodeType aGtkWidgetType, int* width, int* height) {
+  MOZ_ASSERT_UNREACHABLE("get_widget_min_size not available for GTK2");
 }
 
 gint
@@ -3264,6 +3274,10 @@ moz_gtk_widget_paint(WidgetNodeType widget, GdkDrawable* drawable,
         return moz_gtk_scrollbar_trough_paint(widget, drawable, rect,
                                               cliprect, state, direction);
         break;
+    case MOZ_GTK_SCROLLBAR_TROUGH_HORIZONTAL:
+    case MOZ_GTK_SCROLLBAR_TROUGH_VERTICAL:
+        return MOZ_GTK_SUCCESS;
+        break;
     case MOZ_GTK_SCROLLBAR_THUMB_HORIZONTAL:
     case MOZ_GTK_SCROLLBAR_THUMB_VERTICAL:
         return moz_gtk_scrollbar_thumb_paint(widget, drawable, rect,
@@ -3278,6 +3292,9 @@ moz_gtk_widget_paint(WidgetNodeType widget, GdkDrawable* drawable,
     case MOZ_GTK_SCALE_THUMB_VERTICAL:
         return moz_gtk_scale_thumb_paint(drawable, rect, cliprect, state,
                                          (GtkOrientation) flags, direction);
+        break;
+    case MOZ_GTK_INNER_SPIN_BUTTON:
+        return moz_gtk_inner_spin_paint(drawable, rect, state, direction);
         break;
     case MOZ_GTK_SPINBUTTON:
         return moz_gtk_spin_paint(drawable, rect, direction);
@@ -3493,7 +3510,6 @@ moz_gtk_shutdown()
     gMenuBarItemWidget = NULL;
     gMenuPopupWidget = NULL;
     gMenuItemWidget = NULL;
-    gImageMenuItemWidget = NULL;
     gCheckMenuItemWidget = NULL;
     gTreeViewWidget = NULL;
     gMiddleTreeViewColumn = NULL;

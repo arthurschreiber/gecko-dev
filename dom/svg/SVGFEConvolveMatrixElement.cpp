@@ -232,6 +232,12 @@ SVGFEConvolveMatrixElement::GetPrimitiveDescription(nsSVGFilterInstance* aInstan
   Size kernelUnitLength =
     GetKernelUnitLength(aInstance, &mNumberPairAttributes[KERNEL_UNIT_LENGTH]);
 
+  if (kernelUnitLength.width <= 0 || kernelUnitLength.height <= 0) {
+    // According to spec, A negative or zero value is an error. See link below for details.
+    // https://www.w3.org/TR/SVG/filters.html#feConvolveMatrixElementKernelUnitLengthAttribute
+    return failureDescription;
+  }
+
   FilterPrimitiveDescription descr(PrimitiveType::ConvolveMatrix);
   AttributeMap& atts = descr.Attributes();
   atts.Set(eConvolveMatrixKernelSize, IntSize(orderX, orderY));
@@ -248,7 +254,7 @@ SVGFEConvolveMatrixElement::GetPrimitiveDescription(nsSVGFilterInstance* aInstan
 
 bool
 SVGFEConvolveMatrixElement::AttributeAffectsRendering(int32_t aNameSpaceID,
-                                                      nsIAtom* aAttribute) const
+                                                      nsAtom* aAttribute) const
 {
   return SVGFEConvolveMatrixElementBase::AttributeAffectsRendering(aNameSpaceID, aAttribute) ||
          (aNameSpaceID == kNameSpaceID_None &&

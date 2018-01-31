@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +9,8 @@
 #include "gfxPrefs.h"
 #include "mozilla/layers/ImageBridgeParent.h" // for ImageBridgeParent
 #include "mozilla/layers/TextureHost.h"       // for TextureHost
+#include "mozilla/layers/TextureForwarder.h"
+#include "mozilla/layers/CompositableForwarder.h"
 
 namespace mozilla {
 namespace layers {
@@ -18,37 +19,20 @@ NS_IMPL_ISUPPORTS(GfxMemoryImageReporter, nsIMemoryReporter)
 
 mozilla::Atomic<ptrdiff_t> GfxMemoryImageReporter::sAmount(0);
 
+/* static */ uint32_t
+CompositableForwarder::GetMaxFileDescriptorsPerMessage() {
+#if defined(OS_POSIX)
+  static const uint32_t kMaxFileDescriptors = FileDescriptorSet::MAX_DESCRIPTORS_PER_MESSAGE;
+#else
+  // default number that works everywhere else
+  static const uint32_t kMaxFileDescriptors = 250;
+#endif
+  return kMaxFileDescriptors;
+}
+
 mozilla::ipc::SharedMemory::SharedMemoryType OptimalShmemType()
 {
   return ipc::SharedMemory::SharedMemoryType::TYPE_BASIC;
-}
-
-void
-HostIPCAllocator::SendFenceHandleIfPresent(PTextureParent* aTexture)
-{
-  RefPtr<TextureHost> texture = TextureHost::AsTextureHost(aTexture);
-  if (!texture) {
-    return;
-  }
-
-  if (!(texture->GetFlags() & TextureFlags::RECYCLE) &&
-     !texture->NeedsFenceHandle()) {
-    return;
-  }
-
-  uint64_t textureId = TextureHost::GetTextureSerial(aTexture);
-
-  // Send a ReleaseFence of CompositorOGL.
-  FenceHandle fence = texture->GetCompositorReleaseFence();
-  if (fence.IsValid()) {
-    mPendingAsyncMessage.push_back(OpDeliverFence(textureId, fence));
-  }
-
-  // Send a ReleaseFence that is set to TextureHost by HwcComposer2D.
-  fence = texture->GetAndResetReleaseFenceHandle();
-  if (fence.IsValid()) {
-    mPendingAsyncMessage.push_back(OpDeliverFence(textureId, fence));
-  }
 }
 
 void
@@ -95,15 +79,21 @@ const uint32_t sShmemPageSize = 4096;
 const uint32_t sSupportedBlockSize = 4;
 #endif
 
-FixedSizeSmallShmemSectionAllocator::FixedSizeSmallShmemSectionAllocator(ClientIPCAllocator* aShmProvider)
+FixedSizeSmallShmemSectionAllocator::FixedSizeSmallShmemSectionAllocator(LayersIPCChannel* aShmProvider)
 : mShmProvider(aShmProvider)
 {
-  MOZ_ASSERT(mShmProvider && mShmProvider->AsShmemAllocator());
+  MOZ_ASSERT(mShmProvider);
 }
 
 FixedSizeSmallShmemSectionAllocator::~FixedSizeSmallShmemSectionAllocator()
 {
   ShrinkShmemSectionHeap();
+}
+
+bool
+FixedSizeSmallShmemSectionAllocator::IPCOpen() const
+{
+  return mShmProvider->IPCOpen();
 }
 
 bool
@@ -132,7 +122,7 @@ FixedSizeSmallShmemSectionAllocator::AllocShmemSection(uint32_t aSize, ShmemSect
 
   if (!aShmemSection->shmem().IsWritable()) {
     ipc::Shmem tmp;
-    if (!GetShmAllocator()->AllocUnsafeShmem(sShmemPageSize, OptimalShmemType(), &tmp)) {
+    if (!mShmProvider->AllocUnsafeShmem(sShmemPageSize, OptimalShmemType(), &tmp)) {
       return false;
     }
 
@@ -233,7 +223,7 @@ FixedSizeSmallShmemSectionAllocator::ShrinkShmemSectionHeap()
   while (i < mUsedShmems.size()) {
     ShmemSectionHeapHeader* header = mUsedShmems[i].get<ShmemSectionHeapHeader>();
     if (header->mAllocatedBlocks == 0) {
-      GetShmAllocator()->DeallocShmem(mUsedShmems[i]);
+      mShmProvider->DeallocShmem(mUsedShmems[i]);
       // We don't particularly care about order, move the last one in the array
       // to this position.
       if (i < mUsedShmems.size() - 1) {
@@ -244,12 +234,6 @@ FixedSizeSmallShmemSectionAllocator::ShrinkShmemSectionHeap()
       i++;
     }
   }
-}
-
-int32_t
-ClientIPCAllocator::GetMaxTextureSize() const
-{
-  return gfxPrefs::MaxTextureSize();
 }
 
 } // namespace layers

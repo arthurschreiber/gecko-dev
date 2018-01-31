@@ -23,19 +23,24 @@ function run_test() {
  * Called after the call to setupUpdaterTest finishes.
  */
 function setupUpdaterTestFinished() {
-  stageUpdate();
+  stageUpdate(true);
 }
 
 /**
  * Called after the call to stageUpdate finishes.
  */
 function stageUpdateFinished() {
-  Assert.equal(readStatusState(), STATE_NONE,
-               "the status file state" + MSG_SHOULD_EQUAL);
-  Assert.equal(gUpdateManager.getUpdateAt(0).errorCode, LOADSOURCE_ERROR_WRONG_SIZE,
-               "the update errorCode" + MSG_SHOULD_EQUAL);
   checkPostUpdateRunningFile(false);
   checkFilesAfterUpdateFailure(getApplyDirFile);
   checkUpdateLogContains(ERR_LOADSOURCEFILE_FAILED);
+  executeSoon(waitForUpdateXMLFiles);
+}
+
+/**
+ * Called after the call to waitForUpdateXMLFiles finishes.
+ */
+function waitForUpdateXMLFilesFinished() {
+  checkUpdateManager(STATE_NONE, false, STATE_FAILED,
+                     LOADSOURCE_ERROR_WRONG_SIZE, 1);
   waitForFilesInUse();
 }

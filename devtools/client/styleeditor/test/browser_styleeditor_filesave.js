@@ -9,8 +9,8 @@ const TESTCASE_URI_HTML = TEST_BASE_HTTP + "simple.html";
 const TESTCASE_URI_CSS = TEST_BASE_HTTP + "simple.css";
 
 var tempScope = {};
-Components.utils.import("resource://gre/modules/FileUtils.jsm", tempScope);
-Components.utils.import("resource://gre/modules/NetUtil.jsm", tempScope);
+ChromeUtils.import("resource://gre/modules/FileUtils.jsm", tempScope);
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm", tempScope);
 var FileUtils = tempScope.FileUtils;
 var NetUtil = tempScope.NetUtil;
 
@@ -51,11 +51,10 @@ add_task(function* () {
 });
 
 function copy(srcChromeURL, destFileName) {
-  let deferred = defer();
-  let destFile = FileUtils.getFile("ProfD", [destFileName]);
-  write(read(srcChromeURL), destFile, deferred.resolve);
-
-  return deferred.promise;
+  return new Promise(resolve => {
+    let destFile = FileUtils.getFile("ProfD", [destFileName]);
+    write(read(srcChromeURL), destFile, resolve);
+  });
 }
 
 function read(srcChromeURL) {

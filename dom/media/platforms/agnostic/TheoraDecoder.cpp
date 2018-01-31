@@ -5,16 +5,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TheoraDecoder.h"
+#include "TimeUnits.h"
 #include "XiphExtradata.h"
 #include "gfx2DGlue.h"
-#include "nsError.h"
-#include "TimeUnits.h"
 #include "mozilla/PodOperations.h"
+#include "nsError.h"
+#include "ImageContainer.h"
 
 #include <algorithm>
 
 #undef LOG
-#define LOG(arg, ...) MOZ_LOG(gMediaDecoderLog, mozilla::LogLevel::Debug, ("TheoraDecoder(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
+#define LOG(arg, ...)                                                          \
+  DDMOZ_LOG(gMediaDecoderLog,                                                  \
+            mozilla::LogLevel::Debug,                                          \
+            "::%s: " arg,                                                      \
+            __func__,                                                          \
+            ##__VA_ARGS__)
 
 namespace mozilla {
 
@@ -38,10 +44,9 @@ ogg_packet InitTheoraPacket(const unsigned char* aData, size_t aLength,
 }
 
 TheoraDecoder::TheoraDecoder(const CreateDecoderParams& aParams)
-  : mImageContainer(aParams.mImageContainer)
+  : mImageAllocator(aParams.mKnowsCompositor)
+  , mImageContainer(aParams.mImageContainer)
   , mTaskQueue(aParams.mTaskQueue)
-  , mCallback(aParams.mCallback)
-  , mIsFlushing(false)
   , mTheoraSetupInfo(nullptr)
   , mTheoraDecoderContext(nullptr)
   , mPacketCount(0)
@@ -58,14 +63,17 @@ TheoraDecoder::~TheoraDecoder()
   th_info_clear(&mTheoraInfo);
 }
 
-nsresult
+RefPtr<ShutdownPromise>
 TheoraDecoder::Shutdown()
 {
-  if (mTheoraDecoderContext) {
-    th_decode_free(mTheoraDecoderContext);
-    mTheoraDecoderContext = nullptr;
-  }
-  return NS_OK;
+  RefPtr<TheoraDecoder> self = this;
+  return InvokeAsync(mTaskQueue, __func__, [self, this]() {
+    if (mTheoraDecoderContext) {
+      th_decode_free(mTheoraDecoderContext);
+      mTheoraDecoderContext = nullptr;
+    }
+    return ShutdownPromise::CreateAndResolve(true, __func__);
+  });
 }
 
 RefPtr<MediaDataDecoder::InitPromise>
@@ -79,44 +87,52 @@ TheoraDecoder::Init()
   if (!XiphExtradataToHeaders(headers, headerLens,
       mInfo.mCodecSpecificConfig->Elements(),
       mInfo.mCodecSpecificConfig->Length())) {
-      return InitPromise::CreateAndReject(DecoderFailureReason::INIT_ERROR, __func__);
+    return InitPromise::CreateAndReject(
+      MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                  RESULT_DETAIL("Could not get theora header.")),
+      __func__);
   }
   for (size_t i = 0; i < headers.Length(); i++) {
     if (NS_FAILED(DoDecodeHeader(headers[i], headerLens[i]))) {
-      return InitPromise::CreateAndReject(DecoderFailureReason::INIT_ERROR, __func__);
+      return InitPromise::CreateAndReject(
+        MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                    RESULT_DETAIL("Could not decode theora header.")),
+        __func__);
     }
   }
   if (mPacketCount != 3) {
-    return InitPromise::CreateAndReject(DecoderFailureReason::INIT_ERROR, __func__);
+    return InitPromise::CreateAndReject(
+      MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                  RESULT_DETAIL("Packet count is wrong.")),
+      __func__);
   }
 
   mTheoraDecoderContext = th_decode_alloc(&mTheoraInfo, mTheoraSetupInfo);
   if (mTheoraDecoderContext) {
     return InitPromise::CreateAndResolve(TrackInfo::kVideoTrack, __func__);
   } else {
-    return InitPromise::CreateAndReject(DecoderFailureReason::INIT_ERROR, __func__);
+    return InitPromise::CreateAndReject(
+      MediaResult(NS_ERROR_OUT_OF_MEMORY,
+                  RESULT_DETAIL("Could not allocate theora decoder.")),
+      __func__);
   }
 
 }
 
-nsresult
+RefPtr<MediaDataDecoder::FlushPromise>
 TheoraDecoder::Flush()
 {
-  MOZ_ASSERT(mCallback->OnReaderTaskQueue());
-  mIsFlushing = true;
-  nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction([this] () {
-    // nothing to do for now.
+  return InvokeAsync(mTaskQueue, __func__, []() {
+    return FlushPromise::CreateAndResolve(true, __func__);
   });
-  SyncRunnable::DispatchToThread(mTaskQueue, r);
-  mIsFlushing = false;
-  return NS_OK;
 }
 
 nsresult
 TheoraDecoder::DoDecodeHeader(const unsigned char* aData, size_t aLength)
 {
   bool bos = mPacketCount == 0;
-  ogg_packet pkt = InitTheoraPacket(aData, aLength, bos, false, 0, mPacketCount++);
+  ogg_packet pkt =
+    InitTheoraPacket(aData, aLength, bos, false, 0, mPacketCount++);
 
   int r = th_decode_headerin(&mTheoraInfo,
                              &mTheoraComment,
@@ -125,8 +141,8 @@ TheoraDecoder::DoDecodeHeader(const unsigned char* aData, size_t aLength)
   return r > 0 ? NS_OK : NS_ERROR_FAILURE;
 }
 
-int
-TheoraDecoder::DoDecode(MediaRawData* aSample)
+RefPtr<MediaDataDecoder::DecodePromise>
+TheoraDecoder::ProcessDecode(MediaRawData* aSample)
 {
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
 
@@ -134,7 +150,9 @@ TheoraDecoder::DoDecode(MediaRawData* aSample)
   size_t aLength = aSample->Size();
 
   bool bos = mPacketCount == 0;
-  ogg_packet pkt = InitTheoraPacket(aData, aLength, bos, false, aSample->mTimecode, mPacketCount++);
+  ogg_packet pkt = InitTheoraPacket(
+    aData, aLength, bos, false,
+    aSample->mTimecode.ToMicroseconds(), mPacketCount++);
 
   int ret = th_decode_packetin(mTheoraDecoderContext, &pkt, nullptr);
   if (ret == 0 || ret == TH_DUPFRAME) {
@@ -178,66 +196,51 @@ TheoraDecoder::DoDecode(MediaRawData* aSample)
                                    aSample->mKeyframe,
                                    aSample->mTimecode,
                                    mInfo.ScaledImageRect(mTheoraInfo.frame_width,
-                                                         mTheoraInfo.frame_height));
+                                                         mTheoraInfo.frame_height),
+                                   mImageAllocator);
     if (!v) {
-      LOG("Image allocation error source %ldx%ld display %ldx%ld picture %ldx%ld",
-          mTheoraInfo.frame_width, mTheoraInfo.frame_height, mInfo.mDisplay.width, mInfo.mDisplay.height,
-          mInfo.mImage.width, mInfo.mImage.height);
-      return -1;
+      LOG(
+        "Image allocation error source %ux%u display %ux%u picture %ux%u",
+        mTheoraInfo.frame_width,
+        mTheoraInfo.frame_height,
+        mInfo.mDisplay.width,
+        mInfo.mDisplay.height,
+        mInfo.mImage.width,
+        mInfo.mImage.height);
+      return DecodePromise::CreateAndReject(
+        MediaResult(NS_ERROR_OUT_OF_MEMORY,
+                    RESULT_DETAIL("Insufficient memory")),
+        __func__);
     }
-    mCallback->Output(v);
-    return 0;
-  } else {
-    LOG("Theora Decode error: %d", ret);
-    return -1;
+    return DecodePromise::CreateAndResolve(DecodedData{v}, __func__);
   }
+  LOG("Theora Decode error: %d", ret);
+  return DecodePromise::CreateAndReject(
+    MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
+                RESULT_DETAIL("Theora decode error:%d", ret)),
+    __func__);
 }
 
-void
-TheoraDecoder::ProcessDecode(MediaRawData* aSample)
+RefPtr<MediaDataDecoder::DecodePromise>
+TheoraDecoder::Decode(MediaRawData* aSample)
 {
-  MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
-  if (mIsFlushing) {
-    return;
-  }
-  if (DoDecode(aSample) == -1) {
-    mCallback->Error(MediaDataDecoderError::DECODE_ERROR);
-  } else {
-    mCallback->InputExhausted();
-  }
+  return InvokeAsync<MediaRawData*>(mTaskQueue, this, __func__,
+                                    &TheoraDecoder::ProcessDecode, aSample);
 }
 
-nsresult
-TheoraDecoder::Input(MediaRawData* aSample)
-{
-  MOZ_ASSERT(mCallback->OnReaderTaskQueue());
-  mTaskQueue->Dispatch(NewRunnableMethod<RefPtr<MediaRawData>>(
-                       this, &TheoraDecoder::ProcessDecode, aSample));
-
-  return NS_OK;
-}
-
-void
-TheoraDecoder::ProcessDrain()
-{
-  MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
-  mCallback->DrainComplete();
-}
-
-nsresult
+RefPtr<MediaDataDecoder::DecodePromise>
 TheoraDecoder::Drain()
 {
-  MOZ_ASSERT(mCallback->OnReaderTaskQueue());
-  mTaskQueue->Dispatch(NewRunnableMethod(this, &TheoraDecoder::ProcessDrain));
-
-  return NS_OK;
+  return InvokeAsync(mTaskQueue, __func__, [] {
+    return DecodePromise::CreateAndResolve(DecodedData(), __func__);
+  });
 }
 
 /* static */
 bool
 TheoraDecoder::IsTheora(const nsACString& aMimeType)
 {
-  return aMimeType.EqualsLiteral("video/ogg; codecs=theora");
+  return aMimeType.EqualsLiteral("video/theora");
 }
 
 } // namespace mozilla

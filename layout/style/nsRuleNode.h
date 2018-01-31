@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,19 +17,24 @@
 #include "mozilla/PodOperations.h"
 #include "mozilla/RangedArray.h"
 #include "mozilla/RuleNodeCacheConditions.h"
+#include "mozilla/LookAndFeel.h"
 #include "mozilla/SheetType.h"
 #include "nsPresContext.h"
 #include "nsStyleStruct.h"
 
 class nsCSSPropertyIDSet;
 class nsCSSValue;
+class nsFontMetrics;
 class nsIStyleRule;
-class nsStyleContext;
 class nsStyleCoord;
 struct nsCSSRect;
 struct nsCSSValueList;
 struct nsCSSValuePairList;
 struct nsRuleData;
+
+namespace mozilla {
+class GeckoStyleContext;
+} // namespace mozilla
 
 struct nsInheritedStyleData
 {
@@ -161,7 +167,7 @@ struct nsConditionalResetStyleData
   }
 
   void* GetStyleData(nsStyleStructID aSID,
-                     nsStyleContext* aStyleContext,
+                     mozilla::GeckoStyleContext* aStyleContext,
                      bool aCanComputeData) const {
     if (!(mConditionalBits & GetBitForSID(aSID))) {
       return mEntries[aSID];
@@ -181,13 +187,14 @@ struct nsConditionalResetStyleData
 private:
   // non-inline helper for GetStyleData
   void* GetConditionalStyleData(nsStyleStructID aSID,
-                                nsStyleContext* aStyleContext) const;
+                                mozilla::GeckoStyleContext* aStyleContext) const;
 
 public:
   void SetStyleData(nsStyleStructID aSID, void* aStyleStruct) {
     MOZ_ASSERT(!(mConditionalBits & GetBitForSID(aSID)),
                "rule node should not have unconditional and conditional style "
                "data for a given struct");
+    mConditionalBits &= ~GetBitForSID(aSID);
     mEntries[aSID] = aStyleStruct;
   }
 
@@ -195,13 +202,17 @@ public:
                     nsPresContext* aPresContext,
                     void* aStyleStruct,
                     const mozilla::RuleNodeCacheConditions& aConditions) {
-    MOZ_ASSERT((mConditionalBits & GetBitForSID(aSID)) ||
-               !mEntries[aSID],
-               "rule node should not have unconditional and conditional style "
-               "data for a given struct");
+    if (!(mConditionalBits & GetBitForSID(aSID))) {
+      MOZ_ASSERT(!mEntries[aSID],
+                 "rule node should not have unconditional and conditional "
+                 "style data for a given struct");
+      mEntries[aSID] = nullptr;
+    }
+
     MOZ_ASSERT(aConditions.CacheableWithDependencies(),
                "don't call SetStyleData with a cache key that has no "
                "conditions or is uncacheable");
+
 #ifdef DEBUG
     for (Entry* e = static_cast<Entry*>(mEntries[aSID]); e; e = e->mNext) {
       NS_WARNING_ASSERTION(e->mConditions != aConditions,
@@ -282,7 +293,7 @@ struct nsCachedStyleData
   }
 
   void* NS_FASTCALL GetStyleData(const nsStyleStructID aSID,
-                                 nsStyleContext* aStyleContext,
+                                 mozilla::GeckoStyleContext* aStyleContext,
                                  bool aCanComputeData) {
     if (IsReset(aSID)) {
       if (mResetData) {
@@ -318,7 +329,7 @@ struct nsCachedStyleData
         mInheritedData->mStyleStructs[eStyleStruct_##name_]) : nullptr;        \
     }
   #define STYLE_STRUCT_RESET(name_, checkdata_cb_)                             \
-    nsStyle##name_ * NS_FASTCALL GetStyle##name_ (nsStyleContext* aContext,    \
+    nsStyle##name_ * NS_FASTCALL GetStyle##name_ (mozilla::GeckoStyleContext* aContext,    \
                                                   bool aCanComputeData) {      \
       return mResetData ? static_cast<nsStyle##name_*>(                        \
         mResetData->GetStyleData(eStyleStruct_##name_, aContext,               \
@@ -353,9 +364,9 @@ struct nsCachedStyleData
  * destroyed when their reference-count drops to zero, but are instead
  * destroyed during a GC sweep.
  *
- * An nsStyleContext, which represents the computed style data for an
+ * An mozilla::GeckoStyleContext, which represents the computed style data for an
  * element, points to an nsRuleNode.  The path from the root of the rule
- * tree to the nsStyleContext's mRuleNode gives the list of the rules
+ * tree to the mozilla::GeckoStyleContext's mRuleNode gives the list of the rules
  * matched, from least important in the cascading order to most
  * important in the cascading order.
  *
@@ -372,14 +383,14 @@ struct nsCachedStyleData
  *   1. [mainly reset structs] When a style data struct will contain the
  *      same computed value for any elements that match the same set of
  *      rules (common for reset structs), it can be stored on the
- *      nsRuleNode instead of on the nsStyleContext.
+ *      nsRuleNode instead of on the mozilla::GeckoStyleContext.
  *   2. [only? reset structs] When (1) occurs, and an nsRuleNode doesn't
  *      have any rules that change the values in the struct, the
  *      nsRuleNode can share that struct with its parent nsRuleNode.
  *   3. [mainly inherited structs] When an element doesn't match any
  *      rules that change the value of a property (or, in the edge case,
- *      when all the values specified are 'inherit'), the nsStyleContext
- *      can use the same nsStyle* struct as its parent nsStyleContext.
+ *      when all the values specified are 'inherit'), the mozilla::GeckoStyleContext
+ *      can use the same nsStyle* struct as its parent mozilla::GeckoStyleContext.
  *
  * Since the data represented by an nsIStyleRule are immutable, the data
  * represented by an nsRuleNode are also immutable.
@@ -563,11 +574,11 @@ protected:
   void PropagateDependentBit(nsStyleStructID aSID, nsRuleNode* aHighestNode,
                              void* aStruct);
   void PropagateNoneBit(uint32_t aBit, nsRuleNode* aHighestNode);
-  static void PropagateGrandancestorBit(nsStyleContext* aContext,
-                                        nsStyleContext* aContextInheritedFrom);
+  static void PropagateGrandancestorBit(mozilla::GeckoStyleContext* aContext,
+                                        mozilla::GeckoStyleContext* aContextInheritedFrom);
 
   const void* SetDefaultOnRoot(const nsStyleStructID aSID,
-                               nsStyleContext* aContext);
+                               mozilla::GeckoStyleContext* aContext);
 
   /**
    * Resolves any property values in aRuleData for a given style struct that
@@ -579,127 +590,127 @@ protected:
    */
   static bool ResolveVariableReferences(const nsStyleStructID aSID,
                                         nsRuleData* aRuleData,
-                                        nsStyleContext* aContext);
+                                        mozilla::GeckoStyleContext* aContext);
 
   const void*
-    WalkRuleTree(const nsStyleStructID aSID, nsStyleContext* aContext);
+    WalkRuleTree(const nsStyleStructID aSID, mozilla::GeckoStyleContext* aContext);
 
   const void*
     ComputeDisplayData(void* aStartStruct,
                        const nsRuleData* aRuleData,
-                       nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                       mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                        RuleDetail aRuleDetail,
                        const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeVisibilityData(void* aStartStruct,
                           const nsRuleData* aRuleData,
-                          nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                          mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                           RuleDetail aRuleDetail,
                           const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeFontData(void* aStartStruct,
                     const nsRuleData* aRuleData,
-                    nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                    mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                     RuleDetail aRuleDetail,
                     const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeColorData(void* aStartStruct,
                      const nsRuleData* aRuleData,
-                     nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                     mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                      RuleDetail aRuleDetail,
                      const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeBackgroundData(void* aStartStruct,
                           const nsRuleData* aRuleData,
-                          nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                          mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                           RuleDetail aRuleDetail,
                           const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeMarginData(void* aStartStruct,
                       const nsRuleData* aRuleData,
-                      nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                      mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                       RuleDetail aRuleDetail,
                       const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeBorderData(void* aStartStruct,
                       const nsRuleData* aRuleData,
-                      nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                      mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                       RuleDetail aRuleDetail,
                       const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputePaddingData(void* aStartStruct,
                        const nsRuleData* aRuleData,
-                       nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                       mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                        RuleDetail aRuleDetail,
                        const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeOutlineData(void* aStartStruct,
                        const nsRuleData* aRuleData,
-                       nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                       mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                        RuleDetail aRuleDetail,
                        const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeListData(void* aStartStruct,
                     const nsRuleData* aRuleData,
-                    nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                    mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                     RuleDetail aRuleDetail,
                     const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputePositionData(void* aStartStruct,
                         const nsRuleData* aRuleData,
-                        nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                        mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                         RuleDetail aRuleDetail,
                         const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeTableData(void* aStartStruct,
                      const nsRuleData* aRuleData,
-                     nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                     mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                      RuleDetail aRuleDetail,
                      const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeTableBorderData(void* aStartStruct,
                            const nsRuleData* aRuleData,
-                           nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                           mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                            RuleDetail aRuleDetail,
                            const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeContentData(void* aStartStruct,
                        const nsRuleData* aRuleData,
-                       nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                       mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                        RuleDetail aRuleDetail,
                        const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeTextData(void* aStartStruct,
                     const nsRuleData* aRuleData,
-                    nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                    mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                     RuleDetail aRuleDetail,
                     const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeTextResetData(void* aStartStruct,
                          const nsRuleData* aRuleData,
-                         nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                         mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                          RuleDetail aRuleDetail,
                          const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeUserInterfaceData(void* aStartStruct,
                              const nsRuleData* aRuleData,
-                             nsStyleContext* aContext,
+                             mozilla::GeckoStyleContext* aContext,
                              nsRuleNode* aHighestNode,
                              RuleDetail aRuleDetail,
                              const mozilla::RuleNodeCacheConditions aConditions);
@@ -707,54 +718,55 @@ protected:
   const void*
     ComputeUIResetData(void* aStartStruct,
                        const nsRuleData* aRuleData,
-                       nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                       mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                        RuleDetail aRuleDetail,
                        const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeXULData(void* aStartStruct,
                    const nsRuleData* aRuleData,
-                   nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                   mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                    RuleDetail aRuleDetail,
                    const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeColumnData(void* aStartStruct,
                       const nsRuleData* aRuleData,
-                      nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                      mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                       RuleDetail aRuleDetail,
                       const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeSVGData(void* aStartStruct,
                    const nsRuleData* aRuleData,
-                   nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                   mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                    RuleDetail aRuleDetail,
                    const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeSVGResetData(void* aStartStruct,
                         const nsRuleData* aRuleData,
-                        nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                        mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                         RuleDetail aRuleDetail,
                         const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeVariablesData(void* aStartStruct,
                          const nsRuleData* aRuleData,
-                         nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                         mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                          RuleDetail aRuleDetail,
                          const mozilla::RuleNodeCacheConditions aConditions);
 
   const void*
     ComputeEffectsData(void* aStartStruct,
                        const nsRuleData* aRuleData,
-                       nsStyleContext* aContext, nsRuleNode* aHighestNode,
+                       mozilla::GeckoStyleContext* aContext, nsRuleNode* aHighestNode,
                        RuleDetail aRuleDetail,
                        const mozilla::RuleNodeCacheConditions aConditions);
 
   // helpers for |ComputeFontData| that need access to |mNoneBits|:
   static void SetFontSize(nsPresContext* aPresContext,
+                          mozilla::GeckoStyleContext* aContext,
                           const nsRuleData* aRuleData,
                           const nsStyleFont* aFont,
                           const nsStyleFont* aParentFont,
@@ -767,7 +779,7 @@ protected:
                           mozilla::RuleNodeCacheConditions& aConditions);
 
   static void SetFont(nsPresContext* aPresContext,
-                      nsStyleContext* aContext,
+                      mozilla::GeckoStyleContext* aContext,
                       uint8_t aGenericFontID,
                       const nsRuleData* aRuleData,
                       const nsStyleFont* aParentFont,
@@ -776,7 +788,7 @@ protected:
                       mozilla::RuleNodeCacheConditions& aConditions);
 
   static void SetGenericFont(nsPresContext* aPresContext,
-                             nsStyleContext* aContext,
+                             mozilla::GeckoStyleContext* aContext,
                              uint8_t aGenericFontID,
                              nsStyleFont* aFont);
 
@@ -795,6 +807,12 @@ public:
   static void EnsureBlockDisplay(mozilla::StyleDisplay& display,
                                  bool aConvertListItem = false);
   static void EnsureInlineDisplay(mozilla::StyleDisplay& display);
+
+  static already_AddRefed<nsFontMetrics> GetMetricsFor(nsPresContext* aPresContext,
+                                                       nsStyleContext* aStyleContext,
+                                                       const nsStyleFont* aStyleFont,
+                                                       nscoord aFontSize,
+                                                       bool aUseUserFontSet);
 
   // Transition never returns null; on out of memory it'll just return |this|.
   nsRuleNode* Transition(nsIStyleRule* aRule, mozilla::SheetType aLevel,
@@ -858,7 +876,7 @@ public:
   nsPresContext* PresContext() const { return mPresContext; }
 
   const void* GetStyleData(nsStyleStructID aSID,
-                           nsStyleContext* aContext,
+                           mozilla::GeckoStyleContext* aContext,
                            bool aComputeData);
 
   void GetDiscretelyAnimatedCSSValue(nsCSSPropertyID aProperty,
@@ -869,7 +887,7 @@ public:
   #define STYLE_STRUCT_INHERITED(name_, checkdata_cb_)                        \
   template<bool aComputeData>                                                 \
   const nsStyle##name_*                                                       \
-  GetStyle##name_(nsStyleContext* aContext, uint64_t& aContextStyleBits)      \
+  GetStyle##name_(mozilla::GeckoStyleContext* aContext, uint64_t& aContextStyleBits)      \
   {                                                                           \
     NS_ASSERTION(IsUsedDirectly(),                                            \
                  "if we ever call this on rule nodes that aren't used "       \
@@ -908,7 +926,7 @@ public:
   #define STYLE_STRUCT_RESET(name_, checkdata_cb_)                            \
   template<bool aComputeData>                                                 \
   const nsStyle##name_*                                                       \
-  GetStyle##name_(nsStyleContext* aContext)                                   \
+  GetStyle##name_(mozilla::GeckoStyleContext* aContext)                                   \
   {                                                                           \
     NS_ASSERTION(IsUsedDirectly(),                                            \
                  "if we ever call this on rule nodes that aren't used "       \
@@ -952,7 +970,7 @@ public:
   #undef STYLE_STRUCT_INHERITED
 
   static bool
-    HasAuthorSpecifiedRules(nsStyleContext* aStyleContext,
+    HasAuthorSpecifiedRules(mozilla::GeckoStyleContext* aStyleContext,
                             uint32_t ruleTypeMask,
                             bool aAuthorColorsAllowed);
 
@@ -964,13 +982,19 @@ public:
   static void
   ComputePropertiesOverridingAnimation(
                               const nsTArray<nsCSSPropertyID>& aProperties,
-                              nsStyleContext* aStyleContext,
+                              mozilla::GeckoStyleContext* aStyleContext,
                               nsCSSPropertyIDSet& aPropertiesOverridden);
 
   // Expose this so media queries can use it
   static nscoord CalcLengthWithInitialFont(nsPresContext* aPresContext,
                                            const nsCSSValue& aValue);
+
   // Expose this so nsTransformFunctions can use it.
+  //
+  // FIXME(emilio): This can enter here with a Servo style context, which will
+  // mostly be fine except for our handling of rem units, I think.
+  //
+  // Ditto in SpecifiedCalcToComputedCalc.
   static nscoord CalcLength(const nsCSSValue& aValue,
                             nsStyleContext* aStyleContext,
                             nsPresContext* aPresContext,
@@ -980,6 +1004,8 @@ public:
     nscoord mLength;
     float mPercent;
 
+    ComputedCalc() {}
+
     ComputedCalc(nscoord aLength, float aPercent)
       : mLength(aLength), mPercent(aPercent) {}
   };
@@ -988,23 +1014,6 @@ public:
                               nsStyleContext* aStyleContext,
                               nsPresContext* aPresContext,
                               mozilla::RuleNodeCacheConditions& aConditions);
-
-  // Compute the value of an nsStyleCoord that IsCalcUnit().
-  // (Values that don't require aPercentageBasis should be handled
-  // inside nsRuleNode rather than through this API.)
-  // @note the caller is expected to handle percentage of an indefinite size
-  // and NOT call this method with aPercentageBasis == NS_UNCONSTRAINEDSIZE.
-  // @note the return value may be negative, e.g. for "calc(a - b%)"
-  static nscoord ComputeComputedCalc(const nsStyleCoord& aCoord,
-                                     nscoord aPercentageBasis);
-
-  // Compute the value of an nsStyleCoord that is either a coord, a
-  // percent, or a calc expression.
-  // @note the caller is expected to handle percentage of an indefinite size
-  // and NOT call this method with aPercentageBasis == NS_UNCONSTRAINEDSIZE.
-  // @note the return value may be negative, e.g. for "calc(a - b%)"
-  static nscoord ComputeCoordPercentCalc(const nsStyleCoord& aCoord,
-                                         nscoord aPercentageBasis);
 
   // Return whether the rule tree for which this node is the root has
   // cached data such that we need to do dynamic change handling for
@@ -1021,20 +1030,9 @@ public:
     return !!mStyleData.GetStyleData(aSID);
   }
 
-  static void ComputeFontFeatures(const nsCSSValuePairList *aFeaturesList,
-                                  nsTArray<gfxFontFeature>& aFeatureSettings);
-
   static nscoord CalcFontPointSize(int32_t aHTMLSize, int32_t aBasePointSize,
                                    nsPresContext* aPresContext,
                                    nsFontSizeType aFontSizeType = eFontSize_HTML);
-
-  static nscoord FindNextSmallerFontSize(nscoord aFontSize, int32_t aBasePointSize,
-                                         nsPresContext* aPresContext,
-                                         nsFontSizeType aFontSizeType = eFontSize_HTML);
-
-  static nscoord FindNextLargerFontSize(nscoord aFontSize, int32_t aBasePointSize,
-                                        nsPresContext* aPresContext,
-                                        nsFontSizeType aFontSizeType = eFontSize_HTML);
 
   /**
    * @param aValue The color value, returned from nsCSSParser::ParseColorString
@@ -1054,28 +1052,49 @@ public:
                            nsStyleContext* aStyleContext,
                            nscolor& aResult);
 
-  static bool ParentHasPseudoElementData(nsStyleContext* aContext);
+  static bool ParentHasPseudoElementData(mozilla::GeckoStyleContext* aContext);
 
   static void ComputeTimingFunction(const nsCSSValue& aValue,
                                     nsTimingFunction& aResult);
-
-  // Fill unspecified layers by cycling through their values
-  // till they all are of lenght aMaxItemCount
-  static void FillAllBackgroundLists(nsStyleImageLayers& aLayers,
-                                     uint32_t aMaxItemCount);
 
 private:
 #ifdef DEBUG
   // non-inline helper function to allow assertions without incomplete
   // type errors
-  bool ContextHasCachedData(nsStyleContext* aContext, nsStyleStructID aSID);
+  bool ContextHasCachedData(mozilla::GeckoStyleContext* aContext, nsStyleStructID aSID);
 #endif
 
   // Store style struct on the style context and tell the style context
   // that it doesn't own the data
-  static void StoreStyleOnContext(nsStyleContext* aContext,
+  static void StoreStyleOnContext(mozilla::GeckoStyleContext* aContext,
                                   nsStyleStructID aSID,
                                   void* aStruct);
+};
+
+/**
+ * We allocate arrays of CSS values with alloca.  (These arrays are a
+ * fixed size per style struct, but we don't want to waste the
+ * allocation and construction/destruction costs of the big structs when
+ * we're handling much smaller ones.)  Since the lifetime of an alloca
+ * allocation is the life of the calling function, the caller must call
+ * alloca.  However, to ensure that constructors and destructors are
+ * balanced, we do the constructor and destructor calling from this RAII
+ * class, AutoCSSValueArray.
+ */
+struct AutoCSSValueArray
+{
+  /**
+   * aStorage must be the result of alloca(aCount * sizeof(nsCSSValue))
+   */
+  AutoCSSValueArray(void* aStorage, size_t aCount);
+
+  ~AutoCSSValueArray();
+
+  nsCSSValue* get() { return mArray; }
+
+private:
+  nsCSSValue *mArray;
+  size_t mCount;
 };
 
 #endif

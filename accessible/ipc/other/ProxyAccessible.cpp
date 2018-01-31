@@ -119,7 +119,7 @@ ProxyAccessible::IsSearchbox() const
   return retVal;
 }
 
-nsIAtom*
+nsAtom*
 ProxyAccessible::LandmarkRole() const
 {
   nsString landmark;
@@ -127,7 +127,7 @@ ProxyAccessible::LandmarkRole() const
   return NS_GetStaticAtom(landmark);
 }
 
-nsIAtom*
+nsAtom*
 ProxyAccessible::ARIARoleAtom() const
 {
   nsString role;
@@ -517,6 +517,19 @@ ProxyAccessible::RowIdx()
   return index;
 }
 
+void
+ProxyAccessible::GetColRowExtents(uint32_t* aColIdx, uint32_t* aRowIdx,
+                                  uint32_t* aColExtent, uint32_t* aRowExtent)
+{
+  Unused << mDoc->SendGetColRowExtents(mID, aColIdx, aRowIdx, aColExtent, aRowExtent);
+}
+
+void
+ProxyAccessible::GetPosition(uint32_t* aColIdx, uint32_t* aRowIdx)
+{
+  Unused << mDoc->SendGetPosition(mID, aColIdx, aRowIdx);
+}
+
 uint32_t
 ProxyAccessible::ColExtent()
 {
@@ -826,7 +839,7 @@ ProxyAccessible::IsItemSelected(uint32_t aIndex)
   Unused << mDoc->SendIsItemSelected(mID, aIndex, &selected);
   return selected;
 }
- 
+
 bool
 ProxyAccessible::AddItemToSelection(uint32_t aIndex)
 {

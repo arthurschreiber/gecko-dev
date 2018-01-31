@@ -2,12 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifdef FREEBL_NO_DEPEND
+#include "../stubs.h"
+#endif
+
 #include "mpi.h"
 #include "mplogic.h"
 #include "ecl.h"
 #include "ecl-priv.h"
-#include "ec2.h"
 #include "ecp.h"
+#include "ecl-curve.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -129,58 +133,84 @@ CLEANUP:
     return group;
 }
 
-#ifdef NSS_ECC_MORE_THAN_SUITE_B
-/* Construct a generic ECGroup for elliptic curves over binary polynomial
- * fields. */
+/* Construct an ECGroup. */
 ECGroup *
-ECGroup_consGF2m(const mp_int *irr, const unsigned int irr_arr[5],
-                 const mp_int *curvea, const mp_int *curveb,
-                 const mp_int *genx, const mp_int *geny,
-                 const mp_int *order, int cofactor)
+construct_ecgroup(const ECCurveName name, mp_int irr, mp_int curvea,
+                  mp_int curveb, mp_int genx, mp_int geny, mp_int order,
+                  int cofactor, ECField field, const char *text)
 {
-    mp_err res = MP_OKAY;
+    int bits;
     ECGroup *group = NULL;
+    mp_err res = MP_OKAY;
 
-    group = ECGroup_new();
-    if (group == NULL)
-        return NULL;
-
-    group->meth = GFMethod_consGF2m(irr, irr_arr);
-    if (group->meth == NULL) {
-        res = MP_MEM;
+    /* determine number of bits */
+    bits = mpl_significant_bits(&irr) - 1;
+    if (bits < MP_OKAY) {
+        res = bits;
         goto CLEANUP;
     }
-    MP_CHECKOK(mp_copy(curvea, &group->curvea));
-    MP_CHECKOK(mp_copy(curveb, &group->curveb));
-    MP_CHECKOK(mp_copy(genx, &group->genx));
-    MP_CHECKOK(mp_copy(geny, &group->geny));
-    MP_CHECKOK(mp_copy(order, &group->order));
-    group->cofactor = cofactor;
-    group->point_add = &ec_GF2m_pt_add_aff;
-    group->point_sub = &ec_GF2m_pt_sub_aff;
-    group->point_dbl = &ec_GF2m_pt_dbl_aff;
-    group->point_mul = &ec_GF2m_pt_mul_mont;
-    group->base_point_mul = NULL;
-    group->points_mul = &ec_pts_mul_basic;
-    group->validate_point = &ec_GF2m_validate_point;
+
+    /* determine which optimizations (if any) to use */
+    if (field == ECField_GFp) {
+        switch (name) {
+            case ECCurve_SECG_PRIME_256R1:
+                group =
+                    ECGroup_consGFp(&irr, &curvea, &curveb, &genx, &geny,
+                                    &order, cofactor);
+                if (group == NULL) {
+                    res = MP_UNDEF;
+                    goto CLEANUP;
+                }
+                MP_CHECKOK(ec_group_set_gfp256(group, name));
+                MP_CHECKOK(ec_group_set_gfp256_32(group, name));
+                break;
+            case ECCurve_SECG_PRIME_521R1:
+                group =
+                    ECGroup_consGFp(&irr, &curvea, &curveb, &genx, &geny,
+                                    &order, cofactor);
+                if (group == NULL) {
+                    res = MP_UNDEF;
+                    goto CLEANUP;
+                }
+                MP_CHECKOK(ec_group_set_gfp521(group, name));
+                break;
+            default:
+                /* use generic arithmetic */
+                group =
+                    ECGroup_consGFp_mont(&irr, &curvea, &curveb, &genx, &geny,
+                                         &order, cofactor);
+                if (group == NULL) {
+                    res = MP_UNDEF;
+                    goto CLEANUP;
+                }
+        }
+    } else {
+        res = MP_UNDEF;
+        goto CLEANUP;
+    }
+
+    /* set name, if any */
+    if ((group != NULL) && (text != NULL)) {
+        group->text = strdup(text);
+        if (group->text == NULL) {
+            res = MP_MEM;
+        }
+    }
 
 CLEANUP:
-    if (res != MP_OKAY) {
+    if (group && res != MP_OKAY) {
         ECGroup_free(group);
         return NULL;
     }
     return group;
 }
-#endif
 
-/* Construct ECGroup from hex parameters and name, if any. Called by
- * ECGroup_fromHex and ECGroup_fromName. */
+/* Construct ECGroup from parameters and name, if any. */
 ECGroup *
-ecgroup_fromNameAndHex(const ECCurveName name,
-                       const ECCurveParams *params)
+ecgroup_fromName(const ECCurveName name,
+                 const ECCurveBytes *params)
 {
     mp_int irr, curvea, curveb, genx, geny, order;
-    int bits;
     ECGroup *group = NULL;
     mp_err res = MP_OKAY;
 
@@ -197,141 +227,15 @@ ecgroup_fromNameAndHex(const ECCurveName name,
     MP_CHECKOK(mp_init(&genx));
     MP_CHECKOK(mp_init(&geny));
     MP_CHECKOK(mp_init(&order));
-    MP_CHECKOK(mp_read_radix(&irr, params->irr, 16));
-    MP_CHECKOK(mp_read_radix(&curvea, params->curvea, 16));
-    MP_CHECKOK(mp_read_radix(&curveb, params->curveb, 16));
-    MP_CHECKOK(mp_read_radix(&genx, params->genx, 16));
-    MP_CHECKOK(mp_read_radix(&geny, params->geny, 16));
-    MP_CHECKOK(mp_read_radix(&order, params->order, 16));
+    MP_CHECKOK(mp_read_unsigned_octets(&irr, params->irr, params->scalarSize));
+    MP_CHECKOK(mp_read_unsigned_octets(&curvea, params->curvea, params->scalarSize));
+    MP_CHECKOK(mp_read_unsigned_octets(&curveb, params->curveb, params->scalarSize));
+    MP_CHECKOK(mp_read_unsigned_octets(&genx, params->genx, params->scalarSize));
+    MP_CHECKOK(mp_read_unsigned_octets(&geny, params->geny, params->scalarSize));
+    MP_CHECKOK(mp_read_unsigned_octets(&order, params->order, params->scalarSize));
 
-    /* determine number of bits */
-    bits = mpl_significant_bits(&irr) - 1;
-    if (bits < MP_OKAY) {
-        res = bits;
-        goto CLEANUP;
-    }
-
-    /* determine which optimizations (if any) to use */
-    if (params->field == ECField_GFp) {
-        switch (name) {
-#ifdef NSS_ECC_MORE_THAN_SUITE_B
-#ifdef ECL_USE_FP
-            case ECCurve_SECG_PRIME_160R1:
-                group =
-                    ECGroup_consGFp(&irr, &curvea, &curveb, &genx, &geny,
-                                    &order, params->cofactor);
-                if (group == NULL) {
-                    res = MP_UNDEF;
-                    goto CLEANUP;
-                }
-                MP_CHECKOK(ec_group_set_secp160r1_fp(group));
-                break;
-#endif
-            case ECCurve_SECG_PRIME_192R1:
-#ifdef ECL_USE_FP
-                group =
-                    ECGroup_consGFp(&irr, &curvea, &curveb, &genx, &geny,
-                                    &order, params->cofactor);
-                if (group == NULL) {
-                    res = MP_UNDEF;
-                    goto CLEANUP;
-                }
-                MP_CHECKOK(ec_group_set_nistp192_fp(group));
-#else
-                group =
-                    ECGroup_consGFp(&irr, &curvea, &curveb, &genx, &geny,
-                                    &order, params->cofactor);
-                if (group == NULL) {
-                    res = MP_UNDEF;
-                    goto CLEANUP;
-                }
-                MP_CHECKOK(ec_group_set_gfp192(group, name));
-#endif
-                break;
-            case ECCurve_SECG_PRIME_224R1:
-#ifdef ECL_USE_FP
-                group =
-                    ECGroup_consGFp(&irr, &curvea, &curveb, &genx, &geny,
-                                    &order, params->cofactor);
-                if (group == NULL) {
-                    res = MP_UNDEF;
-                    goto CLEANUP;
-                }
-                MP_CHECKOK(ec_group_set_nistp224_fp(group));
-#else
-                group =
-                    ECGroup_consGFp(&irr, &curvea, &curveb, &genx, &geny,
-                                    &order, params->cofactor);
-                if (group == NULL) {
-                    res = MP_UNDEF;
-                    goto CLEANUP;
-                }
-                MP_CHECKOK(ec_group_set_gfp224(group, name));
-#endif
-                break;
-#endif /* NSS_ECC_MORE_THAN_SUITE_B */
-            case ECCurve_SECG_PRIME_256R1:
-                group =
-                    ECGroup_consGFp(&irr, &curvea, &curveb, &genx, &geny,
-                                    &order, params->cofactor);
-                if (group == NULL) {
-                    res = MP_UNDEF;
-                    goto CLEANUP;
-                }
-                MP_CHECKOK(ec_group_set_gfp256(group, name));
-                MP_CHECKOK(ec_group_set_gfp256_32(group, name));
-                break;
-            case ECCurve_SECG_PRIME_521R1:
-                group =
-                    ECGroup_consGFp(&irr, &curvea, &curveb, &genx, &geny,
-                                    &order, params->cofactor);
-                if (group == NULL) {
-                    res = MP_UNDEF;
-                    goto CLEANUP;
-                }
-                MP_CHECKOK(ec_group_set_gfp521(group, name));
-                break;
-            default:
-                /* use generic arithmetic */
-                group =
-                    ECGroup_consGFp_mont(&irr, &curvea, &curveb, &genx, &geny,
-                                         &order, params->cofactor);
-                if (group == NULL) {
-                    res = MP_UNDEF;
-                    goto CLEANUP;
-                }
-        }
-#ifdef NSS_ECC_MORE_THAN_SUITE_B
-    } else if (params->field == ECField_GF2m) {
-        group = ECGroup_consGF2m(&irr, NULL, &curvea, &curveb, &genx, &geny, &order, params->cofactor);
-        if (group == NULL) {
-            res = MP_UNDEF;
-            goto CLEANUP;
-        }
-        if ((name == ECCurve_NIST_K163) ||
-            (name == ECCurve_NIST_B163) ||
-            (name == ECCurve_SECG_CHAR2_163R1)) {
-            MP_CHECKOK(ec_group_set_gf2m163(group, name));
-        } else if ((name == ECCurve_SECG_CHAR2_193R1) ||
-                   (name == ECCurve_SECG_CHAR2_193R2)) {
-            MP_CHECKOK(ec_group_set_gf2m193(group, name));
-        } else if ((name == ECCurve_NIST_K233) ||
-                   (name == ECCurve_NIST_B233)) {
-            MP_CHECKOK(ec_group_set_gf2m233(group, name));
-        }
-#endif
-    } else {
-        res = MP_UNDEF;
-        goto CLEANUP;
-    }
-
-    /* set name, if any */
-    if ((group != NULL) && (params->text != NULL)) {
-        group->text = strdup(params->text);
-        if (group->text == NULL) {
-            res = MP_MEM;
-        }
-    }
+    group = construct_ecgroup(name, irr, curvea, curveb, genx, geny, order,
+                              params->cofactor, params->field, params->text);
 
 CLEANUP:
     mp_clear(&irr);
@@ -340,48 +244,41 @@ CLEANUP:
     mp_clear(&genx);
     mp_clear(&geny);
     mp_clear(&order);
-    if (res != MP_OKAY) {
+    if (group && res != MP_OKAY) {
         ECGroup_free(group);
         return NULL;
     }
     return group;
 }
 
-/* Construct ECGroup from hexadecimal representations of parameters. */
-ECGroup *
-ECGroup_fromHex(const ECCurveParams *params)
+/* Construct ECCurveBytes from an ECCurveName */
+const ECCurveBytes *
+ec_GetNamedCurveParams(const ECCurveName name)
 {
-    return ecgroup_fromNameAndHex(ECCurve_noName, params);
+    if ((name <= ECCurve_noName) || (ECCurve_pastLastCurve <= name) ||
+        (ecCurve_map[name] == NULL)) {
+        return NULL;
+    } else {
+        return ecCurve_map[name];
+    }
 }
 
 /* Construct ECGroup from named parameters. */
 ECGroup *
 ECGroup_fromName(const ECCurveName name)
 {
-    ECGroup *group = NULL;
-    ECCurveParams *params = NULL;
-    mp_err res = MP_OKAY;
+    const ECCurveBytes *params = NULL;
 
-    params = EC_GetNamedCurveParams(name);
+    /* This doesn't work with Curve25519 but it's not necessary to. */
+    PORT_Assert(name != ECCurve25519);
+
+    params = ec_GetNamedCurveParams(name);
     if (params == NULL) {
-        res = MP_UNDEF;
-        goto CLEANUP;
+        return NULL;
     }
 
     /* construct actual group */
-    group = ecgroup_fromNameAndHex(name, params);
-    if (group == NULL) {
-        res = MP_UNDEF;
-        goto CLEANUP;
-    }
-
-CLEANUP:
-    EC_FreeCurveParams(params);
-    if (res != MP_OKAY) {
-        ECGroup_free(group);
-        return NULL;
-    }
-    return group;
+    return ecgroup_fromName(name, params);
 }
 
 /* Validates an EC public key as described in Section 5.2.2 of X9.62. */

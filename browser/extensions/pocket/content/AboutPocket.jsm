@@ -5,14 +5,14 @@
 
 const { interfaces: Ci, results: Cr, manager: Cm, utils: Cu } = Components;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 // See LOG_LEVELS in Console.jsm. Common examples: "All", "Info", "Warn", & "Error".
 const PREF_LOG_LEVEL = "loop.debug.loglevel";
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let ConsoleAPI = Cu.import("resource://gre/modules/Console.jsm", {}).ConsoleAPI;
+  let ConsoleAPI = ChromeUtils.import("resource://gre/modules/Console.jsm", {}).ConsoleAPI;
   let consoleOptions = {
     maxLogLevelPref: PREF_LOG_LEVEL,
     prefix: "Loop"
@@ -31,37 +31,37 @@ function AboutPage(chromeURL, aboutHost, classID, description, uriFlags) {
 
 AboutPage.prototype = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIAboutModule]),
-  getURIFlags: function(aURI) { // eslint-disable-line no-unused-vars
+  getURIFlags(aURI) { // eslint-disable-line no-unused-vars
     return this.uriFlags;
   },
 
-  newChannel: function(aURI, aLoadInfo) {
-    let newURI = Services.io.newURI(this.chromeURL, null, null);
+  newChannel(aURI, aLoadInfo) {
+    let newURI = Services.io.newURI(this.chromeURL);
     let channel = Services.io.newChannelFromURIWithLoadInfo(newURI,
                                                             aLoadInfo);
     channel.originalURI = aURI;
 
     if (this.uriFlags & Ci.nsIAboutModule.URI_SAFE_FOR_UNTRUSTED_CONTENT) {
-      let principal = Services.scriptSecurityManager.getNoAppCodebasePrincipal(aURI);
+      let principal = Services.scriptSecurityManager.createCodebasePrincipal(aURI, {});
       channel.owner = principal;
     }
     return channel;
   },
 
-  createInstance: function(outer, iid) {
+  createInstance(outer, iid) {
     if (outer !== null) {
       throw Cr.NS_ERROR_NO_AGGREGATION;
     }
     return this.QueryInterface(iid);
   },
 
-  register: function() {
+  register() {
     Cm.QueryInterface(Ci.nsIComponentRegistrar).registerFactory(
       this.classID, this.description,
       "@mozilla.org/network/protocol/about;1?what=" + this.aboutHost, this);
   },
 
-  unregister: function() {
+  unregister() {
     Cm.QueryInterface(Ci.nsIComponentRegistrar).unregisterFactory(
       this.classID, this);
   }

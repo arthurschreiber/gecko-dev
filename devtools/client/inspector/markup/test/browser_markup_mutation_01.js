@@ -23,7 +23,9 @@ const TEST_DATA = [
     check: function* (inspector) {
       let {editor} = yield getContainerForSelector("#node1", inspector);
       ok([...editor.attrList.querySelectorAll(".attreditor")].some(attr => {
-        return attr.textContent.trim() === "newattr=\"newattrval\"";
+        return attr.textContent.trim() === "newattr=\"newattrval\""
+          && attr.dataset.value === "newattrval"
+          && attr.dataset.attr === "newattr";
       }), "newattr attribute found");
     }
   },
@@ -47,7 +49,9 @@ const TEST_DATA = [
     check: function* (inspector) {
       let {editor} = yield getContainerForSelector("#node1", inspector);
       ok([...editor.attrList.querySelectorAll(".attreditor")].some(attr => {
-        return attr.textContent.trim() === "newattr=\"newattrval\"";
+        return attr.textContent.trim() === "newattr=\"newattrval\""
+          && attr.dataset.value === "newattrval"
+          && attr.dataset.attr === "newattr";
       }), "newattr attribute found");
     }
   },
@@ -59,8 +63,40 @@ const TEST_DATA = [
     check: function* (inspector) {
       let {editor} = yield getContainerForSelector("#node1", inspector);
       ok([...editor.attrList.querySelectorAll(".attreditor")].some(attr => {
-        return attr.textContent.trim() === "newattr=\"newattrchanged\"";
+        return attr.textContent.trim() === "newattr=\"newattrchanged\""
+          && attr.dataset.value === "newattrchanged"
+          && attr.dataset.attr === "newattr";
       }), "newattr attribute found");
+    }
+  },
+  {
+    desc: "Adding another attribute does not rerender unchanged attributes",
+    test: function* (testActor, inspector) {
+      let {editor} = yield getContainerForSelector("#node1", inspector);
+
+      // This test checks the impact on the markup-view nodes after setting attributes on
+      // content nodes.
+      info("Expect attribute-container for 'new-attr' from the previous test");
+      let attributeContainer = editor.attrList.querySelector("[data-attr=newattr]");
+      ok(attributeContainer, "attribute-container for 'newattr' found");
+
+      info("Set a flag on the attribute-container to check after the mutation");
+      attributeContainer.beforeMutationFlag = true;
+
+      info("Add the attribute 'otherattr' on the content node to trigger the mutation");
+      yield testActor.setAttribute("#node1", "otherattr", "othervalue");
+    },
+    check: function* (inspector) {
+      let {editor} = yield getContainerForSelector("#node1", inspector);
+
+      info("Check the attribute-container for the new attribute mutation was created");
+      let otherAttrContainer = editor.attrList.querySelector("[data-attr=otherattr]");
+      ok(otherAttrContainer, "attribute-container for 'otherattr' found");
+
+      info("Check the attribute-container for 'new-attr' is the same node as earlier.");
+      let newAttrContainer = editor.attrList.querySelector("[data-attr=newattr]");
+      ok(newAttrContainer, "attribute-container for 'newattr' found");
+      ok(newAttrContainer.beforeMutationFlag, "attribute-container same as earlier");
     }
   },
   {
@@ -68,7 +104,7 @@ const TEST_DATA = [
     numMutations: 2,
     test: function* (testActor) {
       yield testActor.eval(`
-        let node1 = content.document.querySelector("#node1");
+        let node1 = document.querySelector("#node1");
         node1.classList.add("pseudo");
       `);
     },
@@ -83,7 +119,7 @@ const TEST_DATA = [
     numMutations: 2,
     test: function* (testActor) {
       yield testActor.eval(`
-        let node1 = content.document.querySelector("#node1");
+        let node1 = document.querySelector("#node1");
         node1.classList.remove("pseudo");
       `);
     },
@@ -110,7 +146,7 @@ const TEST_DATA = [
     desc: "Adding a second text child",
     test: function* (testActor) {
       yield testActor.eval(`
-        let node1 = content.document.querySelector("#node1");
+        let node1 = document.querySelector("#node1");
         let newText = node1.ownerDocument.createTextNode("more");
         node1.appendChild(newText);
       `);
@@ -187,7 +223,7 @@ const TEST_DATA = [
     desc: "Removing child nodes",
     test: function* (testActor) {
       yield testActor.eval(`
-        let node4 = content.document.querySelector("#node4");
+        let node4 = document.querySelector("#node4");
         while (node4.firstChild) {
           node4.removeChild(node4.firstChild);
         }
@@ -202,8 +238,8 @@ const TEST_DATA = [
     desc: "Appending a child to a different parent",
     test: function* (testActor) {
       yield testActor.eval(`
-        let node17 = content.document.querySelector("#node17");
-        let node2 = content.document.querySelector("#node2");
+        let node17 = document.querySelector("#node17");
+        let node2 = document.querySelector("#node2");
         node2.appendChild(node17);
       `);
     },
@@ -235,9 +271,9 @@ const TEST_DATA = [
     //        node19
     test: function* (testActor) {
       yield testActor.eval(`
-        let node18 = content.document.querySelector("#node18");
-        let node20 = content.document.querySelector("#node20");
-        let node1 = content.document.querySelector("#node1");
+        let node18 = document.querySelector("#node18");
+        let node20 = document.querySelector("#node20");
+        let node1 = document.querySelector("#node1");
         node1.appendChild(node20);
         node20.appendChild(node18);
       `);
@@ -281,19 +317,20 @@ add_task(function* () {
 
     // If a test expects more than one mutation it may come through in a single
     // event or possibly in multiples.
-    let def = defer();
     let seenMutations = 0;
-    inspector.on("markupmutation", function onmutation(e, mutations) {
-      seenMutations += mutations.length;
-      info("Receieved " + seenMutations +
-           " mutations, expecting at least " + numMutations);
-      if (seenMutations >= numMutations) {
-        inspector.off("markupmutation", onmutation);
-        def.resolve();
-      }
+    let promise = new Promise(resolve => {
+      inspector.on("markupmutation", function onmutation(e, mutations) {
+        seenMutations += mutations.length;
+        info("Receieved " + seenMutations +
+             " mutations, expecting at least " + numMutations);
+        if (seenMutations >= numMutations) {
+          inspector.off("markupmutation", onmutation);
+          resolve();
+        }
+      });
     });
-    yield test(testActor);
-    yield def.promise;
+    yield test(testActor, inspector);
+    yield promise;
 
     info("Expanding all markup-view nodes to make sure new nodes are imported");
     yield inspector.markup.expandAll();

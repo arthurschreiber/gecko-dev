@@ -1,5 +1,4 @@
-function run_test()
-{
+function run_test() {
   if (!("@mozilla.org/toolkit/crash-reporter;1" in Components.classes)) {
     dump("INFO | test_crash_purevirtual.js | Can't test crashreporter in a non-libxul build.\n");
     return;
@@ -17,7 +16,7 @@ function run_test()
              crashReporter.annotateCrashReport("TestKey", "TestValue");
            },
            function(mdump, extra) {
-             do_check_eq(extra.TestKey, "TestValue");
+             Assert.equal(extra.TestKey, "TestValue");
            },
           // process will exit with a zero exit status
           true);

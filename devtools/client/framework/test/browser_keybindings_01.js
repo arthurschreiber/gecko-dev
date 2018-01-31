@@ -5,6 +5,18 @@
 
 // Tests that the keybindings for opening and closing the inspector work as expected
 // Can probably make this a shared test that tests all of the tools global keybindings
+const TEST_URL = "data:text/html,<html><head><title>Test for the " +
+                 "highlighter keybindings</title></head><body>" +
+                 "<h1>Keybindings!</h1></body></html>"
+
+// Use the new debugger frontend because the old one swallows the netmonitor shortcut:
+// https://bugzilla.mozilla.org/show_bug.cgi?id=1370442#c7
+Services.prefs.setBoolPref("devtools.debugger.new-debugger-frontend", true);
+registerCleanupFunction(function* () {
+  Services.prefs.clearUserPref("devtools.debugger.new-debugger-frontend");
+});
+
+const {gDevToolsBrowser} = require("devtools/client/framework/devtools-browser");
 
 function test()
 {
@@ -15,17 +27,11 @@ function test()
   let inspector;
   let keysetMap = { };
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.selectedBrowser.addEventListener("load", function onload() {
-    gBrowser.selectedBrowser.removeEventListener("load", onload, true);
-    doc = content.document;
+  addTab(TEST_URL).then(function () {
+    doc = gBrowser.contentDocumentAsCPOW;
     node = doc.querySelector("h1");
     waitForFocus(setupKeyBindingsTest);
-  }, true);
-
-  content.location = "data:text/html,<html><head><title>Test for the " +
-                     "highlighter keybindings</title></head><body>" +
-                     "<h1>Keybindings!</h1></body></html>";
+  });
 
   function buildDevtoolsKeysetMap(keyset) {
     [].forEach.call(keyset.querySelectorAll("key"), function (key) {

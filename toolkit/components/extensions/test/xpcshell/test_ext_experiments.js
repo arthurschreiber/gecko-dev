@@ -2,37 +2,27 @@
 
 /* globals browser */
 
-XPCOMUtils.defineLazyModuleGetter(this, "AddonManager",
-                                  "resource://gre/modules/AddonManager.jsm");
+ChromeUtils.defineModuleGetter(this, "AddonManager",
+                               "resource://gre/modules/AddonManager.jsm");
 
-function promiseAddonStartup() {
-  const {Management} = Cu.import("resource://gre/modules/Extension.jsm");
+AddonTestUtils.init(this);
 
-  return new Promise(resolve => {
-    let listener = (evt, extension) => {
-      Management.off("startup", listener);
-      resolve(extension);
-    };
-
-    Management.on("startup", listener);
-  });
-}
-
-add_task(function* setup() {
-  yield ExtensionTestUtils.startAddonManager();
+add_task(async function setup() {
+  AddonTestUtils.overrideCertDB();
+  await ExtensionTestUtils.startAddonManager();
 });
 
-add_task(function* test_experiments_api() {
+add_task(async function test_experiments_api() {
   let apiAddonFile = Extension.generateZipFile({
     "install.rdf": `<?xml version="1.0" encoding="UTF-8"?>
       <RDF xmlns="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
            xmlns:em="http://www.mozilla.org/2004/em-rdf#">
           <Description about="urn:mozilla:install-manifest"
-              em:id="meh@experiments.addons.mozilla.org"
-              em:name="Meh Experiment"
+              em:id="fooBar@experiments.addons.mozilla.org"
+              em:name="FooBar Experiment"
               em:type="256"
               em:version="0.1"
-              em:description="Meh experiment"
+              em:description="FooBar experiment"
               em:creator="Mozilla">
 
               <em:targetApplication>
@@ -53,8 +43,9 @@ add_task(function* test_experiments_api() {
       class API extends ExtensionAPI {
         getAPI(context) {
           return {
-            meh: {
+            fooBar: {
               hello(text) {
+                console.log('fooBar.hello API called', text);
                 Services.obs.notifyObservers(null, "webext-api-hello", text);
               }
             }
@@ -65,9 +56,9 @@ add_task(function* test_experiments_api() {
 
     "schema.json": [
       {
-        "namespace": "meh",
-        "description": "All full of meh.",
-        "permissions": ["experiments.meh"],
+        "namespace": "fooBar",
+        "description": "All full of fooBar.",
+        "permissions": ["experiments.fooBar"],
         "functions": [
           {
             "name": "hello",
@@ -84,8 +75,8 @@ add_task(function* test_experiments_api() {
 
   let addonFile = Extension.generateXPI({
     manifest: {
-      applications: {gecko: {id: "meh@web.extension"}},
-      permissions: ["experiments.meh"],
+      applications: {gecko: {id: "fooBar@web.extension"}},
+      permissions: ["experiments.fooBar"],
     },
 
     background() {
@@ -95,9 +86,9 @@ add_task(function* test_experiments_api() {
       // and only calling hello() with the magic string if the call with
       // bad arguments throws.
       try {
-        browser.meh.hello("I should not see this", "since two arguments are bad");
+        browser.fooBar.hello("I should not see this", "since two arguments are bad");
       } catch (err) {
-        browser.meh.hello("Here I am");
+        browser.fooBar.hello("Here I am");
       }
     },
   });
@@ -107,15 +98,15 @@ add_task(function* test_experiments_api() {
       applications: {gecko: {id: "boring@web.extension"}},
     },
     background() {
-      if (browser.meh) {
-        browser.meh.hello("Here I should not be");
+      if (browser.fooBar) {
+        browser.fooBar.hello("Here I should not be");
       }
     },
   });
 
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     for (let file of [apiAddonFile, addonFile, boringAddonFile]) {
-      Services.obs.notifyObservers(file, "flush-cache-entry", null);
+      Services.obs.notifyObservers(file, "flush-cache-entry");
       file.remove(false);
     }
   });
@@ -130,42 +121,66 @@ add_task(function* test_experiments_api() {
     }
   };
 
-  Services.obs.addObserver(observer, "webext-api-loaded", false);
-  Services.obs.addObserver(observer, "webext-api-hello", false);
-  do_register_cleanup(() => {
+  Services.obs.addObserver(observer, "webext-api-loaded");
+  Services.obs.addObserver(observer, "webext-api-hello");
+  registerCleanupFunction(() => {
     Services.obs.removeObserver(observer, "webext-api-loaded");
     Services.obs.removeObserver(observer, "webext-api-hello");
   });
 
 
   // Install API add-on.
-  let apiAddon = yield AddonManager.installTemporaryAddon(apiAddonFile);
+  let apiAddon = await AddonManager.installTemporaryAddon(apiAddonFile);
 
-  let {APIs} = Cu.import("resource://gre/modules/ExtensionManagement.jsm", {});
-  ok(APIs.apis.has("meh"), "Should have meh API.");
+  let {ExtensionAPIs} = ChromeUtils.import("resource://gre/modules/ExtensionCommon.jsm", {}).ExtensionCommon;
+  ok(ExtensionAPIs.apis.has("fooBar"), "Should have fooBar API.");
 
 
   // Install boring WebExtension add-on.
-  let boringAddon = yield AddonManager.installTemporaryAddon(boringAddonFile);
-  yield promiseAddonStartup();
-
+  let boringAddon = await AddonManager.installTemporaryAddon(boringAddonFile);
+  await AddonTestUtils.promiseWebExtensionStartup();
 
   // Install interesting WebExtension add-on.
   let promise = new Promise(resolve => {
     resolveHello = resolve;
   });
 
-  let addon = yield AddonManager.installTemporaryAddon(addonFile);
-  yield promiseAddonStartup();
+  let addon = await AddonManager.installTemporaryAddon(addonFile);
+  await AddonTestUtils.promiseWebExtensionStartup();
 
-  let hello = yield promise;
+  let hello = await promise;
   equal(hello, "Here I am", "Should get hello from add-on");
+
+  // Install management test add-on.
+  let managementAddon = ExtensionTestUtils.loadExtension({
+    manifest: {
+      applications: {gecko: {id: "management@web.extension"}},
+      permissions: ["management"],
+    },
+    async background() {
+      // Should find the simple extension.
+      let normalAddon = await browser.management.get("boring@web.extension");
+      browser.test.assertEq(normalAddon.id, "boring@web.extension", "Found boring addon");
+
+      try {
+        // Not allowed to get the API experiment.
+        await browser.management.get("fooBar@experiments.addons.mozilla.org");
+      } catch (e) {
+        browser.test.sendMessage("done");
+      }
+    },
+    useAddonManager: "temporary",
+  });
+
+  await managementAddon.startup();
+  await managementAddon.awaitMessage("done");
+  await managementAddon.unload();
 
   // Cleanup.
   apiAddon.uninstall();
 
   boringAddon.userDisabled = true;
-  yield new Promise(do_execute_soon);
+  await new Promise(executeSoon);
 
   equal(addon.appDisabled, true, "Add-on should be app-disabled after its dependency is removed.");
 
@@ -173,3 +188,264 @@ add_task(function* test_experiments_api() {
   boringAddon.uninstall();
 });
 
+let fooExperimentAPIs = {
+  foo: {
+    schema: "schema.json",
+    parent: {
+      scopes: ["addon_parent"],
+      script: "parent.js",
+      paths: [["experiments", "foo", "parent"]],
+    },
+    child: {
+      scopes: ["addon_child"],
+      script: "child.js",
+      paths: [["experiments", "foo", "child"]],
+    },
+  },
+};
+
+let fooExperimentFiles = {
+  "schema.json": JSON.stringify([
+    {
+      "namespace": "experiments.foo",
+      "types": [
+        {
+          "id": "Meh",
+          "type": "object",
+          "properties": {},
+        },
+      ],
+      "functions": [
+        {
+          "name": "parent",
+          "type": "function",
+          "async": true,
+          "parameters": [],
+        },
+        {
+          "name": "child",
+          "type": "function",
+          "parameters": [],
+          "returns": {"type": "string"},
+        },
+      ],
+    },
+  ]),
+
+  /* globals ExtensionAPI */
+  "parent.js": () => {
+    this.foo = class extends ExtensionAPI {
+      getAPI(context) {
+        return {
+          experiments: {
+            foo: {
+              parent() {
+                return Promise.resolve("parent");
+              },
+            },
+          },
+        };
+      }
+    };
+  },
+
+  "child.js": () => {
+    this.foo = class extends ExtensionAPI {
+      getAPI(context) {
+        return {
+          experiments: {
+            foo: {
+              child() {
+                return "child";
+              },
+            },
+          },
+        };
+      }
+    };
+  },
+};
+
+async function testFooExperiment() {
+  browser.test.assertEq("object", typeof browser.experiments,
+                        "typeof browser.experiments");
+
+  browser.test.assertEq("object", typeof browser.experiments.foo,
+                        "typeof browser.experiments.foo");
+
+  browser.test.assertEq("function", typeof browser.experiments.foo.child,
+                        "typeof browser.experiments.foo.child");
+
+  browser.test.assertEq("function", typeof browser.experiments.foo.parent,
+                        "typeof browser.experiments.foo.parent");
+
+  browser.test.assertEq("child", browser.experiments.foo.child(),
+                        "foo.child()");
+
+  browser.test.assertEq("parent", await browser.experiments.foo.parent(),
+                        "await foo.parent()");
+}
+
+add_task(async function test_bundled_experiments() {
+  async function background() {
+    await testFooExperiment();
+
+    browser.test.notifyPass("background.experiments.foo");
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    isPrivileged: true,
+
+    manifest: {
+      experiment_apis: fooExperimentAPIs,
+    },
+
+    background: `
+      ${testFooExperiment}
+      (${background})();
+    `,
+
+    files: fooExperimentFiles,
+  });
+
+  await extension.startup();
+
+  await extension.awaitFinish("background.experiments.foo");
+
+  await extension.unload();
+});
+
+
+add_task(async function test_unbundled_experiments() {
+  async function background() {
+    await testFooExperiment();
+
+    browser.test.assertEq("object", typeof browser.experiments.crunk,
+                          "typeof browser.experiments.crunk");
+
+    browser.test.assertEq("function", typeof browser.experiments.crunk.child,
+                          "typeof browser.experiments.crunk.child");
+
+    browser.test.assertEq("function", typeof browser.experiments.crunk.parent,
+                          "typeof browser.experiments.crunk.parent");
+
+    browser.test.assertEq("crunk-child", browser.experiments.crunk.child(),
+                          "crunk.child()");
+
+    browser.test.assertEq("crunk-parent", await browser.experiments.crunk.parent(),
+                          "await crunk.parent()");
+
+
+    browser.test.notifyPass("background.experiments.crunk");
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    isPrivileged: true,
+
+    manifest: {
+      experiment_apis: fooExperimentAPIs,
+
+      permissions: ["experiments.crunk"],
+    },
+
+    background: `
+      ${testFooExperiment}
+      (${background})();
+    `,
+
+    files: fooExperimentFiles,
+  });
+
+  let apiExtension = ExtensionTestUtils.loadExtension({
+    isPrivileged: true,
+
+    manifest: {
+      applications: {gecko: {id: "crunk@experiments.addons.mozilla.org"}},
+
+      experiment_apis: {
+        crunk: {
+          schema: "schema.json",
+          parent: {
+            scopes: ["addon_parent"],
+            script: "parent.js",
+            paths: [["experiments", "crunk", "parent"]],
+          },
+          child: {
+            scopes: ["addon_child"],
+            script: "child.js",
+            paths: [["experiments", "crunk", "child"]],
+          },
+        },
+      },
+    },
+
+    files: {
+      "schema.json": JSON.stringify([
+        {
+          "namespace": "experiments.crunk",
+          "types": [
+            {
+              "id": "Meh",
+              "type": "object",
+              "properties": {},
+            },
+          ],
+          "functions": [
+            {
+              "name": "parent",
+              "type": "function",
+              "async": true,
+              "parameters": [],
+            },
+            {
+              "name": "child",
+              "type": "function",
+              "parameters": [],
+              "returns": {"type": "string"},
+            },
+          ],
+        },
+      ]),
+
+      "parent.js": () => {
+        this.crunk = class extends ExtensionAPI {
+          getAPI(context) {
+            return {
+              experiments: {
+                crunk: {
+                  parent() {
+                    return Promise.resolve("crunk-parent");
+                  },
+                },
+              },
+            };
+          }
+        };
+      },
+
+      "child.js": () => {
+        this.crunk = class extends ExtensionAPI {
+          getAPI(context) {
+            return {
+              experiments: {
+                crunk: {
+                  child() {
+                    return "crunk-child";
+                  },
+                },
+              },
+            };
+          }
+        };
+      },
+    },
+  });
+
+  await apiExtension.startup();
+  await extension.startup();
+
+  await extension.awaitFinish("background.experiments.crunk");
+
+  await extension.unload();
+  await apiExtension.unload();
+});

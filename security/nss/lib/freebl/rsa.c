@@ -190,12 +190,12 @@ cleanup:
     }
     return rv;
 }
-static SECStatus
+
+SECStatus
 generate_prime(mp_int *prime, int primeLen)
 {
     mp_err err = MP_OKAY;
     SECStatus rv = SECSuccess;
-    unsigned long counter = 0;
     int piter;
     unsigned char *pb = NULL;
     pb = PORT_Alloc(primeLen);
@@ -208,7 +208,7 @@ generate_prime(mp_int *prime, int primeLen)
         pb[0] |= 0xC0;            /* set two high-order bits */
         pb[primeLen - 1] |= 0x01; /* set low-order bit       */
         CHECK_MPI_OK(mp_read_unsigned_octets(prime, pb, primeLen));
-        err = mpp_make_prime(prime, primeLen * 8, PR_FALSE, &counter);
+        err = mpp_make_prime(prime, primeLen * 8, PR_FALSE);
         if (err != MP_NO)
             goto cleanup;
         /* keep going while err == MP_NO */
@@ -276,7 +276,10 @@ RSAPrivateKey *
 RSA_NewKey(int keySizeInBits, SECItem *publicExponent)
 {
     unsigned int primeLen;
-    mp_int p, q, e, d;
+    mp_int p = { 0, 0, 0, NULL };
+    mp_int q = { 0, 0, 0, NULL };
+    mp_int e = { 0, 0, 0, NULL };
+    mp_int d = { 0, 0, 0, NULL };
     int kiter;
     int max_attempts;
     mp_err err = MP_OKAY;
@@ -290,38 +293,49 @@ RSA_NewKey(int keySizeInBits, SECItem *publicExponent)
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return NULL;
     }
-    /* 1. Allocate arena & key */
+    /* 1.  Set the public exponent and check if it's uneven and greater than 2.*/
+    MP_DIGITS(&e) = 0;
+    CHECK_MPI_OK(mp_init(&e));
+    SECITEM_TO_MPINT(*publicExponent, &e);
+    if (mp_iseven(&e) || !(mp_cmp_d(&e, 2) > 0)) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        goto cleanup;
+    }
+#ifndef NSS_FIPS_DISABLED
+    /* Check that the exponent is not smaller than 65537  */
+    if (mp_cmp_d(&e, 0x10001) < 0) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        goto cleanup;
+    }
+#endif
+
+    /* 2. Allocate arena & key */
     arena = PORT_NewArena(NSS_FREEBL_DEFAULT_CHUNKSIZE);
     if (!arena) {
         PORT_SetError(SEC_ERROR_NO_MEMORY);
-        return NULL;
+        goto cleanup;
     }
     key = PORT_ArenaZNew(arena, RSAPrivateKey);
     if (!key) {
         PORT_SetError(SEC_ERROR_NO_MEMORY);
-        PORT_FreeArena(arena, PR_TRUE);
-        return NULL;
+        goto cleanup;
     }
     key->arena = arena;
     /* length of primes p and q (in bytes) */
     primeLen = keySizeInBits / (2 * PR_BITS_PER_BYTE);
     MP_DIGITS(&p) = 0;
     MP_DIGITS(&q) = 0;
-    MP_DIGITS(&e) = 0;
     MP_DIGITS(&d) = 0;
     CHECK_MPI_OK(mp_init(&p));
     CHECK_MPI_OK(mp_init(&q));
-    CHECK_MPI_OK(mp_init(&e));
     CHECK_MPI_OK(mp_init(&d));
-    /* 2.  Set the version number (PKCS1 v1.5 says it should be zero) */
+    /* 3.  Set the version number (PKCS1 v1.5 says it should be zero) */
     SECITEM_AllocItem(arena, &key->version, 1);
     key->version.data[0] = 0;
-    /* 3.  Set the public exponent */
-    SECITEM_TO_MPINT(*publicExponent, &e);
+
     kiter = 0;
     max_attempts = 5 * (keySizeInBits / 2); /* FIPS 186-4 B.3.3 steps 4.7 and 5.8 */
     do {
-        prerr = 0;
         PORT_SetError(0);
         CHECK_SEC_OK(generate_prime(&p, primeLen));
         CHECK_SEC_OK(generate_prime(&q, primeLen));
@@ -348,8 +362,7 @@ RSA_NewKey(int keySizeInBits, SECItem *publicExponent)
         kiter++;
         /* loop until have primes */
     } while (prerr == SEC_ERROR_NEED_RANDOM && kiter < max_attempts);
-    if (prerr)
-        goto cleanup;
+
 cleanup:
     mp_clear(&p);
     mp_clear(&q);
@@ -383,19 +396,129 @@ rsa_is_prime(mp_int *p)
 }
 
 /*
- * Try to find the two primes based on 2 exponents plus either a prime
- *   or a modulus.
+ * Factorize a RSA modulus n into p and q by using the exponents e and d.
  *
- * In: e, d and either p or n (depending on the setting of hasModulus).
+ * In: e, d, n
+ * Out: p, q
+ *
+ * See Handbook of Applied Cryptography, 8.2.2(i).
+ *
+ * The algorithm is probabilistic, it is run 64 times and each run has a 50%
+ * chance of succeeding with a runtime of O(log(e*d)).
+ *
+ * The returned p might be smaller than q.
+ */
+static mp_err
+rsa_factorize_n_from_exponents(mp_int *e, mp_int *d, mp_int *p, mp_int *q,
+                               mp_int *n)
+{
+    /* lambda is the private modulus: e*d = 1 mod lambda */
+    /* so: e*d - 1 = k*lambda = t*2^s where t is odd */
+    mp_int klambda;
+    mp_int t, onetwentyeight;
+    unsigned long s = 0;
+    unsigned long i;
+
+    /* cand = a^(t * 2^i) mod n, next_cand = a^(t * 2^(i+1)) mod n */
+    mp_int a;
+    mp_int cand;
+    mp_int next_cand;
+
+    mp_int n_minus_one;
+    mp_err err = MP_OKAY;
+
+    MP_DIGITS(&klambda) = 0;
+    MP_DIGITS(&t) = 0;
+    MP_DIGITS(&a) = 0;
+    MP_DIGITS(&cand) = 0;
+    MP_DIGITS(&n_minus_one) = 0;
+    MP_DIGITS(&next_cand) = 0;
+    MP_DIGITS(&onetwentyeight) = 0;
+    CHECK_MPI_OK(mp_init(&klambda));
+    CHECK_MPI_OK(mp_init(&t));
+    CHECK_MPI_OK(mp_init(&a));
+    CHECK_MPI_OK(mp_init(&cand));
+    CHECK_MPI_OK(mp_init(&n_minus_one));
+    CHECK_MPI_OK(mp_init(&next_cand));
+    CHECK_MPI_OK(mp_init(&onetwentyeight));
+
+    mp_set_int(&onetwentyeight, 128);
+
+    /* calculate k*lambda = e*d - 1 */
+    CHECK_MPI_OK(mp_mul(e, d, &klambda));
+    CHECK_MPI_OK(mp_sub_d(&klambda, 1, &klambda));
+
+    /* factorize klambda into t*2^s */
+    CHECK_MPI_OK(mp_copy(&klambda, &t));
+    while (mpp_divis_d(&t, 2) == MP_YES) {
+        CHECK_MPI_OK(mp_div_2(&t, &t));
+        s += 1;
+    }
+
+    /* precompute n_minus_one = n - 1 */
+    CHECK_MPI_OK(mp_copy(n, &n_minus_one));
+    CHECK_MPI_OK(mp_sub_d(&n_minus_one, 1, &n_minus_one));
+
+    /* pick random bases a, each one has a 50% leading to a factorization */
+    CHECK_MPI_OK(mp_set_int(&a, 2));
+    /* The following is equivalent to for (a=2, a <= 128, a+=2) */
+    while (mp_cmp(&a, &onetwentyeight) <= 0) {
+        /* compute the base cand = a^(t * 2^0) [i = 0] */
+        CHECK_MPI_OK(mp_exptmod(&a, &t, n, &cand));
+
+        for (i = 0; i < s; i++) {
+            /* condition 1: skip the base if we hit a trivial factor of n */
+            if (mp_cmp(&cand, &n_minus_one) == 0 || mp_cmp_d(&cand, 1) == 0) {
+                break;
+            }
+
+            /* increase i in a^(t * 2^i) by squaring the number */
+            CHECK_MPI_OK(mp_exptmod_d(&cand, 2, n, &next_cand));
+
+            /* condition 2: a^(t * 2^(i+1)) = 1 mod n */
+            if (mp_cmp_d(&next_cand, 1) == 0) {
+                /* conditions verified, gcd(a^(t * 2^i) - 1, n) is a factor */
+                CHECK_MPI_OK(mp_sub_d(&cand, 1, &cand));
+                CHECK_MPI_OK(mp_gcd(&cand, n, p));
+                if (mp_cmp_d(p, 1) == 0) {
+                    CHECK_MPI_OK(mp_add_d(&cand, 1, &cand));
+                    break;
+                }
+                CHECK_MPI_OK(mp_div(n, p, q, NULL));
+                goto cleanup;
+            }
+            CHECK_MPI_OK(mp_copy(&next_cand, &cand));
+        }
+
+        CHECK_MPI_OK(mp_add_d(&a, 2, &a));
+    }
+
+    /* if we reach here it's likely (2^64 - 1 / 2^64) that d is wrong */
+    err = MP_RANGE;
+
+cleanup:
+    mp_clear(&klambda);
+    mp_clear(&t);
+    mp_clear(&a);
+    mp_clear(&cand);
+    mp_clear(&n_minus_one);
+    mp_clear(&next_cand);
+    mp_clear(&onetwentyeight);
+    return err;
+}
+
+/*
+ * Try to find the two primes based on 2 exponents plus a prime.
+ *
+ * In: e, d and p.
  * Out: p,q.
  *
  * Step 1, Since d = e**-1 mod phi, we know that d*e == 1 mod phi, or
  *  d*e = 1+k*phi, or d*e-1 = k*phi. since d is less than phi and e is
  *  usually less than d, then k must be an integer between e-1 and 1
  *  (probably on the order of e).
- * Step 1a, If we were passed just a prime, we can divide k*phi by that
- *      prime-1 and get k*(q-1). This will reduce the size of our division
- *      through the rest of the loop.
+ * Step 1a, We can divide k*phi by prime-1 and get k*(q-1). This will reduce
+ *      the size of our division through the rest of the loop.
  * Step 2, Loop through the values k=e-1 to 1 looking for k. k should be on
  *  the order or e, and e is typically small. This may take a while for
  *  a large random e. We are looking for a k that divides kphi
@@ -404,60 +527,41 @@ rsa_is_prime(mp_int *p)
  *  swapped factors of p-1 and/or q-1. Because of this, we
  *  tentatively continue Steps 3-6 inside this loop, and may return looking
  *  for another k on failure.
- * Step 3, Calculate are tentative phi=kphi/k. Note: real phi is (p-1)*(q-1).
- * Step 4a, if we have a prime, kphi is already k*(q-1), so phi is or tenative
- *      q-1. q = phi+1. If k is correct, q should be the right length and
- *      prime.
+ * Step 3, Calculate our tentative phi=kphi/k. Note: real phi is (p-1)*(q-1).
+ * Step 4a, kphi is k*(q-1), so phi is our tenative q-1. q = phi+1.
+ *      If k is correct, q should be the right length and prime.
  * Step 4b, It's possible q-1 and k could have swapped factors. We now have a
  *  possible solution that meets our criteria. It may not be the only
  *      solution, however, so we keep looking. If we find more than one,
  *      we will fail since we cannot determine which is the correct
  *      solution, and returning the wrong modulus will compromise both
  *      moduli. If no other solution is found, we return the unique solution.
- * Step 5a, If we have the modulus (n=pq), then use the following formula to
- *  calculate  s=(p+q): , phi = (p-1)(q-1) = pq  -p-q +1 = n-s+1. so
- *  s=n-phi+1.
- * Step 5b, Use n=pq and s=p+q to solve for p and q as follows:
- *  since q=s-p, then n=p*(s-p)= sp - p^2, rearranging p^2-s*p+n = 0.
- *  from the quadratic equation we have p=1/2*(s+sqrt(s*s-4*n)) and
- *  q=1/2*(s-sqrt(s*s-4*n)) if s*s-4*n is a perfect square, we are DONE.
- *  If it is not, continue in our look looking for another k. NOTE: the
- *  code actually distributes the 1/2 and results in the equations:
- *  sqrt = sqrt(s/2*s/2-n), p=s/2+sqrt, q=s/2-sqrt. The algebra saves us
- *  and extra divide by 2 and a multiply by 4.
  *
  * This will return p & q. q may be larger than p in the case that p was given
  * and it was the smaller prime.
  */
 static mp_err
-rsa_get_primes_from_exponents(mp_int *e, mp_int *d, mp_int *p, mp_int *q,
-                              mp_int *n, PRBool hasModulus,
-                              unsigned int keySizeInBits)
+rsa_get_prime_from_exponents(mp_int *e, mp_int *d, mp_int *p, mp_int *q,
+                             mp_int *n, unsigned int keySizeInBits)
 {
     mp_int kphi; /* k*phi */
     mp_int k;    /* current guess at 'k' */
     mp_int phi;  /* (p-1)(q-1) */
-    mp_int s;    /* p+q/2 (s/2 in the algebra) */
     mp_int r;    /* remainder */
-    mp_int tmp;  /* p-1 if p is given, n+1 is modulus is given */
-    mp_int sqrt; /* sqrt(s/2*s/2-n) */
+    mp_int tmp;  /* p-1 if p is given */
     mp_err err = MP_OKAY;
     unsigned int order_k;
 
     MP_DIGITS(&kphi) = 0;
     MP_DIGITS(&phi) = 0;
-    MP_DIGITS(&s) = 0;
     MP_DIGITS(&k) = 0;
     MP_DIGITS(&r) = 0;
     MP_DIGITS(&tmp) = 0;
-    MP_DIGITS(&sqrt) = 0;
     CHECK_MPI_OK(mp_init(&kphi));
     CHECK_MPI_OK(mp_init(&phi));
-    CHECK_MPI_OK(mp_init(&s));
     CHECK_MPI_OK(mp_init(&k));
     CHECK_MPI_OK(mp_init(&r));
     CHECK_MPI_OK(mp_init(&tmp));
-    CHECK_MPI_OK(mp_init(&sqrt));
 
     /* our algorithm looks for a factor k whose maximum size is dependent
      * on the size of our smallest exponent, which had better be the public
@@ -506,25 +610,21 @@ rsa_get_primes_from_exponents(mp_int *e, mp_int *d, mp_int *p, mp_int *q,
     /* calculate our temp value */
     /* This saves recalculating this value when the k guess is wrong, which
      * is reasonably frequent. */
-    /* for the modulus case, tmp = n+1 (used to calculate p+q = tmp - phi) */
-    /* for the prime case, tmp = p-1 (used to calculate q-1= phi/tmp) */
-    if (hasModulus) {
-        CHECK_MPI_OK(mp_add_d(n, 1, &tmp));
-    } else {
-        CHECK_MPI_OK(mp_sub_d(p, 1, &tmp));
-        CHECK_MPI_OK(mp_div(&kphi, &tmp, &kphi, &r));
-        if (mp_cmp_z(&r) != 0) {
-            /* p-1 doesn't divide kphi, some parameter wasn't correct */
-            err = MP_RANGE;
-            goto cleanup;
-        }
-        mp_zero(q);
-        /* kphi is now k*(q-1) */
+    /* tmp = p-1 (used to calculate q-1= phi/tmp) */
+    CHECK_MPI_OK(mp_sub_d(p, 1, &tmp));
+    CHECK_MPI_OK(mp_div(&kphi, &tmp, &kphi, &r));
+    if (mp_cmp_z(&r) != 0) {
+        /* p-1 doesn't divide kphi, some parameter wasn't correct */
+        err = MP_RANGE;
+        goto cleanup;
     }
+    mp_zero(q);
+    /* kphi is now k*(q-1) */
 
     /* rest of the for loop */
     for (; (err == MP_OKAY) && (mpl_significant_bits(&k) >= order_k);
          err = mp_sub_d(&k, 1, &k)) {
+        CHECK_MPI_OK(err);
         /* looking for k as a factor of kphi */
         CHECK_MPI_OK(mp_div(&kphi, &k, &phi, &r));
         if (mp_cmp_z(&r) != 0) {
@@ -532,112 +632,60 @@ rsa_get_primes_from_exponents(mp_int *e, mp_int *d, mp_int *p, mp_int *q,
             continue;
         }
         /* we have a possible phi, see if it works */
-        if (!hasModulus) {
-            if ((unsigned)mpl_significant_bits(&phi) != keySizeInBits / 2) {
-                /* phi is not the right size */
-                continue;
-            }
-            /* phi should be divisible by 2, since
-         * q is odd and phi=(q-1). */
-            if (mpp_divis_d(&phi, 2) == MP_NO) {
-                /* phi is not divisible by 4 */
-                continue;
-            }
-            /* we now have a candidate for the second prime */
-            CHECK_MPI_OK(mp_add_d(&phi, 1, &tmp));
-
-            /* check to make sure it is prime */
-            err = rsa_is_prime(&tmp);
-            if (err != MP_OKAY) {
-                if (err == MP_NO) {
-                    /* No, then we still have the wrong phi */
-                    continue;
-                }
-                goto cleanup;
-            }
-            /*
-             * It is possible that we have the wrong phi if
-             * k_guess*(q_guess-1) = k*(q-1) (k and q-1 have swapped factors).
-             * since our q_quess is prime, however. We have found a valid
-             * rsa key because:
-             *   q is the correct order of magnitude.
-             *   phi = (p-1)(q-1) where p and q are both primes.
-             *   e*d mod phi = 1.
-             * There is no way to know from the info given if this is the
-             * original key. We never want to return the wrong key because if
-             * two moduli with the same factor is known, then euclid's gcd
-             * algorithm can be used to find that factor. Even though the
-             * caller didn't pass the original modulus, it doesn't mean the
-             * modulus wasn't known or isn't available somewhere. So to be safe
-             * if we can't be sure we have the right q, we don't return any.
-             *
-             * So to make sure we continue looking for other valid q's. If none
-             * are found, then we can safely return this one, otherwise we just
-             * fail */
-            if (mp_cmp_z(q) != 0) {
-                /* this is the second valid q, don't return either,
-                 * just fail */
-                err = MP_RANGE;
-                break;
-            }
-            /* we only have one q so far, save it and if no others are found,
-             * it's safe to return it */
-            CHECK_MPI_OK(mp_copy(&tmp, q));
-            continue;
-        }
-        /* test our tentative phi */
-        /* phi should be the correct order */
-        if ((unsigned)mpl_significant_bits(&phi) != keySizeInBits) {
+        if ((unsigned)mpl_significant_bits(&phi) != keySizeInBits / 2) {
             /* phi is not the right size */
             continue;
         }
-        /* phi should be divisible by 4, since
-         * p and q are odd and phi=(p-1)(q-1). */
-        if (mpp_divis_d(&phi, 4) == MP_NO) {
+        /* phi should be divisible by 2, since
+         * q is odd and phi=(q-1). */
+        if (mpp_divis_d(&phi, 2) == MP_NO) {
             /* phi is not divisible by 4 */
             continue;
         }
-        /* n was given, calculate s/2=(p+q)/2 */
-        CHECK_MPI_OK(mp_sub(&tmp, &phi, &s));
-        CHECK_MPI_OK(mp_div_2(&s, &s));
+        /* we now have a candidate for the second prime */
+        CHECK_MPI_OK(mp_add_d(&phi, 1, &tmp));
 
-        /* calculate sqrt(s/2*s/2-n) */
-        CHECK_MPI_OK(mp_sqr(&s, &sqrt));
-        CHECK_MPI_OK(mp_sub(&sqrt, n, &r)); /* r as a tmp */
-        CHECK_MPI_OK(mp_sqrt(&r, &sqrt));
-        /* make sure it's a perfect square */
-        /* r is our original value we took the square root of */
-        /* q is the square of our tentative square root. They should be equal*/
-        CHECK_MPI_OK(mp_sqr(&sqrt, q)); /* q as a tmp */
-        if (mp_cmp(&r, q) != 0) {
-            /* sigh according to the doc, mp_sqrt could return sqrt-1 */
-            CHECK_MPI_OK(mp_add_d(&sqrt, 1, &sqrt));
-            CHECK_MPI_OK(mp_sqr(&sqrt, q));
-            if (mp_cmp(&r, q) != 0) {
-                /* s*s-n not a perfect square, this phi isn't valid, find another.*/
+        /* check to make sure it is prime */
+        err = rsa_is_prime(&tmp);
+        if (err != MP_OKAY) {
+            if (err == MP_NO) {
+                /* No, then we still have the wrong phi */
                 continue;
             }
+            goto cleanup;
         }
-
-        /* NOTE: In this case we know we have the one and only answer.
-         * "Why?", you ask. Because:
-         *    1) n is a composite of two large primes (or it wasn't a
-         *       valid RSA modulus).
-         *    2) If we know any number such that x^2-n is a perfect square
-         *       and x is not (n+1)/2, then we can calculate 2 non-trivial
-         *       factors of n.
-         *    3) Since we know that n has only 2 non-trivial prime factors,
-         *       we know the two factors we have are the only possible factors.
-         */
-
-        /* Now we are home free to calculate p and q */
-        /* p = s/2 + sqrt, q= s/2 - sqrt */
-        CHECK_MPI_OK(mp_add(&s, &sqrt, p));
-        CHECK_MPI_OK(mp_sub(&s, &sqrt, q));
-        break;
+        /*
+         * It is possible that we have the wrong phi if
+         * k_guess*(q_guess-1) = k*(q-1) (k and q-1 have swapped factors).
+         * since our q_quess is prime, however. We have found a valid
+         * rsa key because:
+         *   q is the correct order of magnitude.
+         *   phi = (p-1)(q-1) where p and q are both primes.
+         *   e*d mod phi = 1.
+         * There is no way to know from the info given if this is the
+         * original key. We never want to return the wrong key because if
+         * two moduli with the same factor is known, then euclid's gcd
+         * algorithm can be used to find that factor. Even though the
+         * caller didn't pass the original modulus, it doesn't mean the
+         * modulus wasn't known or isn't available somewhere. So to be safe
+         * if we can't be sure we have the right q, we don't return any.
+         *
+         * So to make sure we continue looking for other valid q's. If none
+         * are found, then we can safely return this one, otherwise we just
+         * fail */
+        if (mp_cmp_z(q) != 0) {
+            /* this is the second valid q, don't return either,
+             * just fail */
+            err = MP_RANGE;
+            break;
+        }
+        /* we only have one q so far, save it and if no others are found,
+         * it's safe to return it */
+        CHECK_MPI_OK(mp_copy(&tmp, q));
+        continue;
     }
     if ((unsigned)mpl_significant_bits(&k) < order_k) {
-        if (hasModulus || (mp_cmp_z(q) == 0)) {
+        if (mp_cmp_z(q) == 0) {
             /* If we get here, something was wrong with the parameters we
              * were given */
             err = MP_RANGE;
@@ -646,11 +694,9 @@ rsa_get_primes_from_exponents(mp_int *e, mp_int *d, mp_int *p, mp_int *q,
 cleanup:
     mp_clear(&kphi);
     mp_clear(&phi);
-    mp_clear(&s);
     mp_clear(&k);
     mp_clear(&r);
     mp_clear(&tmp);
-    mp_clear(&sqrt);
     return err;
 }
 
@@ -680,27 +726,23 @@ cleanup:
  * not overwritten on failure.
  *
  *  How it works:
- *     We can generate all the parameters from:
- *        one of the exponents, plus the two primes. (rsa_build_key_from_primes) *
+ *     We can generate all the parameters from one of the exponents, plus the
+ *        two primes. (rsa_build_key_from_primes)
  *     If we are given one of the exponents and both primes, we are done.
  *     If we are given one of the exponents, the modulus and one prime, we
  *        caclulate the second prime by dividing the modulus by the given
- *        prime, giving us and exponent and 2 primes.
- *     If we are given 2 exponents and either the modulus or one of the primes
- *        we calculate k*phi = d*e-1, where k is an integer less than d which
+ *        prime, giving us an exponent and 2 primes.
+ *     If we are given 2 exponents and one of the primes we calculate
+ *        k*phi = d*e-1, where k is an integer less than d which
  *        divides d*e-1. We find factor k so we can isolate phi.
  *            phi = (p-1)(q-1)
- *       If one of the primes are given, we can use phi to find the other prime
- *        as follows: q = (phi/(p-1)) + 1. We now have 2 primes and an
- *        exponent. (NOTE: if more then one prime meets this condition, the
- *        operation will fail. See comments elsewhere in this file about this).
- *       If the modulus is given, then we can calculate the sum of the primes
- *        as follows: s := (p+q), phi = (p-1)(q-1) = pq -p - q +1, pq = n ->
- *        phi = n - s + 1, s = n - phi +1.  Now that we have s = p+q and n=pq,
- *    we can solve our 2 equations and 2 unknowns as follows: q=s-p ->
- *        n=p*(s-p)= sp -p^2 -> p^2-sp+n = 0. Using the quadratic to solve for
- *        p, p=1/2*(s+ sqrt(s*s-4*n)) [q=1/2*(s-sqrt(s*s-4*n)]. We again have
- *        2 primes and an exponent.
+ *        We can use phi to find the other prime as follows:
+ *        q = (phi/(p-1)) + 1. We now have 2 primes and an exponent.
+ *        (NOTE: if more then one prime meets this condition, the operation
+ *        will fail. See comments elsewhere in this file about this).
+ *        (rsa_get_prime_from_exponents)
+ *     If we are given 2 exponents and the modulus we factor the modulus to
+ *        get the 2 missing primes (rsa_factorize_n_from_exponents)
  *
  */
 SECStatus
@@ -802,11 +844,13 @@ RSA_PopulatePrivateKey(RSAPrivateKey *key)
      * the exponents */
     if (prime_count < 2) {
         /* if we don't have at least 2 primes at this point, then we need both
-     * exponents and one prime or a modulus*/
+         * exponents and one prime or a modulus*/
         if (!needPublicExponent && !needPrivateExponent &&
-            ((prime_count > 0) || hasModulus)) {
-            CHECK_MPI_OK(rsa_get_primes_from_exponents(&e, &d, &p, &q,
-                                                       &n, hasModulus, keySizeInBits));
+            (prime_count > 0)) {
+            CHECK_MPI_OK(rsa_get_prime_from_exponents(&e, &d, &p, &q, &n,
+                                                      keySizeInBits));
+        } else if (!needPublicExponent && !needPrivateExponent && hasModulus) {
+            CHECK_MPI_OK(rsa_factorize_n_from_exponents(&e, &d, &p, &q, &n));
         } else {
             /* not enough given parameters to get both primes */
             err = MP_BADARG;
@@ -1205,7 +1249,10 @@ get_blinding_params(RSAPrivateKey *key, mp_int *n, unsigned int modLen,
          * Now, search its list of ready blinding params for a usable one.
          */
         while (0 != (bp = rsabp->bp)) {
-            if (--(bp->counter) > 0) {
+#ifndef UNSAFE_FUZZER_MODE
+            if (--(bp->counter) > 0)
+#endif
+            {
                 /* Found a match and there are still remaining uses left */
                 /* Return the parameters */
                 CHECK_MPI_OK(mp_copy(&bp->f, f));
@@ -1517,7 +1564,7 @@ cleanup:
     return rv;
 }
 
-static SECStatus
+SECStatus
 RSA_Init(void)
 {
     if (PR_CallOnce(&coBPInit, init_blinding_params_list) != PR_SUCCESS) {
@@ -1525,12 +1572,6 @@ RSA_Init(void)
         return SECFailure;
     }
     return SECSuccess;
-}
-
-SECStatus
-BL_Init(void)
-{
-    return RSA_Init();
 }
 
 /* cleanup at shutdown */

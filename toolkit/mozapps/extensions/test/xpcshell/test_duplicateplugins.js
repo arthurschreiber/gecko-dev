@@ -2,7 +2,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-Components.utils.import("resource://testing-common/MockRegistrar.jsm");
+ChromeUtils.import("resource://testing-common/MockRegistrar.jsm");
 
 var Ci = Components.interfaces;
 
@@ -83,19 +83,19 @@ var PLUGINS = [{
 
 // A fake plugin host to return the plugins defined above
 var PluginHost = {
-  getPluginTags: function(countRef) {
+  getPluginTags(countRef) {
     countRef.value = PLUGINS.length;
     return PLUGINS;
   },
 
-  QueryInterface: function(iid) {
+  QueryInterface(iid) {
     if (iid.equals(Components.interfaces.nsIPluginHost)
      || iid.equals(Components.interfaces.nsISupports))
       return this;
 
     throw Components.results.NS_ERROR_NO_INTERFACE;
   }
-}
+};
 
 MockRegistrar.register("@mozilla.org/plugin/host;1", PluginHost);
 
@@ -120,29 +120,25 @@ function found_plugin(aNum, aId) {
 // Test that the plugins were coalesced and all appear in the returned list
 function run_test_1() {
   AddonManager.getAddonsByTypes(["plugin"], function(aAddons) {
-    do_check_eq(aAddons.length, 5);
+    Assert.equal(aAddons.length, 5);
     aAddons.forEach(function(aAddon) {
       if (aAddon.name == "Duplicate Plugin 1") {
         found_plugin(0, aAddon.id);
-        do_check_eq(aAddon.description, "A duplicate plugin");
-      }
-      else if (aAddon.name == "Duplicate Plugin 2") {
+        Assert.equal(aAddon.description, "A duplicate plugin");
+      } else if (aAddon.name == "Duplicate Plugin 2") {
         found_plugin(1, aAddon.id);
-        do_check_eq(aAddon.description, "Another duplicate plugin");
-      }
-      else if (aAddon.name == "Another Non-duplicate Plugin") {
+        Assert.equal(aAddon.description, "Another duplicate plugin");
+      } else if (aAddon.name == "Another Non-duplicate Plugin") {
         found_plugin(5, aAddon.id);
-        do_check_eq(aAddon.description, "Not a duplicate plugin");
-      }
-      else if (aAddon.name == "Non-duplicate Plugin") {
+        Assert.equal(aAddon.description, "Not a duplicate plugin");
+      } else if (aAddon.name == "Non-duplicate Plugin") {
         if (aAddon.description == "Not a duplicate plugin")
           found_plugin(3, aAddon.id);
         else if (aAddon.description == "Not a duplicate because the descriptions are different")
           found_plugin(4, aAddon.id);
         else
           do_throw("Found unexpected plugin with description " + aAddon.description);
-      }
-      else {
+      } else {
         do_throw("Found unexpected plugin " + aAddon.name);
       }
     });
@@ -154,12 +150,12 @@ function run_test_1() {
 // Test that disabling a coalesced plugin disables all its tags
 function run_test_2() {
   AddonManager.getAddonByID(gPluginIDs[0], function(p) {
-    do_check_false(p.userDisabled);
+    Assert.ok(!p.userDisabled);
     p.userDisabled = true;
-    do_check_true(PLUGINS[0].disabled);
-    do_check_true(PLUGINS[1].disabled);
+    Assert.ok(PLUGINS[0].disabled);
+    Assert.ok(PLUGINS[1].disabled);
 
-    do_execute_soon(run_test_3);
+    executeSoon(run_test_3);
   });
 }
 
@@ -168,20 +164,20 @@ function run_test_3() {
   restartManager();
 
   AddonManager.getAddonByID(gPluginIDs[0], callback_soon(function(p) {
-    do_check_neq(p, null);
-    do_check_eq(p.name, "Duplicate Plugin 1");
-    do_check_eq(p.description, "A duplicate plugin");
+    Assert.notEqual(p, null);
+    Assert.equal(p.name, "Duplicate Plugin 1");
+    Assert.equal(p.description, "A duplicate plugin");
 
     // Reorder the plugins and restart again
     [PLUGINS[0], PLUGINS[1]] = [PLUGINS[1], PLUGINS[0]];
     restartManager();
 
-    AddonManager.getAddonByID(gPluginIDs[0], function(p) {
-      do_check_neq(p, null);
-      do_check_eq(p.name, "Duplicate Plugin 1");
-      do_check_eq(p.description, "A duplicate plugin");
+    AddonManager.getAddonByID(gPluginIDs[0], function(p_2) {
+      Assert.notEqual(p_2, null);
+      Assert.equal(p_2.name, "Duplicate Plugin 1");
+      Assert.equal(p_2.description, "A duplicate plugin");
 
-      do_execute_soon(do_test_finished);
+      executeSoon(do_test_finished);
     });
   }));
 }

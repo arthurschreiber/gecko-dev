@@ -10,8 +10,8 @@ this.EXPORTED_SYMBOLS = [
 
 const {classes: Cc, interfaces: Ci, results: Cr, utils: Cu} = Components;
 
-Cu.import("resource://gre/modules/osfile.jsm");
-Cu.import("resource://gre/modules/Promise.jsm");
+ChromeUtils.import("resource://gre/modules/osfile.jsm");
+ChromeUtils.import("resource://gre/modules/Promise.jsm");
 
 // Reference needed in order for fake app dir provider to be active.
 var gFakeAppDirectoryProvider;
@@ -29,7 +29,7 @@ var gFakeAppDirectoryProvider;
  * This returns a promise that will be resolved once the new directory
  * is created and installed.
  */
-this.makeFakeAppDir = function () {
+this.makeFakeAppDir = function() {
   let dirMode = OS.Constants.libc.S_IRWXU;
   let dirService = Cc["@mozilla.org/file/directory_service;1"]
                      .getService(Ci.nsIProperties);
@@ -65,7 +65,7 @@ this.makeFakeAppDir = function () {
   makeDir(submittedD);
 
   let provider = {
-    getFile: function (prop, persistent) {
+    getFile(prop, persistent) {
       persistent.value = true;
       if (prop == "UAppData") {
         return appD.clone();
@@ -74,7 +74,7 @@ this.makeFakeAppDir = function () {
       throw Cr.NS_ERROR_FAILURE;
     },
 
-    QueryInterace: function (iid) {
+    QueryInterace(iid) {
       if (iid.equals(Ci.nsIDirectoryServiceProvider) ||
           iid.equals(Ci.nsISupports)) {
         return this;
@@ -91,7 +91,7 @@ this.makeFakeAppDir = function () {
   // And undefine the old one.
   try {
     dirService.undefine("UAppData");
-  } catch (ex) {};
+  } catch (ex) {}
 
   gFakeAppDirectoryProvider = provider;
 

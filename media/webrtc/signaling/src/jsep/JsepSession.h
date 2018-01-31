@@ -15,13 +15,12 @@
 #include "signaling/src/jsep/JsepTransport.h"
 #include "signaling/src/sdp/Sdp.h"
 
-#include "JsepTrack.h"
+#include "signaling/src/jsep/JsepTransceiver.h"
 
 namespace mozilla {
 
 // Forward declarations
 class JsepCodecDescription;
-class JsepTrack;
 
 enum JsepSignalingState {
   kJsepStateStable,
@@ -39,11 +38,16 @@ enum JsepSdpType {
   kJsepSdpRollback
 };
 
+enum JsepDescriptionPendingOrCurrent {
+  kJsepDescriptionCurrent,
+  kJsepDescriptionPending,
+  kJsepDescriptionPendingOrCurrent
+};
+
 struct JsepOAOptions {};
 struct JsepOfferOptions : public JsepOAOptions {
   Maybe<size_t> mOfferToReceiveAudio;
   Maybe<size_t> mOfferToReceiveVideo;
-  Maybe<bool> mDontOfferDataChannel;
   Maybe<bool> mIceRestart; // currently ignored by JsepSession
 };
 struct JsepAnswerOptions : public JsepOAOptions {};
@@ -95,8 +99,10 @@ public:
   virtual nsresult AddDtlsFingerprint(const std::string& algorithm,
                                       const std::vector<uint8_t>& value) = 0;
 
-  virtual nsresult AddAudioRtpExtension(const std::string& extensionName) = 0;
-  virtual nsresult AddVideoRtpExtension(const std::string& extensionName) = 0;
+  virtual nsresult AddAudioRtpExtension(const std::string& extensionName,
+                                        SdpDirectionAttribute::Direction direction) = 0;
+  virtual nsresult AddVideoRtpExtension(const std::string& extensionName,
+                                        SdpDirectionAttribute::Direction direction) = 0;
 
   // Kinda gross to be locking down the data structure type like this, but
   // returning by value is problematic due to the lack of stl move semantics in
@@ -110,11 +116,9 @@ public:
   void ForEachCodec(UnaryFunction& function)
   {
     std::for_each(Codecs().begin(), Codecs().end(), function);
-    for (RefPtr<JsepTrack>& track : GetLocalTracks()) {
-      track->ForEachCodec(function);
-    }
-    for (RefPtr<JsepTrack>& track : GetRemoteTracks()) {
-      track->ForEachCodec(function);
+    for (auto& transceiver : GetTransceivers()) {
+      transceiver->mSendTrack.ForEachCodec(function);
+      transceiver->mRecvTrack.ForEachCodec(function);
     }
   }
 
@@ -122,53 +126,26 @@ public:
   void SortCodecs(BinaryPredicate& sorter)
   {
     std::stable_sort(Codecs().begin(), Codecs().end(), sorter);
-    for (RefPtr<JsepTrack>& track : GetLocalTracks()) {
-      track->SortCodecs(sorter);
-    }
-    for (RefPtr<JsepTrack>& track : GetRemoteTracks()) {
-      track->SortCodecs(sorter);
+    for (auto& transceiver : GetTransceivers()) {
+      transceiver->mSendTrack.SortCodecs(sorter);
+      transceiver->mRecvTrack.SortCodecs(sorter);
     }
   }
 
-  // Manage tracks. We take shared ownership of any track.
-  virtual nsresult AddTrack(const RefPtr<JsepTrack>& track) = 0;
-  virtual nsresult RemoveTrack(const std::string& streamId,
-                               const std::string& trackId) = 0;
-  virtual nsresult ReplaceTrack(const std::string& oldStreamId,
-                                const std::string& oldTrackId,
-                                const std::string& newStreamId,
-                                const std::string& newTrackId) = 0;
-  virtual nsresult SetParameters(
-      const std::string& streamId,
-      const std::string& trackId,
-      const std::vector<JsepTrack::JsConstraints>& constraints) = 0;
-
-  virtual nsresult GetParameters(
-      const std::string& streamId,
-      const std::string& trackId,
-      std::vector<JsepTrack::JsConstraints>* outConstraints) = 0;
-
-  virtual std::vector<RefPtr<JsepTrack>> GetLocalTracks() const = 0;
-
-  virtual std::vector<RefPtr<JsepTrack>> GetRemoteTracks() const = 0;
-
-  virtual std::vector<RefPtr<JsepTrack>> GetRemoteTracksAdded() const = 0;
-
-  virtual std::vector<RefPtr<JsepTrack>> GetRemoteTracksRemoved() const = 0;
-
-  // Access the negotiated track pairs.
-  virtual std::vector<JsepTrackPair> GetNegotiatedTrackPairs() const = 0;
-
-  // Access transports.
-  virtual std::vector<RefPtr<JsepTransport>> GetTransports() const = 0;
+  virtual const std::vector<RefPtr<JsepTransceiver>>&
+    GetTransceivers() const = 0;
+  virtual std::vector<RefPtr<JsepTransceiver>>& GetTransceivers() = 0;
+  virtual nsresult AddTransceiver(RefPtr<JsepTransceiver> transceiver) = 0;
 
   // Basic JSEP operations.
   virtual nsresult CreateOffer(const JsepOfferOptions& options,
                                std::string* offer) = 0;
   virtual nsresult CreateAnswer(const JsepAnswerOptions& options,
                                 std::string* answer) = 0;
-  virtual std::string GetLocalDescription() const = 0;
-  virtual std::string GetRemoteDescription() const = 0;
+  virtual std::string GetLocalDescription(JsepDescriptionPendingOrCurrent type)
+                                          const = 0;
+  virtual std::string GetRemoteDescription(JsepDescriptionPendingOrCurrent type)
+                                           const = 0;
   virtual nsresult SetLocalDescription(JsepSdpType type,
                                        const std::string& sdp) = 0;
   virtual nsresult SetRemoteDescription(JsepSdpType type,
@@ -191,6 +168,7 @@ public:
 
   // ICE controlling or controlled
   virtual bool IsIceControlling() const = 0;
+  virtual bool IsOfferer() const = 0;
 
   virtual const std::string
   GetLastError() const
@@ -208,29 +186,28 @@ public:
     return states[state];
   }
 
-  virtual bool AllLocalTracksAreAssigned() const = 0;
+  virtual bool CheckNegotiationNeeded() const = 0;
 
   void
   CountTracks(uint16_t (&receiving)[SdpMediaSection::kMediaTypes],
               uint16_t (&sending)[SdpMediaSection::kMediaTypes]) const
   {
-    auto trackPairs = GetNegotiatedTrackPairs();
-
     memset(receiving, 0, sizeof(receiving));
     memset(sending, 0, sizeof(sending));
 
-    for (auto& pair : trackPairs) {
-      if (pair.mReceiving) {
-        receiving[pair.mReceiving->GetMediaType()]++;
+    for (const auto& transceiver : GetTransceivers()) {
+      if (!transceiver->mRecvTrack.GetTrackId().empty()) {
+        receiving[transceiver->mRecvTrack.GetMediaType()]++;
       }
 
-      if (pair.mSending) {
-        sending[pair.mSending->GetMediaType()]++;
+      if (!transceiver->mSendTrack.GetTrackId().empty()) {
+        sending[transceiver->mSendTrack.GetMediaType()]++;
       }
     }
   }
 
 protected:
+
   const std::string mName;
   JsepSignalingState mState;
   uint32_t mNegotiations;

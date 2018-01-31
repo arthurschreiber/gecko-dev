@@ -3,6 +3,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 // Test that VariablesView._doSearch() works even without an attached
 // VariablesViewController (bug 1196341).
 
@@ -24,7 +26,7 @@ function run_test() {
   let item1 = scope.addItem("a", { value: "1" });
   let item2 = scope.addItem("b", { value: "2" });
 
-  do_print("Performing a search without a controller.");
+  info("Performing a search without a controller.");
   vv._doSearch("a");
 
   equal(item1.target.hasAttribute("unmatched"), false,

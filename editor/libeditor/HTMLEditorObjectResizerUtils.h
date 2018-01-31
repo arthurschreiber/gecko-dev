@@ -6,8 +6,9 @@
 #ifndef HTMLEditorObjectResizerUtils_h
 #define HTMLEditorObjectResizerUtils_h
 
+#include "mozilla/HTMLEditor.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsIDOMEventListener.h"
-#include "nsISelectionListener.h"
 #include "nsISupportsImpl.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsLiteralString.h"
@@ -26,38 +27,20 @@ namespace mozilla {
 #define kBottomRight   NS_LITERAL_STRING("se")
 
 /******************************************************************************
- * mozilla::ResizerSelectionListener
- ******************************************************************************/
-
-class ResizerSelectionListener final : public nsISelectionListener
-{
-public:
-  explicit ResizerSelectionListener(nsIHTMLEditor* aEditor);
-  void Reset();
-
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSISELECTIONLISTENER
-
-protected:
-  virtual ~ResizerSelectionListener() {}
-  nsWeakPtr mEditor;
-};
-
-/******************************************************************************
  * mozilla::ResizerMouseMotionListener
  ******************************************************************************/
 
 class ResizerMouseMotionListener final : public nsIDOMEventListener
 {
 public:
-  explicit ResizerMouseMotionListener(nsIHTMLEditor* aEditor);
+  explicit ResizerMouseMotionListener(HTMLEditor& aHTMLEditor);
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIDOMEVENTLISTENER
 
 protected:
   virtual ~ResizerMouseMotionListener() {}
-  nsWeakPtr mEditor;
+  CachedWeakPtr<HTMLEditor, nsIHTMLEditor> mHTMLEditorWeak;
 };
 
 /******************************************************************************
@@ -67,14 +50,14 @@ protected:
 class DocumentResizeEventListener final : public nsIDOMEventListener
 {
 public:
-  explicit DocumentResizeEventListener(nsIHTMLEditor* aEditor);
+  explicit DocumentResizeEventListener(HTMLEditor& aHTMLEditor);
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIDOMEVENTLISTENER
 
 protected:
   virtual ~DocumentResizeEventListener() {}
-  nsWeakPtr mEditor;
+  CachedWeakPtr<HTMLEditor, nsIHTMLEditor> mHTMLEditorWeak;
 };
 
 } // namespace mozilla

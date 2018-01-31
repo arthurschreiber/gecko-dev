@@ -9,9 +9,11 @@
 
 #include "ipc/IPCMessageUtils.h"
 #include "base/message_loop.h"
+#include "base/shared_memory.h"
 
-#include "mozilla/ipc/MessageChannel.h"
 #include "mozilla/ipc/CrossProcessMutex.h"
+#include "mozilla/ipc/MessageChannel.h"
+#include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/UniquePtr.h"
 #include "gfxipc/ShadowLayerUtils.h"
 
@@ -21,10 +23,9 @@
 #include "nsString.h"
 #include "nsTArray.h"
 #include "mozilla/Logging.h"
+#include "nsExceptionHandler.h"
 #include "nsHashKeys.h"
-#ifdef MOZ_CRASHREPORTER
-#  include "nsExceptionHandler.h"
-#endif
+
 #ifdef XP_MACOSX
 #include "PluginInterposeOSX.h"
 #else
@@ -73,7 +74,7 @@ struct IPCByteRange
 {
   int32_t offset;
   uint32_t length;
-};  
+};
 
 typedef nsTArray<IPCByteRange> IPCByteRanges;
 
@@ -93,9 +94,20 @@ struct NPRemoteWindow
   VisualID visualID;
   Colormap colormap;
 #endif /* XP_UNIX */
-#if defined(XP_MACOSX)
+#if defined(XP_MACOSX) || defined(XP_WIN)
   double contentsScaleFactor;
 #endif
+};
+
+// This struct is like NPAudioDeviceChangeDetails, only it uses a
+// std::wstring instead of a const wchar_t* for the defaultDevice.
+// This gives us the necessary memory-ownership semantics without
+// requiring C++ objects in npapi.h.
+struct NPAudioDeviceChangeDetailsIPC
+{
+  int32_t flow;
+  int32_t role;
+  std::wstring defaultDevice;
 };
 
 #ifdef XP_WIN
@@ -111,7 +123,7 @@ typedef intptr_t NativeWindowHandle; // never actually used, will always be 0
 #ifdef XP_WIN
 typedef base::SharedMemoryHandle WindowsSharedMemoryHandle;
 typedef HANDLE DXGISharedSurfaceHandle;
-#else
+#else  // XP_WIN
 typedef mozilla::null_t WindowsSharedMemoryHandle;
 typedef mozilla::null_t DXGISharedSurfaceHandle;
 #endif
@@ -142,14 +154,18 @@ NPPVariableToString(NPPVariable aVar)
         VARSTR(NPPVpluginScriptableNPObject);
 
         VARSTR(NPPVformValue);
-  
+
         VARSTR(NPPVpluginUrlRequestsDisplayedBool);
-  
+
         VARSTR(NPPVpluginWantsAllNetworkStreams);
 
 #ifdef XP_MACOSX
         VARSTR(NPPVpluginDrawingModel);
         VARSTR(NPPVpluginEventModel);
+#endif
+
+#ifdef XP_WIN
+        VARSTR(NPPVpluginRequiresAudioDeviceChanges);
 #endif
 
     default: return "???";
@@ -181,6 +197,10 @@ NPNVariableToString(NPNVariable aVar)
 
         VARSTR(NPNVprivateModeBool);
         VARSTR(NPNVdocumentOrigin);
+
+#ifdef XP_WIN
+        VARSTR(NPNVaudioDeviceChangeDetails);
+#endif
 
     default: return "???";
     }
@@ -234,9 +254,7 @@ inline nsCString
 NullableString(const char* aString)
 {
     if (!aString) {
-        nsCString str;
-        str.SetIsVoid(true);
-        return str;
+        return VoidCString();
     }
     return nsCString(aString);
 }
@@ -303,30 +321,11 @@ struct ParamTraits<NPRect>
 };
 
 template <>
-struct ParamTraits<NPWindowType>
-{
-  typedef NPWindowType paramType;
-
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
-    aMsg->WriteInt16(int16_t(aParam));
-  }
-
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
-    int16_t result;
-    if (aMsg->ReadInt16(aIter, &result)) {
-      *aResult = paramType(result);
-      return true;
-    }
-    return false;
-  }
-
-  static void Log(const paramType& aParam, std::wstring* aLog)
-  {
-    aLog->append(StringPrintf(L"%d", int16_t(aParam)));
-  }
-};
+struct ParamTraits<NPWindowType> :
+  public ContiguousEnumSerializerInclusive<NPWindowType,
+                                           NPWindowType::NPWindowTypeWindow,
+                                           NPWindowType::NPWindowTypeDrawable>
+{};
 
 template <>
 struct ParamTraits<mozilla::plugins::NPRemoteWindow>
@@ -346,7 +345,7 @@ struct ParamTraits<mozilla::plugins::NPRemoteWindow>
     aMsg->WriteULong(aParam.visualID);
     aMsg->WriteULong(aParam.colormap);
 #endif
-#if defined(XP_MACOSX)
+#if defined(XP_MACOSX) || defined(XP_WIN)
     aMsg->WriteDouble(aParam.contentsScaleFactor);
 #endif
   }
@@ -375,7 +374,7 @@ struct ParamTraits<mozilla::plugins::NPRemoteWindow>
       return false;
 #endif
 
-#if defined(XP_MACOSX)
+#if defined(XP_MACOSX) || defined(XP_WIN)
     double contentsScaleFactor;
     if (!aMsg->ReadDouble(aIter, &contentsScaleFactor))
       return false;
@@ -392,7 +391,7 @@ struct ParamTraits<mozilla::plugins::NPRemoteWindow>
     aResult->visualID = visualID;
     aResult->colormap = colormap;
 #endif
-#if defined(XP_MACOSX)
+#if defined(XP_MACOSX) || defined(XP_WIN)
     aResult->contentsScaleFactor = contentsScaleFactor;
 #endif
     return true;
@@ -567,10 +566,10 @@ struct ParamTraits<NSCursorInfo>
 {
   typedef NSCursorInfo paramType;
   static void Write(Message* aMsg, const paramType& aParam) {
-    NS_RUNTIMEABORT("NSCursorInfo isn't meaningful on this platform");
+    MOZ_CRASH("NSCursorInfo isn't meaningful on this platform");
   }
   static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult) {
-    NS_RUNTIMEABORT("NSCursorInfo isn't meaningful on this platform");
+    MOZ_CRASH("NSCursorInfo isn't meaningful on this platform");
     return false;
   }
 };
@@ -600,77 +599,58 @@ struct ParamTraits<mozilla::plugins::IPCByteRange>
 };
 
 template <>
-struct ParamTraits<NPNVariable>
+struct ParamTraits<NPNVariable> :
+  public ContiguousEnumSerializer<NPNVariable,
+                                  NPNVariable::NPNVxDisplay,
+                                  NPNVariable::NPNVLast>
+{};
+
+// The only accepted value is NPNURLVariable::NPNURLVProxy
+template<>
+struct ParamTraits<NPNURLVariable> :
+  public ContiguousEnumSerializerInclusive<NPNURLVariable,
+                                           NPNURLVariable::NPNURLVProxy,
+                                           NPNURLVariable::NPNURLVProxy>
+{};
+
+template<>
+struct ParamTraits<NPCoordinateSpace> :
+  public ContiguousEnumSerializerInclusive<NPCoordinateSpace,
+                                           NPCoordinateSpace::NPCoordinateSpacePlugin,
+                                           NPCoordinateSpace::NPCoordinateSpaceFlippedScreen>
+{};
+
+template <>
+struct ParamTraits<mozilla::plugins::NPAudioDeviceChangeDetailsIPC>
 {
-  typedef NPNVariable paramType;
+  typedef mozilla::plugins::NPAudioDeviceChangeDetailsIPC paramType;
 
   static void Write(Message* aMsg, const paramType& aParam)
   {
-    WriteParam(aMsg, int(aParam));
+    WriteParam(aMsg, aParam.flow);
+    WriteParam(aMsg, aParam.role);
+    WriteParam(aMsg, aParam.defaultDevice);
   }
 
   static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
   {
-    int intval;
-    if (ReadParam(aMsg, aIter, &intval)) {
-      *aResult = paramType(intval);
+    int32_t flow, role;
+    std::wstring defaultDevice;
+    if (ReadParam(aMsg, aIter, &flow) &&
+        ReadParam(aMsg, aIter, &role) &&
+        ReadParam(aMsg, aIter, &defaultDevice)) {
+      aResult->flow = flow;
+      aResult->role = role;
+      aResult->defaultDevice = defaultDevice;
       return true;
     }
     return false;
   }
-};
 
-template<>
-struct ParamTraits<NPNURLVariable>
-{
-  typedef NPNURLVariable paramType;
-
-  static void Write(Message* aMsg, const paramType& aParam)
+  static void Log(const paramType& aParam, std::wstring* aLog)
   {
-    WriteParam(aMsg, int(aParam));
-  }
-
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
-    int intval;
-    if (ReadParam(aMsg, aIter, &intval)) {
-      switch (intval) {
-      case NPNURLVCookie:
-      case NPNURLVProxy:
-        *aResult = paramType(intval);
-        return true;
-      }
-    }
-    return false;
-  }
-};
-
-  
-template<>
-struct ParamTraits<NPCoordinateSpace>
-{
-  typedef NPCoordinateSpace paramType;
-
-  static void Write(Message* aMsg, const paramType& aParam)
-  {
-    WriteParam(aMsg, int32_t(aParam));
-  }
-
-  static bool Read(const Message* aMsg, PickleIterator* aIter, paramType* aResult)
-  {
-    int32_t intval;
-    if (ReadParam(aMsg, aIter, &intval)) {
-      switch (intval) {
-      case NPCoordinateSpacePlugin:
-      case NPCoordinateSpaceWindow:
-      case NPCoordinateSpaceFlippedWindow:
-      case NPCoordinateSpaceScreen:
-      case NPCoordinateSpaceFlippedScreen:
-        *aResult = paramType(intval);
-        return true;
-      }
-    }
-    return false;
+    aLog->append(StringPrintf(L"[%d, %d, %S]", aParam.flow, aParam.role,
+                              aParam.defaultDevice.c_str()));
   }
 };
 
@@ -680,7 +660,7 @@ struct ParamTraits<NPCoordinateSpace>
 // Serializing NPEvents is completely platform-specific and can be rather
 // intricate depending on the platform.  So for readability we split it
 // into separate files and have the only macro crud live here.
-// 
+//
 // NB: these guards are based on those where struct NPEvent is defined
 // in npapi.h.  They should be kept in sync.
 #if defined(XP_MACOSX)

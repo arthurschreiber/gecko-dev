@@ -94,6 +94,9 @@ function testXhrWarn() {
   });
 
   let lastRequest = yield waitForFinishedRequest(XHR_WARN_REQUEST_PREDICATE);
+  if (lastRequest.request.method == "HEAD") {
+    lastRequest = yield waitForFinishedRequest(XHR_WARN_REQUEST_PREDICATE);
+  }
 
   ok(lastRequest, "testXhrWarn() was logged");
   is(lastRequest.request.method, "GET", "Method is correct");
@@ -195,7 +198,7 @@ function countMessageNodes() {
   let displayedMessageNodes = 0;
   let view = hud.iframeWindow;
   for (let i = 0; i < messageNodes.length; i++) {
-    let computedStyle = view.getComputedStyle(messageNodes[i], null);
+    let computedStyle = view.getComputedStyle(messageNodes[i]);
     if (computedStyle.display !== "none") {
       displayedMessageNodes++;
     }

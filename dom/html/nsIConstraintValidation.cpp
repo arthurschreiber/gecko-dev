@@ -8,6 +8,7 @@
 
 #include "nsAString.h"
 #include "nsGenericHTMLElement.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/dom/HTMLFieldSetElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
@@ -54,17 +55,18 @@ nsIConstraintValidation::GetValidity(nsIDOMValidityState** aValidity)
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsIConstraintValidation::GetValidationMessage(nsAString& aValidationMessage)
+void
+nsIConstraintValidation::GetValidationMessage(nsAString& aValidationMessage,
+                                              ErrorResult& aError)
 {
   aValidationMessage.Truncate();
 
   if (IsCandidateForConstraintValidation() && !IsValid()) {
-    nsCOMPtr<nsIContent> content = do_QueryInterface(this);
-    NS_ASSERTION(content, "This class should be inherited by HTML elements only!");
+    nsCOMPtr<Element> element = do_QueryInterface(this);
+    NS_ASSERTION(element, "This class should be inherited by HTML elements only!");
 
     nsAutoString authorMessage;
-    content->GetAttr(kNameSpaceID_None, nsGkAtoms::x_moz_errormessage,
+    element->GetAttr(kNameSpaceID_None, nsGkAtoms::x_moz_errormessage,
                      authorMessage);
 
     if (!authorMessage.IsEmpty()) {
@@ -97,13 +99,12 @@ nsIConstraintValidation::GetValidationMessage(nsAString& aValidationMessage)
       GetValidationMessage(aValidationMessage, VALIDITY_STATE_BAD_INPUT);
     } else {
       // There should not be other validity states.
-      return NS_ERROR_UNEXPECTED;
+      aError.Throw(NS_ERROR_UNEXPECTED);
+      return;
     }
   } else {
     aValidationMessage.Truncate();
   }
-
-  return NS_OK;
 }
 
 bool
@@ -169,7 +170,7 @@ nsIConstraintValidation::ReportValidity()
 
   nsCOMPtr<nsIMutableArray> invalidElements =
     do_CreateInstance(NS_ARRAY_CONTRACTID, &rv);
-  invalidElements->AppendElement(content, false);
+  invalidElements->AppendElement(content);
 
   NS_ENSURE_SUCCESS(rv, true);
   nsCOMPtr<nsISupports> inst;
@@ -186,9 +187,7 @@ nsIConstraintValidation::ReportValidity()
 
   if (content->IsHTMLElement(nsGkAtoms::input) &&
       nsContentUtils::IsFocusedContent(content)) {
-    HTMLInputElement* inputElement =
-    HTMLInputElement::FromContentOrNull(content);
-
+    HTMLInputElement* inputElement = HTMLInputElement::FromContent(content);
     inputElement->UpdateValidityUIBits(true);
   }
 

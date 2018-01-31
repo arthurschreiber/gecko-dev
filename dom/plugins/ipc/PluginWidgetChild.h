@@ -5,6 +5,10 @@
 #ifndef mozilla_plugins_PluginWidgetChild_h
 #define mozilla_plugins_PluginWidgetChild_h
 
+#ifndef XP_WIN
+#error "This header should be Windows-only."
+#endif
+
 #include "mozilla/plugins/PPluginWidgetChild.h"
 
 namespace mozilla {
@@ -18,9 +22,6 @@ class PluginWidgetChild : public PPluginWidgetChild
 public:
   PluginWidgetChild();
   virtual ~PluginWidgetChild();
-
-  bool RecvSetScrollCaptureId(const uint64_t& aScrollCaptureId,
-                              const uintptr_t& aPluginInstanceId) override;
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 

@@ -66,8 +66,8 @@ DebuggerMemory::getDebugger()
 /* static */ bool
 DebuggerMemory::construct(JSContext* cx, unsigned argc, Value* vp)
 {
-    JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_NO_CONSTRUCTOR,
-                         "Debugger.Memory");
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_NO_CONSTRUCTOR,
+                              "Debugger.Source");
     return false;
 }
 
@@ -83,14 +83,15 @@ DebuggerMemory::checkThis(JSContext* cx, CallArgs& args, const char* fnName)
     const Value& thisValue = args.thisv();
 
     if (!thisValue.isObject()) {
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_NOT_NONNULL_OBJECT, InformalValueTypeName(thisValue));
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_NOT_NONNULL_OBJECT,
+                                  InformalValueTypeName(thisValue));
         return nullptr;
     }
 
     JSObject& thisObject = thisValue.toObject();
     if (!thisObject.is<DebuggerMemory>()) {
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_INCOMPATIBLE_PROTO,
-                             class_.name, fnName, thisObject.getClass()->name);
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_INCOMPATIBLE_PROTO,
+                                  class_.name, fnName, thisObject.getClass()->name);
         return nullptr;
     }
 
@@ -99,8 +100,8 @@ DebuggerMemory::checkThis(JSContext* cx, CallArgs& args, const char* fnName)
     // of Debugger.Memory. It is the only object that is<DebuggerMemory>() but
     // doesn't have a Debugger instance.
     if (thisObject.as<DebuggerMemory>().getReservedSlot(JSSLOT_DEBUGGER).isUndefined()) {
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_INCOMPATIBLE_PROTO,
-                             class_.name, fnName, "prototype object");
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_INCOMPATIBLE_PROTO,
+                                  class_.name, fnName, "prototype object");
         return nullptr;
     }
 
@@ -178,8 +179,8 @@ DebuggerMemory::drainAllocationsLog(JSContext* cx, unsigned argc, Value* vp)
     Debugger* dbg = memory->getDebugger();
 
     if (!dbg->trackingAllocationSites) {
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_NOT_TRACKING_ALLOCATIONS,
-                             "drainAllocationsLog");
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_NOT_TRACKING_ALLOCATIONS,
+                                  "drainAllocationsLog");
         return false;
     }
 
@@ -202,32 +203,34 @@ DebuggerMemory::drainAllocationsLog(JSContext* cx, unsigned argc, Value* vp)
         Debugger::AllocationsLogEntry& entry = dbg->allocationsLog.front();
 
         RootedValue frame(cx, ObjectOrNullValue(entry.frame));
-        if (!DefineProperty(cx, obj, cx->names().frame, frame))
+        if (!DefineDataProperty(cx, obj, cx->names().frame, frame))
             return false;
 
-        RootedValue timestampValue(cx, NumberValue(entry.when));
-        if (!DefineProperty(cx, obj, cx->names().timestamp, timestampValue))
+        double when = (entry.when -
+                       mozilla::TimeStamp::ProcessCreation()).ToMilliseconds();
+        RootedValue timestampValue(cx, NumberValue(when));
+        if (!DefineDataProperty(cx, obj, cx->names().timestamp, timestampValue))
             return false;
 
         RootedString className(cx, Atomize(cx, entry.className, strlen(entry.className)));
         if (!className)
             return false;
         RootedValue classNameValue(cx, StringValue(className));
-        if (!DefineProperty(cx, obj, cx->names().class_, classNameValue))
+        if (!DefineDataProperty(cx, obj, cx->names().class_, classNameValue))
             return false;
 
         RootedValue ctorName(cx, NullValue());
         if (entry.ctorName)
             ctorName.setString(entry.ctorName);
-        if (!DefineProperty(cx, obj, cx->names().constructor, ctorName))
+        if (!DefineDataProperty(cx, obj, cx->names().constructor, ctorName))
             return false;
 
         RootedValue size(cx, NumberValue(entry.size));
-        if (!DefineProperty(cx, obj, cx->names().size, size))
+        if (!DefineDataProperty(cx, obj, cx->names().size, size))
             return false;
 
         RootedValue inNursery(cx, BooleanValue(entry.inNursery));
-        if (!DefineProperty(cx, obj, cx->names().inNursery, inNursery))
+        if (!DefineDataProperty(cx, obj, cx->names().inNursery, inNursery))
             return false;
 
         result->setDenseElement(i, ObjectValue(*obj));
@@ -235,10 +238,7 @@ DebuggerMemory::drainAllocationsLog(JSContext* cx, unsigned argc, Value* vp)
         // Pop the front queue entry, and delete it immediately, so that the GC
         // sees the AllocationsLogEntry's HeapPtr barriers run atomically with
         // the change to the graph (the queue link).
-        if (!dbg->allocationsLog.popFront()) {
-            ReportOutOfMemory(cx);
-            return false;
-        }
+        dbg->allocationsLog.popFront();
     }
 
     dbg->allocationsLogOverflowed = false;
@@ -266,21 +266,17 @@ DebuggerMemory::setMaxAllocationsLogLength(JSContext* cx, unsigned argc, Value* 
         return false;
 
     if (max < 1) {
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_UNEXPECTED_TYPE,
-                             "(set maxAllocationsLogLength)'s parameter",
-                             "not a positive integer");
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_UNEXPECTED_TYPE,
+                                  "(set maxAllocationsLogLength)'s parameter",
+                                  "not a positive integer");
         return false;
     }
 
     Debugger* dbg = memory->getDebugger();
     dbg->maxAllocationsLogLength = max;
 
-    while (dbg->allocationsLog.length() > dbg->maxAllocationsLogLength) {
-        if (!dbg->allocationsLog.popFront()) {
-            ReportOutOfMemory(cx);
-            return false;
-        }
-    }
+    while (dbg->allocationsLog.length() > dbg->maxAllocationsLogLength)
+        dbg->allocationsLog.popFront();
 
     args.rval().setUndefined();
     return true;
@@ -307,9 +303,9 @@ DebuggerMemory::setAllocationSamplingProbability(JSContext* cx, unsigned argc, V
 
     // Careful!  This must also reject NaN.
     if (!(0.0 <= probability && probability <= 1.0)) {
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_UNEXPECTED_TYPE,
-                             "(set allocationSamplingProbability)'s parameter",
-                             "not a number between 0 and 1");
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_UNEXPECTED_TYPE,
+                                  "(set allocationSamplingProbability)'s parameter",
+                                  "not a number between 0 and 1");
         return false;
     }
 
@@ -357,13 +353,13 @@ DebuggerMemory::setOnGarbageCollection(JSContext* cx, unsigned argc, Value* vp)
 JS_PUBLIC_API(void)
 JS::dbg::SetDebuggerMallocSizeOf(JSContext* cx, mozilla::MallocSizeOf mallocSizeOf)
 {
-    cx->debuggerMallocSizeOf = mallocSizeOf;
+    cx->runtime()->debuggerMallocSizeOf = mallocSizeOf;
 }
 
 JS_PUBLIC_API(mozilla::MallocSizeOf)
 JS::dbg::GetDebuggerMallocSizeOf(JSContext* cx)
 {
-    return cx->debuggerMallocSizeOf;
+    return cx->runtime()->debuggerMallocSizeOf;
 }
 
 using JS::ubi::Census;

@@ -1,17 +1,17 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var prefs;
 var spdypref;
 var http2pref;
-var tlspref;
 var origin;
+var rcwnpref;
 
 function run_test() {
   var env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
   var h2Port = env.get("MOZHTTP2_PORT");
-  do_check_neq(h2Port, null);
-  do_check_neq(h2Port, "");
+  Assert.notEqual(h2Port, null);
+  Assert.notEqual(h2Port, "");
 
   // Set to allow the cert presented by our H2 server
   do_get_profile();
@@ -19,12 +19,13 @@ function run_test() {
 
   spdypref = prefs.getBoolPref("network.http.spdy.enabled");
   http2pref = prefs.getBoolPref("network.http.spdy.enabled.http2");
-  tlspref = prefs.getBoolPref("network.http.spdy.enforce-tls-profile");
+  rcwnpref = prefs.getBoolPref("network.http.rcwn.enabled");
 
   prefs.setBoolPref("network.http.spdy.enabled", true);
   prefs.setBoolPref("network.http.spdy.enabled.http2", true);
-  prefs.setBoolPref("network.http.spdy.enforce-tls-profile", false);
   prefs.setCharPref("network.dns.localDomains", "foo.example.com, bar.example.com");
+  // Disable rcwn to make cache behavior deterministic.
+  prefs.setBoolPref("network.http.rcwn.enabled", false);
 
   // The moz-http2 cert is for foo.example.com and is signed by CA.cert.der
   // so add that cert to the trust list as a signing cert.  // the foo.example.com domain name.
@@ -40,7 +41,7 @@ function run_test() {
 function resetPrefs() {
   prefs.setBoolPref("network.http.spdy.enabled", spdypref);
   prefs.setBoolPref("network.http.spdy.enabled.http2", http2pref);
-  prefs.setBoolPref("network.http.spdy.enforce-tls-profile", tlspref);
+  prefs.setBoolPref("network.http.rcwn.enabled", rcwnpref);
   prefs.clearUserPref("network.dns.localDomains");
 }
 
@@ -56,7 +57,7 @@ function readFile(file) {
 function addCertFromFile(certdb, filename, trustString) {
   let certFile = do_get_file(filename, false);
   let der = readFile(certFile);
-  certdb.addCert(der, trustString, null);
+  certdb.addCert(der, trustString);
 }
 
 function makeChan(origin, path) {
@@ -73,15 +74,15 @@ var expectConditional = false;
 var Listener = function() {};
 Listener.prototype = {
   onStartRequest: function testOnStartRequest(request, ctx) {
-    do_check_true(request instanceof Components.interfaces.nsIHttpChannel);
+    Assert.ok(request instanceof Components.interfaces.nsIHttpChannel);
 
     if (expectPass) {
       if (!Components.isSuccessCode(request.status)) {
         do_throw("Channel should have a success code! (" + request.status + ")");
       }
-      do_check_eq(request.responseStatus, 200);
+      Assert.equal(request.responseStatus, 200);
     } else {
-      do_check_eq(Components.isSuccessCode(request.status), false);
+      Assert.equal(Components.isSuccessCode(request.status), false);
     }
   },
 
@@ -91,10 +92,10 @@ Listener.prototype = {
 
   onStopRequest: function testOnStopRequest(request, ctx, status) {
       if (expectConditional) {
-        do_check_eq(request.getResponseHeader("x-conditional"), "true");
+        Assert.equal(request.getResponseHeader("x-conditional"), "true");
       } else {
-	  try { do_check_neq(request.getResponseHeader("x-conditional"), "true"); }
-	  catch (e) { do_check_true(true); }
+	  try { Assert.notEqual(request.getResponseHeader("x-conditional"), "true"); }
+	  catch (e) { Assert.ok(true); }
     }
     nextTest();
     do_test_finished();

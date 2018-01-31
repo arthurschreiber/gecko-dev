@@ -168,15 +168,15 @@ struct ClassInfo
     macro(Objects, MallocHeap, objectsMallocHeapSlots) \
     macro(Objects, MallocHeap, objectsMallocHeapElementsNormal) \
     macro(Objects, MallocHeap, objectsMallocHeapElementsAsmJS) \
+    macro(Objects, MallocHeap, objectsMallocHeapMisc) \
     macro(Objects, NonHeap,    objectsNonHeapElementsNormal) \
-    macro(Objects, NonHeap,    objectsNonHeapElementsAsmJS) \
     macro(Objects, NonHeap,    objectsNonHeapElementsShared) \
-    macro(Objects, NonHeap,    objectsNonHeapCodeAsmJS) \
-    macro(Objects, MallocHeap, objectsMallocHeapMisc)
+    macro(Objects, NonHeap,    objectsNonHeapElementsWasm) \
+    macro(Objects, NonHeap,    objectsNonHeapCodeWasm)
 
     ClassInfo()
       : FOR_EACH_SIZE(ZERO_SIZE)
-        dummy()
+        wasmGuardPages(0)
     {}
 
     void add(const ClassInfo& other) {
@@ -213,7 +213,7 @@ struct ClassInfo
     }
 
     FOR_EACH_SIZE(DECL_SIZE)
-    int dummy;  // present just to absorb the trailing comma from FOR_EACH_SIZE(ZERO_SIZE)
+    size_t wasmGuardPages;
 
 #undef FOR_EACH_SIZE
 };
@@ -499,21 +499,24 @@ struct NotableScriptSourceInfo : public ScriptSourceInfo
 };
 
 /**
- * These measurements relate directly to the JSRuntime, and not to zones and
- * compartments within it.
+ * These measurements relate directly to the JSRuntime, and not to zones,
+ * compartments, and realms within it.
  */
 struct RuntimeSizes
 {
 #define FOR_EACH_SIZE(macro) \
     macro(_, MallocHeap, object) \
     macro(_, MallocHeap, atomsTable) \
+    macro(_, MallocHeap, atomsMarkBitmaps) \
     macro(_, MallocHeap, contexts) \
     macro(_, MallocHeap, temporary) \
     macro(_, MallocHeap, interpreterStack) \
     macro(_, MallocHeap, mathCache) \
     macro(_, MallocHeap, sharedImmutableStringsCache) \
+    macro(_, MallocHeap, sharedIntlData) \
     macro(_, MallocHeap, uncompressedSourceCache) \
-    macro(_, MallocHeap, scriptData)
+    macro(_, MallocHeap, scriptData) \
+    macro(_, MallocHeap, tracelogger)
 
     RuntimeSizes()
       : FOR_EACH_SIZE(ZERO_SIZE)
@@ -576,7 +579,8 @@ struct UnusedGCThingSizes
     macro(Other, GCHeapUnused, string) \
     macro(Other, GCHeapUnused, symbol) \
     macro(Other, GCHeapUnused, jitcode) \
-    macro(Other, GCHeapUnused, scope)
+    macro(Other, GCHeapUnused, scope) \
+    macro(Other, GCHeapUnused, regExpShared)
 
     UnusedGCThingSizes()
       : FOR_EACH_SIZE(ZERO_SIZE)
@@ -590,16 +594,17 @@ struct UnusedGCThingSizes
 
     void addToKind(JS::TraceKind kind, intptr_t n) {
         switch (kind) {
-          case JS::TraceKind::Object:       object += n;      break;
-          case JS::TraceKind::String:       string += n;      break;
-          case JS::TraceKind::Symbol:       symbol += n;      break;
-          case JS::TraceKind::Script:       script += n;      break;
-          case JS::TraceKind::Shape:        shape += n;       break;
-          case JS::TraceKind::BaseShape:    baseShape += n;   break;
-          case JS::TraceKind::JitCode:      jitcode += n;     break;
-          case JS::TraceKind::LazyScript:   lazyScript += n;  break;
-          case JS::TraceKind::ObjectGroup:  objectGroup += n; break;
-          case JS::TraceKind::Scope:        scope += n;       break;
+          case JS::TraceKind::Object:       object += n;       break;
+          case JS::TraceKind::String:       string += n;       break;
+          case JS::TraceKind::Symbol:       symbol += n;       break;
+          case JS::TraceKind::Script:       script += n;       break;
+          case JS::TraceKind::Shape:        shape += n;        break;
+          case JS::TraceKind::BaseShape:    baseShape += n;    break;
+          case JS::TraceKind::JitCode:      jitcode += n;      break;
+          case JS::TraceKind::LazyScript:   lazyScript += n;   break;
+          case JS::TraceKind::ObjectGroup:  objectGroup += n;  break;
+          case JS::TraceKind::Scope:        scope += n;        break;
+          case JS::TraceKind::RegExpShared: regExpShared += n; break;
           default:
             MOZ_CRASH("Bad trace kind for UnusedGCThingSizes");
         }
@@ -641,8 +646,13 @@ struct ZoneStats
     macro(Other,   MallocHeap,  objectGroupsMallocHeap) \
     macro(Other,   GCHeapUsed,  scopesGCHeap) \
     macro(Other,   MallocHeap,  scopesMallocHeap) \
+    macro(Other,   GCHeapUsed,  regExpSharedsGCHeap) \
+    macro(Other,   MallocHeap,  regExpSharedsMallocHeap) \
     macro(Other,   MallocHeap,  typePool) \
+    macro(Other,   MallocHeap,  regexpZone) \
+    macro(Other,   MallocHeap,  jitZone) \
     macro(Other,   MallocHeap,  baselineStubsOptimized) \
+    macro(Other,   MallocHeap,  cachedCFG) \
     macro(Other,   MallocHeap,  uniqueIdMap) \
     macro(Other,   MallocHeap,  shapeTables)
 
@@ -678,7 +688,7 @@ struct ZoneStats
         js_delete(allStrings);
     }
 
-    bool initStrings(JSRuntime* rt);
+    bool initStrings();
 
     void addSizes(const ZoneStats& other) {
         MOZ_ASSERT(isTotals);
@@ -761,10 +771,10 @@ struct CompartmentStats
     macro(Other,   MallocHeap, lazyArrayBuffersTable) \
     macro(Other,   MallocHeap, objectMetadataTable) \
     macro(Other,   MallocHeap, crossCompartmentWrappersTable) \
-    macro(Other,   MallocHeap, regexpCompartment) \
     macro(Other,   MallocHeap, savedStacksSet) \
     macro(Other,   MallocHeap, varNamesSet) \
     macro(Other,   MallocHeap, nonSyntacticLexicalScopesTable) \
+    macro(Other,   MallocHeap, templateLiteralMap) \
     macro(Other,   MallocHeap, jitCompartment) \
     macro(Other,   MallocHeap, privateData)
 
@@ -798,7 +808,7 @@ struct CompartmentStats
         js_delete(allClasses);
     }
 
-    bool initClasses(JSRuntime* rt);
+    bool initClasses();
 
     void addSizes(const CompartmentStats& other) {
         MOZ_ASSERT(isTotals);
@@ -954,7 +964,10 @@ AddSizeOfTab(JSContext* cx, JS::HandleObject obj, mozilla::MallocSizeOf mallocSi
 
 extern JS_PUBLIC_API(bool)
 AddServoSizeOf(JSContext* cx, mozilla::MallocSizeOf mallocSizeOf,
-               ObjectPrivateVisitor *opv, ServoSizes *sizes);
+               ObjectPrivateVisitor* opv, ServoSizes* sizes);
+
+extern JS_PUBLIC_API(void)
+CollectTraceLoggerStateStats(RuntimeStats* rtStats);
 
 } // namespace JS
 

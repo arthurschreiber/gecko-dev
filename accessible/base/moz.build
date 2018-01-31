@@ -63,6 +63,8 @@ LOCAL_INCLUDES += [
     '/accessible/generic',
     '/accessible/html',
     '/accessible/ipc',
+    '/dom/base',
+    '/dom/xul',
 ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
@@ -110,5 +112,5 @@ FINAL_LIBRARY = 'xul'
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

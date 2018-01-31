@@ -6,11 +6,13 @@
 var Ci = Components.interfaces;
 var Cc = Components.classes;
 var Cr = Components.results;
+var Cu = Components.utils;
+
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function loadUtilsScript() {
-  var loader = Cc["@mozilla.org/moz/jssubscript-loader;1"].
-               getService(Ci.mozIJSSubScriptLoader);
-  loader.loadSubScript("chrome://global/content/contentAreaUtils.js");
+  /* import-globals-from ../../contentAreaUtils.js */
+  Services.scriptloader.loadSubScript("chrome://global/content/contentAreaUtils.js");
 }
 
 function test_urlSecurityCheck() {
@@ -25,8 +27,7 @@ function test_urlSecurityCheck() {
   try {
     urlSecurityCheck(makeURI(HTTP_URI), nullPrincipal,
                      DISALLOW_INHERIT_PRINCIPAL);
-  }
-  catch (ex) {
+  } catch (ex) {
     do_throw("urlSecurityCheck should not throw when linking to a http uri with a null principal");
   }
 
@@ -34,8 +35,7 @@ function test_urlSecurityCheck() {
   try {
     urlSecurityCheck(HTTP_URI, nullPrincipal,
                      DISALLOW_INHERIT_PRINCIPAL);
-  }
-  catch (ex) {
+  } catch (ex) {
     do_throw("urlSecurityCheck failed to handle the http URI as a string (uri spec)");
   }
 
@@ -43,8 +43,7 @@ function test_urlSecurityCheck() {
   try {
     urlSecurityCheck(CHROME_URI, nullPrincipal,
                      DISALLOW_INHERIT_PRINCIPAL);
-  }
-  catch (ex) {
+  } catch (ex) {
     shouldThrow = false;
   }
   if (shouldThrow)
@@ -72,8 +71,7 @@ function test_stringBundle() {
   }
 }
 
-function run_test()
-{
+function run_test() {
   loadUtilsScript();
   test_urlSecurityCheck();
   test_stringBundle();

@@ -15,6 +15,7 @@
 #include "js/GCHashTable.h"
 #include "vm/Runtime.h"
 #include "vm/SharedMem.h"
+#include "wasm/WasmTypes.h"
 
 typedef struct JSProperty JSProperty;
 
@@ -22,6 +23,34 @@ namespace js {
 
 class ArrayBufferViewObject;
 class WasmArrayRawBuffer;
+
+// Create a new mapping of size `mappedSize` with an initially committed prefix
+// of size `initialCommittedSize`.  Both arguments denote bytes and must be
+// multiples of the page size, with `initialCommittedSize` <= `mappedSize`.
+// Returns nullptr on failure.
+void* MapBufferMemory(size_t mappedSize, size_t initialCommittedSize);
+
+// Commit additional memory in an existing mapping.  `dataEnd` must be the
+// correct value for the end of the existing committed area, and `delta` must be
+// a byte amount to grow the mapping by, and must be a multiple of the page
+// size.  Returns false on failure.
+bool CommitBufferMemory(void* dataEnd, uint32_t delta);
+
+#ifndef WASM_HUGE_MEMORY
+// Extend an existing mapping by adding uncommited pages to it.  `dataStart`
+// must be the pointer to the start of the existing mapping, `mappedSize` the
+// size of the existing mapping, and `newMappedSize` the size of the extended
+// mapping (sizes in bytes), with `mappedSize` <= `newMappedSize`.  Both sizes
+// must be divisible by the page size.  Returns false on failure.
+bool ExtendBufferMapping(void* dataStart, size_t mappedSize, size_t newMappedSize);
+#endif
+
+// Remove an existing mapping.  `dataStart` must be the pointer to the start of
+// the mapping, and `mappedSize` the size of that mapping.
+void UnmapBufferMemory(void* dataStart, size_t mappedSize);
+
+// Return the number of currently live mapped buffers.
+int32_t LiveMappedBufferCount();
 
 // The inheritance hierarchy for the various classes relating to typed arrays
 // is as follows.
@@ -73,31 +102,20 @@ class WasmArrayRawBuffer;
 
 class ArrayBufferObjectMaybeShared;
 
-uint32_t AnyArrayBufferByteLength(const ArrayBufferObjectMaybeShared* buf);
-uint32_t WasmArrayBufferActualByteLength(const ArrayBufferObjectMaybeShared* buf);
 mozilla::Maybe<uint32_t> WasmArrayBufferMaxSize(const ArrayBufferObjectMaybeShared* buf);
 size_t WasmArrayBufferMappedSize(const ArrayBufferObjectMaybeShared* buf);
-bool WasmArrayBufferGrowForWasm(ArrayBufferObjectMaybeShared* buf, uint32_t delta);
-ArrayBufferObjectMaybeShared& AsAnyArrayBuffer(HandleValue val);
 
 class ArrayBufferObjectMaybeShared : public NativeObject
 {
   public:
-    uint32_t byteLength() {
-        return AnyArrayBufferByteLength(this);
-    }
-
+    inline uint32_t byteLength();
     inline bool isDetached() const;
-
     inline SharedMem<uint8_t*> dataPointerEither();
 
     // WebAssembly support:
     // Note: the eventual goal is to remove this from ArrayBuffer and have
     // (Shared)ArrayBuffers alias memory owned by some wasm::Memory object.
 
-    uint32_t wasmActualByteLength() const {
-        return WasmArrayBufferActualByteLength(this);
-    }
     mozilla::Maybe<uint32_t> wasmMaxSize() const {
         return WasmArrayBufferMaxSize(this);
     }
@@ -107,6 +125,9 @@ class ArrayBufferObjectMaybeShared : public NativeObject
 #ifndef WASM_HUGE_MEMORY
     uint32_t wasmBoundsCheckLimit() const;
 #endif
+
+    inline bool isPreparedForAsmJS() const;
+    inline bool isWasm() const;
 };
 
 typedef Rooted<ArrayBufferObjectMaybeShared*> RootedArrayBufferObjectMaybeShared;
@@ -130,8 +151,6 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared
     static bool byteLengthGetterImpl(JSContext* cx, const CallArgs& args);
     static bool fun_slice_impl(JSContext* cx, const CallArgs& args);
 
-    static const ClassOps classOps_;
-
   public:
     static const uint8_t DATA_SLOT = 0;
     static const uint8_t BYTE_LENGTH_SLOT = 1;
@@ -146,6 +165,11 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared
                   "self-hosted code with burned-in constants must get the "
                   "right flags slot");
 
+    // The length of an ArrayBuffer or SharedArrayBuffer can be at most
+    // INT32_MAX, and much code must change if this changes.
+
+    static const size_t MaxBufferByteLength = INT32_MAX;
+
   public:
 
     enum OwnsState {
@@ -155,9 +179,8 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared
 
     enum BufferKind {
         PLAIN               = 0, // malloced or inline data
-        ASMJS_MALLOCED      = 1,
-        WASM_MAPPED         = 2,
-        MAPPED              = 3,
+        WASM                = 1,
+        MAPPED              = 2,
 
         KIND_MASK           = 0x3
     };
@@ -188,7 +211,11 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared
         FOR_INLINE_TYPED_OBJECT = 0x10,
 
         // Views of this buffer might include typed objects.
-        TYPED_OBJECT_VIEWS  = 0x20
+        TYPED_OBJECT_VIEWS  = 0x20,
+
+        // This PLAIN or WASM buffer has been prepared for asm.js and cannot
+        // henceforth be transferred/detached.
+        FOR_ASMJS           = 0x40
     };
 
     static_assert(JS_ARRAYBUFFER_DETACHED_FLAG == DETACHED,
@@ -227,11 +254,7 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared
     };
 
     static const Class class_;
-
-    static const Class protoClass;
-    static const JSFunctionSpec jsfuncs[];
-    static const JSFunctionSpec jsstaticfuncs[];
-    static const JSPropertySpec jsstaticprops[];
+    static const Class protoClass_;
 
     static bool byteLengthGetter(JSContext* cx, unsigned argc, Value* vp);
 
@@ -252,35 +275,33 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared
                                      HandleObject proto = nullptr,
                                      NewObjectKind newKind = GenericObject);
 
-    static bool createDataViewForThisImpl(JSContext* cx, const CallArgs& args);
-    static bool createDataViewForThis(JSContext* cx, unsigned argc, Value* vp);
+    // Create an ArrayBufferObject that is safely finalizable and can later be
+    // initialize()d to become a real, content-visible ArrayBufferObject.
+    static ArrayBufferObject* createEmpty(JSContext* cx);
 
-    template<typename T>
-    static bool createTypedArrayFromBufferImpl(JSContext* cx, const CallArgs& args);
+    // Create an ArrayBufferObject using the provided buffer and size.  Assumes
+    // ownership of |buffer| even in case of failure, i.e. on failure |buffer|
+    // is deallocated.
+    static ArrayBufferObject*
+    createFromNewRawBuffer(JSContext* cx, WasmArrayRawBuffer* buffer, uint32_t initialSize);
 
-    template<typename T>
-    static bool createTypedArrayFromBuffer(JSContext* cx, unsigned argc, Value* vp);
-
-    static void copyData(Handle<ArrayBufferObject*> toBuffer,
-                         Handle<ArrayBufferObject*> fromBuffer,
-                         uint32_t fromIndex, uint32_t count);
+    static void copyData(Handle<ArrayBufferObject*> toBuffer, uint32_t toIndex,
+                         Handle<ArrayBufferObject*> fromBuffer, uint32_t fromIndex,
+                         uint32_t count);
 
     static void trace(JSTracer* trc, JSObject* obj);
-    static void objectMoved(JSObject* obj, const JSObject* old);
+    static size_t objectMoved(JSObject* obj, JSObject* old);
 
+    static BufferContents externalizeContents(JSContext* cx,
+                                              Handle<ArrayBufferObject*> buffer,
+                                              bool hasStealableContents);
     static BufferContents stealContents(JSContext* cx,
                                         Handle<ArrayBufferObject*> buffer,
                                         bool hasStealableContents);
 
     bool hasStealableContents() const {
         // Inline elements strictly adhere to the corresponding buffer.
-        return ownsData();
-    }
-
-    // Return whether the buffer is allocated by js_malloc and should be freed
-    // with js_free.
-    bool hasMallocedContents() const {
-        return (ownsData() && isPlain()) || isAsmJSMalloced();
+        return ownsData() && !isPreparedForAsmJS() && !isWasm();
     }
 
     static void addSizeOfExcludingThis(JSObject* obj, mozilla::MallocSizeOf mallocSizeOf,
@@ -295,8 +316,8 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared
 
     bool addView(JSContext* cx, JSObject* view);
 
-    void setNewOwnedData(FreeOp* fop, BufferContents newContents);
-    void changeContents(JSContext* cx, BufferContents newContents);
+    void setNewData(FreeOp* fop, BufferContents newContents, OwnsState ownsState);
+    void changeContents(JSContext* cx, BufferContents newContents, OwnsState ownsState);
 
     // Detach this buffer from its original memory.  (This necessarily makes
     // views of this buffer unusable for modifying that original memory.)
@@ -334,22 +355,25 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared
 
     BufferKind bufferKind() const { return BufferKind(flags() & BUFFER_KIND_MASK); }
     bool isPlain() const { return bufferKind() == PLAIN; }
-    bool isWasmMapped() const { return bufferKind() == WASM_MAPPED; }
-    bool isAsmJSMalloced() const { return bufferKind() == ASMJS_MALLOCED; }
-    bool isWasm() const { return isWasmMapped() || isAsmJSMalloced(); }
+    bool isWasm() const { return bufferKind() == WASM; }
     bool isMapped() const { return bufferKind() == MAPPED; }
     bool isDetached() const { return flags() & DETACHED; }
+    bool isPreparedForAsmJS() const { return flags() & FOR_ASMJS; }
 
     // WebAssembly support:
-    static ArrayBufferObject* createForWasm(JSContext* cx, uint32_t initialSize,
-                                            mozilla::Maybe<uint32_t> maxSize);
-    static bool prepareForAsmJS(JSContext* cx, Handle<ArrayBufferObject*> buffer, bool needGuard);
-    uint32_t wasmActualByteLength() const;
+    static MOZ_MUST_USE bool prepareForAsmJS(JSContext* cx, Handle<ArrayBufferObject*> buffer,
+                                             bool needGuard);
     size_t wasmMappedSize() const;
     mozilla::Maybe<uint32_t> wasmMaxSize() const;
-    MOZ_MUST_USE bool wasmGrowToSizeInPlace(uint32_t newSize);
+    static MOZ_MUST_USE bool wasmGrowToSizeInPlace(uint32_t newSize,
+                                                   Handle<ArrayBufferObject*> oldBuf,
+                                                   MutableHandle<ArrayBufferObject*> newBuf,
+                                                   JSContext* cx);
 #ifndef WASM_HUGE_MEMORY
-    MOZ_MUST_USE bool wasmMovingGrowToSize(uint32_t newSize);
+    static MOZ_MUST_USE bool wasmMovingGrowToSize(uint32_t newSize,
+                                                  Handle<ArrayBufferObject*> oldBuf,
+                                                  MutableHandle<ArrayBufferObject*> newBuf,
+                                                  JSContext* cx);
     uint32_t wasmBoundsCheckLimit() const;
 #endif
 
@@ -387,8 +411,8 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared
 
     bool hasTypedObjectViews() const { return flags() & TYPED_OBJECT_VIEWS; }
 
-    void setIsAsmJSMalloced() { setFlags((flags() & ~KIND_MASK) | ASMJS_MALLOCED); }
     void setIsDetached() { setFlags(flags() | DETACHED); }
+    void setIsPreparedForAsmJS() { setFlags(flags() | FOR_ASMJS); }
 
     void initialize(size_t byteLength, BufferContents contents, OwnsState ownsState) {
         setByteLength(byteLength);
@@ -402,13 +426,16 @@ typedef Rooted<ArrayBufferObject*> RootedArrayBufferObject;
 typedef Handle<ArrayBufferObject*> HandleArrayBufferObject;
 typedef MutableHandle<ArrayBufferObject*> MutableHandleArrayBufferObject;
 
+bool CreateWasmBuffer(JSContext* cx, const wasm::Limits& memory,
+                      MutableHandleArrayBufferObjectMaybeShared buffer);
+
 /*
  * ArrayBufferViewObject
  *
  * Common definitions shared by all array buffer views.
  */
 
-class ArrayBufferViewObject : public JSObject
+class ArrayBufferViewObject : public NativeObject
 {
   public:
     static ArrayBufferObjectMaybeShared* bufferObject(JSContext* cx, Handle<ArrayBufferViewObject*> obj);
@@ -421,7 +448,7 @@ class ArrayBufferViewObject : public JSObject
 
     // By construction we only need unshared variants here.  See
     // comments in ArrayBufferObject.cpp.
-    uint8_t* dataPointerUnshared();
+    uint8_t* dataPointerUnshared(const JS::AutoRequireNoGC&);
     void setDataPointerUnshared(uint8_t* data);
 
     static void trace(JSTracer* trc, JSObject* obj);
@@ -438,6 +465,15 @@ bool IsArrayBuffer(HandleObject obj);
 bool IsArrayBuffer(JSObject* obj);
 ArrayBufferObject& AsArrayBuffer(HandleObject obj);
 ArrayBufferObject& AsArrayBuffer(JSObject* obj);
+
+/*
+ * Ditto for ArrayBufferObjectMaybeShared.
+ */
+bool IsArrayBufferMaybeShared(HandleValue v);
+bool IsArrayBufferMaybeShared(HandleObject obj);
+bool IsArrayBufferMaybeShared(JSObject* obj);
+ArrayBufferObjectMaybeShared& AsArrayBufferMaybeShared(HandleObject obj);
+ArrayBufferObjectMaybeShared& AsArrayBufferMaybeShared(JSObject* obj);
 
 extern uint32_t JS_FASTCALL
 ClampDoubleToUint8(const double x);
@@ -533,7 +569,6 @@ class InnerViewTable
     typedef Vector<ArrayBufferViewObject*, 1, SystemAllocPolicy> ViewVector;
 
     friend class ArrayBufferObject;
-    friend class WeakCacheBase<InnerViewTable>;
 
   private:
     struct MapGCPolicy {
@@ -587,6 +622,10 @@ class InnerViewTable
     void sweep();
     void sweepAfterMinorGC();
 
+    bool needsSweep() const {
+        return map.needsSweep();
+    }
+
     bool needsSweepAfterMinorGC() const {
         return !nurseryKeys.empty() || !nurseryKeysValid;
     }
@@ -594,30 +633,19 @@ class InnerViewTable
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);
 };
 
-template <>
-class WeakCacheBase<InnerViewTable>
+template <typename Wrapper>
+class MutableWrappedPtrOperations<InnerViewTable, Wrapper>
+    : public WrappedPtrOperations<InnerViewTable, Wrapper>
 {
     InnerViewTable& table() {
-        return static_cast<JS::WeakCache<InnerViewTable>*>(this)->get();
-    }
-    const InnerViewTable& table() const {
-        return static_cast<const JS::WeakCache<InnerViewTable>*>(this)->get();
+        return static_cast<Wrapper*>(this)->get();
     }
 
   public:
-    InnerViewTable::ViewVector* maybeViewsUnbarriered(ArrayBufferObject* obj) {
-        return table().maybeViewsUnbarriered(obj);
-    }
-    void removeViews(ArrayBufferObject* obj) { table().removeViews(obj); }
-    void sweepAfterMinorGC() { table().sweepAfterMinorGC(); }
-    bool needsSweepAfterMinorGC() const { return table().needsSweepAfterMinorGC(); }
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {
         return table().sizeOfExcludingThis(mallocSizeOf);
     }
 };
-
-extern JSObject*
-InitArrayBufferClass(JSContext* cx, HandleObject obj);
 
 } // namespace js
 

@@ -1,12 +1,11 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/status.js");
-Cu.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://services-sync/service.js");
+ChromeUtils.import("resource://services-sync/status.js");
+ChromeUtils.import("resource://services-sync/util.js");
 
-Cu.import("resource://testing-common/services/sync/fakeservices.js");
-Cu.import("resource://testing-common/services/sync/utils.js");
+ChromeUtils.import("resource://testing-common/services/sync/fakeservices.js");
 
 function baseHandler(eolCode, request, response, statusCode, status, body) {
   let alertBody = {
@@ -28,7 +27,7 @@ function handler513(request, response) {
 }
 
 function handler200(eolCode) {
-  return function (request, response) {
+  return function(request, response) {
     let statusCode = 200;
     let status = "OK";
     let body = "{\"meta\": 123456789010}";
@@ -43,95 +42,80 @@ function sync_httpd_setup(infoHandler) {
   return httpd_setup(handlers);
 }
 
-function* setUp(server) {
-  yield configureIdentity({username: "johndoe"});
-  Service.serverURL = server.baseURI + "/";
-  Service.clusterURL = server.baseURI + "/";
+async function setUp(server) {
+  await configureIdentity({username: "johndoe"}, server);
   new FakeCryptoService();
-}
-
-function run_test() {
-  run_next_test();
 }
 
 function do_check_soft_eol(eh, start) {
   // We subtract 1000 because the stored value is in second precision.
-  do_check_true(eh.earliestNextAlert >= (start + eh.MINIMUM_ALERT_INTERVAL_MSEC - 1000));
-  do_check_eq("soft-eol", eh.currentAlertMode);
+  Assert.ok(eh.earliestNextAlert >= (start + eh.MINIMUM_ALERT_INTERVAL_MSEC - 1000));
+  Assert.equal("soft-eol", eh.currentAlertMode);
 }
 function do_check_hard_eol(eh, start) {
   // We subtract 1000 because the stored value is in second precision.
-  do_check_true(eh.earliestNextAlert >= (start + eh.MINIMUM_ALERT_INTERVAL_MSEC - 1000));
-  do_check_eq("hard-eol", eh.currentAlertMode);
-  do_check_true(Status.eol);
+  Assert.ok(eh.earliestNextAlert >= (start + eh.MINIMUM_ALERT_INTERVAL_MSEC - 1000));
+  Assert.equal("hard-eol", eh.currentAlertMode);
+  Assert.ok(Status.eol);
 }
 
-add_identity_test(this, function* test_200_hard() {
+add_task(async function test_200_hard() {
   let eh = Service.errorHandler;
   let start = Date.now();
   let server = sync_httpd_setup(handler200("hard-eol"));
-  yield setUp(server);
+  await setUp(server);
 
-  let deferred = Promise.defer();
-  let obs = function (subject, topic, data) {
-    Svc.Obs.remove("weave:eol", obs);
-    do_check_eq("hard-eol", subject.code);
-    do_check_hard_eol(eh, start);
-    do_check_eq(Service.scheduler.eolInterval, Service.scheduler.syncInterval);
-    eh.clearServerAlerts();
-    server.stop(deferred.resolve);
-  };
+  let promiseObserved = promiseOneObserver("weave:eol");
 
-  Svc.Obs.add("weave:eol", obs);
-  Service._fetchInfo();
-  Service.scheduler.adjustSyncInterval();   // As if we failed or succeeded in syncing.
-  yield deferred.promise;
+  await Service._fetchInfo();
+  Service.scheduler.adjustSyncInterval(); // As if we failed or succeeded in syncing.
+
+  let { subject } = await promiseObserved;
+  Assert.equal("hard-eol", subject.code);
+  do_check_hard_eol(eh, start);
+  Assert.equal(Service.scheduler.eolInterval, Service.scheduler.syncInterval);
+  eh.clearServerAlerts();
+  await promiseStopServer(server);
 });
 
-add_identity_test(this, function* test_513_hard() {
+add_task(async function test_513_hard() {
   let eh = Service.errorHandler;
   let start = Date.now();
   let server = sync_httpd_setup(handler513);
-  yield setUp(server);
+  await setUp(server);
 
-  let deferred = Promise.defer();
-  let obs = function (subject, topic, data) {
-    Svc.Obs.remove("weave:eol", obs);
-    do_check_eq("hard-eol", subject.code);
-    do_check_hard_eol(eh, start);
-    do_check_eq(Service.scheduler.eolInterval, Service.scheduler.syncInterval);
-    eh.clearServerAlerts();
-    server.stop(deferred.resolve);
-  };
+  let promiseObserved = promiseOneObserver("weave:eol");
 
-  Svc.Obs.add("weave:eol", obs);
   try {
-    Service._fetchInfo();
-    Service.scheduler.adjustSyncInterval();   // As if we failed or succeeded in syncing.
+    await Service._fetchInfo();
+    Service.scheduler.adjustSyncInterval(); // As if we failed or succeeded in syncing.
   } catch (ex) {
     // Because fetchInfo will fail on a 513.
   }
-  yield deferred.promise;
+  let { subject } = await promiseObserved;
+  Assert.equal("hard-eol", subject.code);
+  do_check_hard_eol(eh, start);
+  Assert.equal(Service.scheduler.eolInterval, Service.scheduler.syncInterval);
+  eh.clearServerAlerts();
+
+  await promiseStopServer(server);
 });
 
-add_identity_test(this, function* test_200_soft() {
+add_task(async function test_200_soft() {
   let eh = Service.errorHandler;
   let start = Date.now();
   let server = sync_httpd_setup(handler200("soft-eol"));
-  yield setUp(server);
+  await setUp(server);
 
-  let deferred = Promise.defer();
-  let obs = function (subject, topic, data) {
-    Svc.Obs.remove("weave:eol", obs);
-    do_check_eq("soft-eol", subject.code);
-    do_check_soft_eol(eh, start);
-    do_check_eq(Service.scheduler.singleDeviceInterval, Service.scheduler.syncInterval);
-    eh.clearServerAlerts();
-    server.stop(deferred.resolve);
-  };
+  let promiseObserved = promiseOneObserver("weave:eol");
 
-  Svc.Obs.add("weave:eol", obs);
-  Service._fetchInfo();
-  Service.scheduler.adjustSyncInterval();   // As if we failed or succeeded in syncing.
-  yield deferred.promise;
+  await Service._fetchInfo();
+  Service.scheduler.adjustSyncInterval(); // As if we failed or succeeded in syncing.
+  let { subject } = await promiseObserved;
+  Assert.equal("soft-eol", subject.code);
+  do_check_soft_eol(eh, start);
+  Assert.equal(Service.scheduler.singleDeviceInterval, Service.scheduler.syncInterval);
+  eh.clearServerAlerts();
+
+  await promiseStopServer(server);
 });

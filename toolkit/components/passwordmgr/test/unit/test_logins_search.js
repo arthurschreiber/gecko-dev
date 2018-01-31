@@ -8,8 +8,7 @@
 
 "use strict";
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 /**
  * Returns a list of new nsILoginInfo objects that are a subset of the test
@@ -39,14 +38,14 @@ function buildExpectedLogins(aQuery)
  */
 function checkSearchLogins(aQuery, aExpectedCount)
 {
-  do_print("Testing searchLogins for " + JSON.stringify(aQuery));
+  info("Testing searchLogins for " + JSON.stringify(aQuery));
 
   let expectedLogins = buildExpectedLogins(aQuery);
-  do_check_eq(expectedLogins.length, aExpectedCount);
+  Assert.equal(expectedLogins.length, aExpectedCount);
 
   let outCount = {};
   let logins = Services.logins.searchLogins(outCount, newPropertyBag(aQuery));
-  do_check_eq(outCount.value, expectedLogins.length);
+  Assert.equal(outCount.value, expectedLogins.length);
   LoginTestUtils.assertLoginListsEqual(logins, expectedLogins);
 }
 
@@ -65,10 +64,10 @@ function checkSearchLogins(aQuery, aExpectedCount)
  */
 function checkAllSearches(aQuery, aExpectedCount)
 {
-  do_print("Testing all search functions for " + JSON.stringify(aQuery));
+  info("Testing all search functions for " + JSON.stringify(aQuery));
 
   let expectedLogins = buildExpectedLogins(aQuery);
-  do_check_eq(expectedLogins.length, aExpectedCount);
+  Assert.equal(expectedLogins.length, aExpectedCount);
 
   // The findLogins and countLogins functions support wildcard matches by
   // specifying empty strings as parameters, while searchLogins requires
@@ -81,19 +80,18 @@ function checkAllSearches(aQuery, aExpectedCount)
   let outCount = {};
   let logins = Services.logins.findLogins(outCount, hostname, formSubmitURL,
                                           httpRealm);
-  do_check_eq(outCount.value, expectedLogins.length);
+  Assert.equal(outCount.value, expectedLogins.length);
   LoginTestUtils.assertLoginListsEqual(logins, expectedLogins);
 
   // Test countLogins.
   let count = Services.logins.countLogins(hostname, formSubmitURL, httpRealm);
-  do_check_eq(count, expectedLogins.length);
+  Assert.equal(count, expectedLogins.length);
 
   // Test searchLogins.
   checkSearchLogins(aQuery, aExpectedCount);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//// Tests
+// Tests
 
 /**
  * Prepare data for the following tests.
@@ -194,7 +192,6 @@ add_task(function test_search_all_full_case_sensitive()
 {
   checkAllSearches({ hostname: "http://www.example.com" }, 1);
   checkAllSearches({ hostname: "http://www.example.com/" }, 0);
-  checkAllSearches({ hostname: "http://" }, 0);
   checkAllSearches({ hostname: "example.com" }, 0);
 
   checkAllSearches({ formSubmitURL: "http://www.example.com" }, 2);

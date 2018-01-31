@@ -3,7 +3,7 @@ import sys
 
 # OS Specifics
 ABS_WORK_DIR = os.path.join(os.getcwd(), "build")
-BINARY_PATH = os.path.join(ABS_WORK_DIR, "firefox", "firefox.exe")
+BINARY_PATH = os.path.join(ABS_WORK_DIR, "application", "firefox", "firefox.exe")
 INSTALLER_PATH = os.path.join(ABS_WORK_DIR, "installer.zip")
 XPCSHELL_NAME = 'xpcshell.exe'
 EXE_SUFFIX = '.exe'
@@ -14,7 +14,6 @@ config = {
     "buildbot_json_path": "buildprops.json",
     "exes": {
         'python': sys.executable,
-        'virtualenv': [sys.executable, 'c:/mozilla-build/buildbotve/virtualenv.py'],
         'hg': 'c:/mozilla-build/hg/hg',
         'mozinstall': ['%s/build/venv/scripts/python' % os.getcwd(),
                        '%s/build/venv/scripts/mozinstall-script.py' % os.getcwd()],
@@ -98,6 +97,7 @@ config = {
                 "--log-errorsummary=%(error_summary_file)s",
                 "--screenshot-on-fail",
                 "--cleanup-crashes",
+                "--marionette-startup-timeout=180",
             ],
             "run_filename": "runtests.py",
             "testsdir": "mochitest"
@@ -129,6 +129,7 @@ config = {
                 "--log-raw=%(raw_log_file)s",
                 "--log-errorsummary=%(error_summary_file)s",
                 "--cleanup-crashes",
+                "--marionette-startup-timeout=180",
             ],
             "run_filename": "runreftest.py",
             "testsdir": "reftest"
@@ -173,50 +174,42 @@ config = {
         "browser-chrome-chunked": ["--flavor=browser", "--chunk-by-runtime"],
         "browser-chrome-addons": ["--flavor=browser", "--chunk-by-runtime", "--tag=addons"],
         "browser-chrome-screenshots": ["--flavor=browser", "--subsuite=screenshots"],
+        "browser-chrome-instrumentation": ["--flavor=browser"],
         "mochitest-gl": ["--subsuite=webgl"],
         "mochitest-devtools-chrome": ["--flavor=browser", "--subsuite=devtools"],
         "mochitest-devtools-chrome-chunked": ["--flavor=browser", "--subsuite=devtools", "--chunk-by-runtime"],
         "mochitest-metro-chrome": ["--flavor=browser", "--metro-immersive"],
-        "jetpack-package": ["--flavor=jetpack-package"],
-        "jetpack-package-clipboard": ["--flavor=jetpack-package", "--subsuite=clipboard"],
-        "jetpack-addon": ["--flavor=jetpack-addon"],
         "a11y": ["--flavor=a11y"],
     },
     # local reftest suites
     "all_reftest_suites": {
-        "reftest": {
-            'options': ["--suite=reftest"],
-            'tests': ["tests/reftest/tests/layout/reftests/reftest.list"]
-        },
         "crashtest": {
             'options': ["--suite=crashtest"],
             'tests': ["tests/reftest/tests/testing/crashtest/crashtests.list"]
         },
         "jsreftest": {
-            'options':["--extra-profile-file=tests/jsreftest/tests/user.js"],
+            'options':["--extra-profile-file=tests/jsreftest/tests/user.js",
+                       "--suite=jstestbrowser"],
             'tests': ["tests/jsreftest/tests/jstests.list"]
         },
-        "reftest-ipc": {
-            'options': ['--suite=reftest',
-                        '--setpref=browser.tabs.remote=true',
-                        '--setpref=browser.tabs.remote.autostart=true',
-                        '--setpref=extensions.e10sBlocksEnabling=false',
-                        '--setpref=layers.async-pan-zoom.enabled=true'],
-            'tests': ['tests/reftest/tests/layout/reftests/reftest-sanity/reftest.list']
+        "reftest": {
+            'options': ["--suite=reftest"],
+            'tests': ["tests/reftest/tests/layout/reftests/reftest.list"]
+        },
+        "reftest-gpu": {
+            'options': ["--suite=reftest",
+                        "--setpref=layers.gpu-process.force-enabled=true"],
+            'tests': ["tests/reftest/tests/layout/reftests/reftest.list"]
         },
         "reftest-no-accel": {
             "options": ["--suite=reftest",
-                        "--setpref=gfx.direct2d.disabled=true",
                         "--setpref=layers.acceleration.disabled=true"],
             "tests": ["tests/reftest/tests/layout/reftests/reftest.list"]
         },
-        "crashtest-ipc": {
-            "options": ["--suite=crashtest",
-                        '--setpref=browser.tabs.remote=true',
-                        '--setpref=browser.tabs.remote.autostart=true',
-                        '--setpref=extensions.e10sBlocksEnabling=false',
-                        '--setpref=layers.async-pan-zoom.enabled=true'],
-            "tests": ['tests/reftest/tests/testing/crashtest/crashtests.list'],
+        "reftest-qr": {
+            "options": ["--suite=reftest",
+                        "--setpref=gfx.webrender.enabled=true"],
+            "tests": ["tests/reftest/tests/layout/reftests/reftest.list"]
         },
     },
     "all_xpcshell_suites": {
@@ -274,9 +267,18 @@ config = {
     "default_blob_upload_servers": [
         "https://blobupload.elasticbeanstalk.com",
     ],
-    "structured_suites": ["reftest"],
+    "unstructured_flavors": {"xpcshell": [],
+                            "gtest": [],
+                            "mozmill": [],
+                            "cppunittest": [],
+                            "jittest": [],
+                            "mozbase": [],
+                            },
     "blob_uploader_auth_file": os.path.join(os.getcwd(), "oauth.txt"),
     "download_minidump_stackwalk": True,
     "minidump_stackwalk_path": "win32-minidump_stackwalk.exe",
     "minidump_tooltool_manifest_path": "config/tooltool-manifests/win32/releng.manifest",
+    "download_nodejs": True,
+    "nodejs_path": "node-win32.exe",
+    "nodejs_tooltool_manifest_path": "config/tooltool-manifests/win32/nodejs.manifest",
 }

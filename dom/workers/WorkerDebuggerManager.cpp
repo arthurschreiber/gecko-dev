@@ -9,7 +9,9 @@
 #include "nsISimpleEnumerator.h"
 
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/StaticPtr.h"
 
+#include "WorkerDebugger.h"
 #include "WorkerPrivate.h"
 
 USING_WORKERS_NAMESPACE
@@ -24,8 +26,9 @@ class RegisterDebuggerMainThreadRunnable final : public mozilla::Runnable
 public:
   RegisterDebuggerMainThreadRunnable(WorkerPrivate* aWorkerPrivate,
                                      bool aNotifyListeners)
-  : mWorkerPrivate(aWorkerPrivate),
-    mNotifyListeners(aNotifyListeners)
+    : mozilla::Runnable("RegisterDebuggerMainThreadRunnable")
+    , mWorkerPrivate(aWorkerPrivate)
+    , mNotifyListeners(aNotifyListeners)
   { }
 
 private:
@@ -49,7 +52,8 @@ class UnregisterDebuggerMainThreadRunnable final : public mozilla::Runnable
 
 public:
   explicit UnregisterDebuggerMainThreadRunnable(WorkerPrivate* aWorkerPrivate)
-  : mWorkerPrivate(aWorkerPrivate)
+    : mozilla::Runnable("UnregisterDebuggerMainThreadRunnable")
+    , mWorkerPrivate(aWorkerPrivate)
   { }
 
 private:
@@ -67,8 +71,7 @@ private:
   }
 };
 
-// Does not hold an owning reference.
-static WorkerDebuggerManager* gWorkerDebuggerManager;
+static StaticRefPtr<WorkerDebuggerManager> gWorkerDebuggerManager;
 
 } /* anonymous namespace */
 
@@ -141,10 +144,11 @@ WorkerDebuggerManager::GetOrCreate()
   if (!gWorkerDebuggerManager) {
     // The observer service now owns us until shutdown.
     gWorkerDebuggerManager = new WorkerDebuggerManager();
-    if (NS_FAILED(gWorkerDebuggerManager->Init())) {
+    if (NS_SUCCEEDED(gWorkerDebuggerManager->Init())) {
+      ClearOnShutdown(&gWorkerDebuggerManager);
+    } else {
       NS_WARNING("Failed to initialize worker debugger manager!");
       gWorkerDebuggerManager = nullptr;
-      return nullptr;
     }
   }
 

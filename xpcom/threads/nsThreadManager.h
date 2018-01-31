@@ -20,11 +20,9 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSITHREADMANAGER
 
-  static nsThreadManager& get()
-  {
-    static nsThreadManager sInstance;
-    return sInstance;
-  }
+  static nsThreadManager& get();
+
+  static void InitializeShutdownObserver();
 
   nsresult Init();
 
@@ -44,6 +42,15 @@ public:
   // initialized.
   nsThread* GetCurrentThread();
 
+  // CreateCurrentThread sets up an nsThread for the current thread. It uses the
+  // event queue and main thread flags passed in. It should only be called once
+  // for the current thread. After it returns, GetCurrentThread() will return
+  // the thread that was created. GetCurrentThread() will also create a thread
+  // (lazily), but it doesn't allow the queue or main-thread attributes to be
+  // specified.
+  nsThread* CreateCurrentThread(mozilla::SynchronizedEventQueue* aQueue,
+                                nsThread::MainThreadFlag aMainThread);
+
   // Returns the maximal number of threads that have been in existence
   // simultaneously during the execution of the thread manager.
   uint32_t GetHighestNumberOfThreads();
@@ -53,6 +60,11 @@ public:
   ~nsThreadManager()
   {
   }
+
+  void EnableMainThreadEventPrioritization();
+  void FlushInputEventPrioritization();
+  void SuspendInputEventPrioritization();
+  void ResumeInputEventPrioritization();
 
 private:
   nsThreadManager()
@@ -64,6 +76,10 @@ private:
     , mHighestNumberOfThreads(1)
   {
   }
+
+  nsresult
+  SpinEventLoopUntilInternal(nsINestedEventLoopCondition* aCondition,
+                             bool aCheckingShutdown);
 
   nsRefPtrHashtable<nsPtrHashKey<PRThread>, nsThread> mThreadsByPRThread;
   unsigned            mCurThreadIndex;  // thread-local-storage index

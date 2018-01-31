@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +11,10 @@
 #include "MainThreadUtils.h" // for NS_IsMainThread
 #include "mozilla/Assertions.h" // for MOZ_ASSERT
 #include "mozilla/ClearOnShutdown.h" // for ClearOnShutdown
+#include "mozilla/Unused.h"
 #include "mozilla/dom/CheckerboardReportServiceBinding.h" // for dom::CheckerboardReports
+#include "mozilla/gfx/GPUParent.h"
+#include "mozilla/gfx/GPUProcessManager.h"
 #include "nsContentUtils.h" // for nsContentUtils
 #include "nsXULAppAPI.h"
 
@@ -33,6 +37,30 @@ CheckerboardEventStorage::GetInstance()
   }
   RefPtr<CheckerboardEventStorage> instance = sInstance.get();
   return instance.forget();
+}
+
+void
+CheckerboardEventStorage::Report(uint32_t aSeverity, const std::string& aLog)
+{
+  if (!NS_IsMainThread()) {
+    RefPtr<Runnable> task = NS_NewRunnableFunction(
+      "layers::CheckerboardEventStorage::Report", [aSeverity, aLog]() -> void {
+        CheckerboardEventStorage::Report(aSeverity, aLog);
+      });
+    NS_DispatchToMainThread(task.forget());
+    return;
+  }
+
+  if (XRE_IsGPUProcess()) {
+    if (gfx::GPUParent* gpu = gfx::GPUParent::GetSingleton()) {
+      nsCString log(aLog.c_str());
+      Unused << gpu->SendReportCheckerboard(aSeverity, log);
+    }
+    return;
+  }
+
+  RefPtr<CheckerboardEventStorage> storage = GetInstance();
+  storage->ReportCheckerboard(aSeverity, aLog);
 }
 
 void
@@ -133,7 +161,7 @@ CheckerboardReportService::IsEnabled(JSContext* aCtx, JSObject* aGlobal)
     return false;
   }
   // Allow privileged code or about:checkerboard (unprivileged) to access this.
-  return nsContentUtils::IsCallerChrome()
+  return nsContentUtils::IsSystemCaller(aCtx)
       || nsContentUtils::IsSpecificAboutPage(aGlobal, "about:checkerboard");
 }
 
@@ -180,6 +208,22 @@ void
 CheckerboardReportService::SetRecordingEnabled(bool aEnabled)
 {
   gfxPrefs::SetAPZRecordCheckerboarding(aEnabled);
+}
+
+void
+CheckerboardReportService::FlushActiveReports()
+{
+  MOZ_ASSERT(XRE_IsParentProcess());
+  gfx::GPUProcessManager* gpu = gfx::GPUProcessManager::Get();
+  if (gpu && gpu->NotifyGpuObservers("APZ:FlushActiveCheckerboard")) {
+    return;
+  }
+
+  nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
+  MOZ_ASSERT(obsSvc);
+  if (obsSvc) {
+    obsSvc->NotifyObservers(nullptr, "APZ:FlushActiveCheckerboard", nullptr);
+  }
 }
 
 } // namespace dom

@@ -37,7 +37,7 @@ def build_dict(config, env=os.environ):
     known_os = {"Linux": "linux",
                 "WINNT": "win",
                 "Darwin": "mac",
-                "Android": "b2g" if substs.get("MOZ_WIDGET_TOOLKIT") == "gonk" else "android"}
+                "Android": "android"}
     if o in known_os:
         d["os"] = known_os[o]
     else:
@@ -59,16 +59,12 @@ def build_dict(config, env=os.environ):
 
     # processor
     p = substs["TARGET_CPU"]
-    # for universal mac builds, put in a special value
-    if d["os"] == "mac" and "UNIVERSAL_BINARY" in substs and substs["UNIVERSAL_BINARY"] == "1":
-        p = "universal-x86-x86_64"
-    else:
-        # do some slight massaging for some values
-        #TODO: retain specific values in case someone wants them?
-        if p.startswith("arm"):
-            p = "arm"
-        elif re.match("i[3-9]86", p):
-            p = "x86"
+    # do some slight massaging for some values
+    #TODO: retain specific values in case someone wants them?
+    if p.startswith("arm"):
+        p = "arm"
+    elif re.match("i[3-9]86", p):
+        p = "x86"
     d["processor"] = p
     # hardcoded list of 64-bit CPUs
     if p in ["x86_64", "ppc64"]:
@@ -78,30 +74,29 @@ def build_dict(config, env=os.environ):
         d["bits"] = 32
     # other CPUs will wind up with unknown bits
 
+    d['debug'] = substs.get('MOZ_DEBUG') == '1'
+    d['nightly_build'] = substs.get('NIGHTLY_BUILD') == '1'
+    d['release_or_beta'] = substs.get('RELEASE_OR_BETA') == '1'
+    d['devedition'] = substs.get('MOZ_DEV_EDITION') == '1'
+    d['pgo'] = substs.get('MOZ_PGO') == '1'
+    d['crashreporter'] = bool(substs.get('MOZ_CRASHREPORTER'))
+    d['datareporting'] = bool(substs.get('MOZ_DATA_REPORTING'))
+    d['healthreport'] = substs.get('MOZ_SERVICES_HEALTHREPORT') == '1'
+    d['sync'] = substs.get('MOZ_SERVICES_SYNC') == '1'
+    d['stylo'] = substs.get('MOZ_STYLO_ENABLE') == '1'
+    d['asan'] = substs.get('MOZ_ASAN') == '1'
+    d['tsan'] = substs.get('MOZ_TSAN') == '1'
+    d['ubsan'] = substs.get('MOZ_UBSAN') == '1'
+    d['telemetry'] = substs.get('MOZ_TELEMETRY_REPORTING') == '1'
+    d['tests_enabled'] = substs.get('ENABLE_TESTS') == "1"
     d['bin_suffix'] = substs.get('BIN_SUFFIX', '')
-
-    # This is where all bool-like values go.
-    for info_name, subst_name in [
-            ('debug', 'MOZ_DEBUG'),
-            ('nightly_build', 'NIGHTLY_BUILD'),
-            ('release_build', 'RELEASE_BUILD'),
-            ('pgo', 'MOZ_PGO'),
-            ('crashreporter', 'MOZ_CRASHREPORTER'),
-            ('datareporting', 'MOZ_DATA_REPORTING'),
-            ('healthreport', 'MOZ_SERVICES_HEALTHREPORT'),
-            ('sync', 'MOZ_SERVICES_SYNC'),
-            ('asan', 'MOZ_ASAN'),
-            ('tsan', 'MOZ_TSAN'),
-            ('telemetry', 'MOZ_TELEMETRY_REPORTING'),
-            ('tests_enabled', 'ENABLE_TESTS'),
-            ('addon_signing', 'MOZ_ADDON_SIGNING'),
-            ('require_signing', 'MOZ_REQUIRE_SIGNING'),
-            ('official', 'MOZILLA_OFFICIAL'),
-            ('sm_promise', 'SPIDERMONKEY_PROMISE'),
-            ('rust', 'MOZ_RUST'),
-    ]:
-        d[info_name] = bool(substs.get(subst_name))
-
+    d['addon_signing'] = substs.get('MOZ_ADDON_SIGNING') == '1'
+    d['require_signing'] = substs.get('MOZ_REQUIRE_SIGNING') == '1'
+    d['allow_legacy_extensions'] = substs.get('MOZ_ALLOW_LEGACY_EXTENSIONS') == '1'
+    d['official'] = bool(substs.get('MOZILLA_OFFICIAL'))
+    d['updater'] = substs.get('MOZ_UPDATER') == '1'
+    d['artifact'] = substs.get('MOZ_ARTIFACT_BUILDS') == '1'
+    d['ccov'] = substs.get('MOZ_CODE_COVERAGE') == '1'
 
     def guess_platform():
         if d['buildapp'] in ('browser', 'mulet'):
@@ -120,14 +115,6 @@ def build_dict(config, env=os.environ):
                 p = '{}-asan'.format(p)
 
             return p
-
-        if d['buildapp'] == 'b2g':
-            if d['toolkit'] == 'gonk':
-                return 'emulator'
-
-            if d['bits'] == 64:
-                return 'linux64_gecko'
-            return 'linux32_gecko'
 
         if d['buildapp'] == 'mobile/android':
             if d['processor'] == 'x86':

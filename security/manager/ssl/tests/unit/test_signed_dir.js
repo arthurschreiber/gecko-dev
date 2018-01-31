@@ -1,173 +1,68 @@
+// Any copyright is dedicated to the Public Domain.
+// http://creativecommons.org/publicdomain/zero/1.0/
 "use strict";
 
-Components.utils.import("resource://gre/modules/ZipUtils.jsm");
+// Tests that signed extensions extracted/unpacked into a directory do not pass
+// signature verification, because that's no longer supported.
+
+const { ZipUtils } = ChromeUtils.import("resource://gre/modules/ZipUtils.jsm", {});
 
 do_get_profile(); // must be called before getting nsIX509CertDB
-const certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
+const certdb = Cc["@mozilla.org/security/x509certdb;1"]
+                 .getService(Ci.nsIX509CertDB);
 
-var gSignedXPI = do_get_file("test_signed_apps/sslcontrol.xpi", false);
+/**
+ * Signed test extension. This is any arbitrary Mozilla signed XPI that
+ * preferably has recently been signed (but note that it actually doesn't
+ * matter, since we ignore expired certificates when checking signing).
+ * @type nsIFile
+ */
+var gSignedXPI =
+  do_get_file("test_signed_dir/lightbeam_for_firefox-1.3.1-fx.xpi", false);
+/**
+ * The directory that the test extension will be extracted to.
+ * @type nsIFile
+ */
 var gTarget = FileUtils.getDir("TmpD", ["test_signed_dir"]);
 gTarget.createUnique(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
 
-
-// tamper data structure, each element is optional
-// { copy:    [[path,newname], [path2,newname2], ...],
-//   delete:  [path, path2, ...],
-//   corrupt: [path, path2, ...]
-// }
-
-function prepare(tamper) {
+/**
+ * Extracts the signed XPI into a directory, and tampers the files in that
+ * directory if instructed.
+ *
+ * @returns {nsIFile}
+ *          The directory where the XPI was extracted to.
+ */
+function prepare() {
   ZipUtils.extractFiles(gSignedXPI, gTarget);
-
-  // copy files
-  if (tamper.copy) {
-    tamper.copy.forEach(i => {
-      let f = gTarget.clone();
-      i[0].split("/").forEach(seg => { f.append(seg); });
-      f.copyTo(null, i[1]);
-    });
-  }
-
-  // delete files
-  if (tamper.delete) {
-    tamper.delete.forEach(i => {
-      let f = gTarget.clone();
-      i.split("/").forEach(seg => { f.append(seg); });
-      f.remove(true);
-    });
-  }
-
-  // corrupt files
-  if (tamper.corrupt) {
-    tamper.corrupt.forEach(i => {
-      let f = gTarget.clone();
-      i.split("/").forEach(seg => { f.append(seg); });
-      let s = FileUtils.openFileOutputStream(f, FileUtils.MODE_WRONLY);
-      const str = "Kilroy was here";
-      s.write(str, str.length);
-      s.close();
-    });
-  }
-
   return gTarget;
 }
 
-
-function check_result(name, expectedRv, dir) {
+function checkResult(expectedRv, dir, resolve) {
   return function verifySignedDirCallback(rv, aSignerCert) {
-    equal(rv, expectedRv, name + " rv:");
+    equal(rv, expectedRv, "Actual and expected return value should match");
     equal(aSignerCert != null, Components.isSuccessCode(expectedRv),
           "expecting certificate:");
-    // cleanup and kick off next test
     dir.remove(true);
-    run_next_test();
+    resolve();
   };
 }
 
-function verifyDirAsync(name, expectedRv, tamper) {
-  let targetDir = prepare(tamper);
-  certdb.verifySignedDirectoryAsync(
-    Ci.nsIX509CertDB.AddonsPublicRoot, targetDir,
-    check_result(name, expectedRv, targetDir));
+function verifyDirAsync(expectedRv) {
+  let targetDir = prepare();
+  return new Promise((resolve, reject) => {
+    certdb.verifySignedDirectoryAsync(
+      Ci.nsIX509CertDB.AddonsPublicRoot, targetDir,
+      checkResult(expectedRv, targetDir, resolve));
+  });
 }
 
-
-//
-// the tests
-//
-
-add_test(function() {
-  verifyDirAsync("'valid'", Cr.NS_OK, {} /* no tampering */);
+add_task(async function testAPIFails() {
+  await verifyDirAsync(Cr.NS_ERROR_SIGNED_JAR_NOT_SIGNED);
 });
 
-add_test(function() {
-  verifyDirAsync("'no meta dir'", Cr.NS_ERROR_SIGNED_JAR_NOT_SIGNED,
-                 {delete: ["META-INF"]});
-});
-
-add_test(function() {
-  verifyDirAsync("'empty meta dir'", Cr.NS_ERROR_SIGNED_JAR_NOT_SIGNED,
-                 {delete: ["META-INF/mozilla.rsa",
-                           "META-INF/mozilla.sf",
-                           "META-INF/manifest.mf"]});
-});
-
-add_test(function() {
-  verifyDirAsync("'two rsa files'", Cr.NS_ERROR_SIGNED_JAR_MANIFEST_INVALID,
-                 {copy: [["META-INF/mozilla.rsa", "extra.rsa"]]});
-});
-
-add_test(function() {
-  verifyDirAsync("'corrupt rsa file'", Cr.NS_ERROR_SIGNED_JAR_MANIFEST_INVALID,
-                 {corrupt: ["META-INF/mozilla.rsa"]});
-});
-
-add_test(function() {
-  verifyDirAsync("'missing sf file'", Cr.NS_ERROR_SIGNED_JAR_MANIFEST_INVALID,
-                 {delete: ["META-INF/mozilla.sf"]});
-});
-
-add_test(function() {
-  verifyDirAsync("'corrupt sf file'", Cr.NS_ERROR_SIGNED_JAR_MANIFEST_INVALID,
-                 {corrupt: ["META-INF/mozilla.sf"]});
-});
-
-add_test(function() {
-  verifyDirAsync("'extra .sf file (invalid)'", Cr.NS_ERROR_SIGNED_JAR_UNSIGNED_ENTRY,
-                 {copy: [["META-INF/mozilla.rsa", "extra.sf"]]});
-});
-
-add_test(function() {
-  verifyDirAsync("'extra .sf file (valid)'", Cr.NS_ERROR_SIGNED_JAR_UNSIGNED_ENTRY,
-                 {copy: [["META-INF/mozilla.sf", "extra.sf"]]});
-});
-
-add_test(function() {
-  verifyDirAsync("'missing manifest'", Cr.NS_ERROR_SIGNED_JAR_MANIFEST_INVALID,
-                 {delete: ["META-INF/manifest.mf"]});
-});
-
-add_test(function() {
-  verifyDirAsync("'corrupt manifest'", Cr.NS_ERROR_SIGNED_JAR_MANIFEST_INVALID,
-                 {corrupt: ["META-INF/manifest.mf"]});
-});
-
-add_test(function() {
-  verifyDirAsync("'missing file'", Cr.NS_ERROR_SIGNED_JAR_ENTRY_MISSING,
-                 {delete: ["bootstrap.js"]});
-});
-
-add_test(function() {
-  verifyDirAsync("'corrupt file'", Cr.NS_ERROR_SIGNED_JAR_MODIFIED_ENTRY,
-                 {corrupt: ["bootstrap.js"]});
-});
-
-add_test(function() {
-  verifyDirAsync("'extra file'", Cr.NS_ERROR_SIGNED_JAR_UNSIGNED_ENTRY,
-                 {copy: [["bootstrap.js", "extra"]]});
-});
-
-add_test(function() {
-  verifyDirAsync("'missing file in dir'", Cr.NS_ERROR_SIGNED_JAR_ENTRY_MISSING,
-                 {delete: ["content/options.xul"]});
-});
-
-add_test(function() {
-  verifyDirAsync("'corrupt file in dir'", Cr.NS_ERROR_SIGNED_JAR_MODIFIED_ENTRY,
-                 {corrupt: ["content/options.xul"]});
-});
-
-add_test(function() {
-  verifyDirAsync("'extra file in dir'", Cr.NS_ERROR_SIGNED_JAR_UNSIGNED_ENTRY,
-                 {copy: [["content/options.xul", "extra"]]});
-});
-
-do_register_cleanup(function() {
+registerCleanupFunction(function() {
   if (gTarget.exists()) {
     gTarget.remove(true);
   }
 });
-
-function run_test() {
-  run_next_test();
-}

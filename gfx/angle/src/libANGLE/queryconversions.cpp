@@ -86,17 +86,6 @@ QueryT CastStateValue(GLenum pname, NativeT value)
 
 }  // anonymous namespace
 
-template <>
-GLenum GLTypeToGLenum<GLint>::value = GL_INT;
-template <>
-GLenum GLTypeToGLenum<GLuint>::value = GL_UNSIGNED_INT;
-template <>
-GLenum GLTypeToGLenum<GLboolean>::value = GL_BOOL;
-template <>
-GLenum GLTypeToGLenum<GLint64>::value = GL_INT_64_ANGLEX;
-template <>
-GLenum GLTypeToGLenum<GLfloat>::value = GL_FLOAT;
-
 template <typename QueryT>
 void CastStateValues(Context *context, GLenum nativeType, GLenum pname,
                      unsigned int numParams, QueryT *outParams)
@@ -104,7 +93,7 @@ void CastStateValues(Context *context, GLenum nativeType, GLenum pname,
     if (nativeType == GL_INT)
     {
         std::vector<GLint> intParams(numParams, 0);
-        context->getIntegerv(pname, intParams.data());
+        context->getIntegervImpl(pname, intParams.data());
 
         for (unsigned int i = 0; i < numParams; ++i)
         {
@@ -114,7 +103,7 @@ void CastStateValues(Context *context, GLenum nativeType, GLenum pname,
     else if (nativeType == GL_BOOL)
     {
         std::vector<GLboolean> boolParams(numParams, GL_FALSE);
-        context->getBooleanv(pname, boolParams.data());
+        context->getBooleanvImpl(pname, boolParams.data());
 
         for (unsigned int i = 0; i < numParams; ++i)
         {
@@ -124,7 +113,7 @@ void CastStateValues(Context *context, GLenum nativeType, GLenum pname,
     else if (nativeType == GL_FLOAT)
     {
         std::vector<GLfloat> floatParams(numParams, 0.0f);
-        context->getFloatv(pname, floatParams.data());
+        context->getFloatvImpl(pname, floatParams.data());
 
         for (unsigned int i = 0; i < numParams; ++i)
         {

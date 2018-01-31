@@ -1,59 +1,59 @@
 // This test is used to check that pasting files removes all non-file data from
 // event.clipboardData.
 
-add_task(function*() {
-  var searchbar = document.getElementById("searchbar");
+add_task(async function() {
+  var textbox = document.createElement("textbox");
+  document.documentElement.appendChild(textbox);
 
-  searchbar.focus();
-  searchbar.value = "Text";
-  searchbar.select();
+  textbox.focus();
+  textbox.value = "Text";
+  textbox.select();
 
-  yield new Promise((resolve, reject) => {
-    searchbar.addEventListener("copy", function copyEvent(event) {
-      searchbar.removeEventListener("copy", copyEvent, true);
+  await new Promise((resolve, reject) => {
+    textbox.addEventListener("copy", function(event) {
       event.clipboardData.setData("text/plain", "Alternate");
       // For this test, it doesn't matter that the file isn't actually a file.
       event.clipboardData.setData("application/x-moz-file", "Sample");
       event.preventDefault();
       resolve();
-    }, true)
+    }, {capture: true, once: true});
 
     EventUtils.synthesizeKey("c", { accelKey: true });
   });
 
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gBrowser,
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser,
               "https://example.com/browser/browser/base/content/test/general/clipboard_pastefile.html");
   let browser = tab.linkedBrowser;
 
-  yield ContentTask.spawn(browser, { }, function* (arg) {
+  await ContentTask.spawn(browser, { }, async function(arg) {
     content.document.getElementById("input").focus();
   });
 
-  yield BrowserTestUtils.synthesizeKey("v", { accelKey: true }, browser);
+  await BrowserTestUtils.synthesizeKey("v", { accelKey: true }, browser);
 
-  let output = yield ContentTask.spawn(browser, { }, function* (arg) {
+  let output = await ContentTask.spawn(browser, { }, async function(arg) {
     return content.document.getElementById("output").textContent;
   });
-  is (output, "Passed", "Paste file");
+  is(output, "Passed", "Paste file");
 
-  searchbar.focus();
+  textbox.focus();
 
-  yield new Promise((resolve, reject) => {
-    searchbar.addEventListener("paste", function copyEvent(event) {
-      searchbar.removeEventListener("paste", copyEvent, true);
-
+  await new Promise((resolve, reject) => {
+    textbox.addEventListener("paste", function(event) {
       let dt = event.clipboardData;
       is(dt.types.length, 3, "number of types");
-      ok(dt.types.contains("text/plain"), "text/plain exists in types");
+      ok(dt.types.includes("text/plain"), "text/plain exists in types");
       ok(dt.mozTypesAt(0).contains("text/plain"), "text/plain exists in mozTypesAt");
       is(dt.getData("text/plain"), "Alternate", "text/plain returned in getData");
       is(dt.mozGetDataAt("text/plain", 0), "Alternate", "text/plain returned in mozGetDataAt");
 
       resolve();
-    }, true);
+    }, {capture: true, once: true});
 
     EventUtils.synthesizeKey("v", { accelKey: true });
   });
 
-  yield BrowserTestUtils.removeTab(tab);
+  document.documentElement.removeChild(textbox);
+
+  await BrowserTestUtils.removeTab(tab);
 });

@@ -12,14 +12,13 @@ function test()
   // view menu options. After each change we compare the correspondent
   // preference value with the expected value.
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.selectedBrowser.addEventListener("load", function onLoad() {
-    gBrowser.selectedBrowser.removeEventListener("load", onLoad, true);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(function () {
     openScratchpad(runTests);
-  }, true);
+  });
 
-  content.location = "data:text/html,<title>Bug 1140839</title>" +
-    "<p>test Scratchpad should remember View options";
+  gBrowser.loadURI("data:text/html,<title>Bug 1140839</title>" +
+                   "<p>test Scratchpad should remember View options");
 }
 
 function runTests()

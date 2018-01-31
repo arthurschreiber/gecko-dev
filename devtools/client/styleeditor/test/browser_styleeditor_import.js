@@ -9,7 +9,7 @@
 const TESTCASE_URI = TEST_BASE_HTTP + "simple.html";
 
 var tempScope = {};
-Components.utils.import("resource://gre/modules/FileUtils.jsm", tempScope);
+ChromeUtils.import("resource://gre/modules/FileUtils.jsm", tempScope);
 var FileUtils = tempScope.FileUtils;
 
 const FILENAME = "styleeditor-import-test.css";
@@ -18,7 +18,7 @@ const SOURCE = "body{background:red;}";
 add_task(function* () {
   let { panel, ui } = yield openStyleEditorForURL(TESTCASE_URI);
 
-  let added = ui.once("editor-added");
+  let added = ui.once("test:editor-updated");
   importSheet(ui, panel.panelWindow);
 
   info("Waiting for editor to be added for the imported sheet.");

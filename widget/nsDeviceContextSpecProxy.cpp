@@ -14,8 +14,12 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/Unused.h"
 #include "nsComponentManagerUtils.h"
+#include "nsAppDirectoryServiceDefs.h"
+#include "nsDirectoryServiceUtils.h"
 #include "nsIPrintSession.h"
 #include "nsIPrintSettings.h"
+#include "nsIUUIDGenerator.h"
+#include "private/pprio.h"
 
 using mozilla::Unused;
 
@@ -36,7 +40,7 @@ nsDeviceContextSpecProxy::Init(nsIWidget* aWidget,
     return rv;
   }
 
-  mRealDeviceContextSpec->Init(nullptr, aPrintSettings, false);
+  mRealDeviceContextSpec->Init(nullptr, aPrintSettings, aIsPrintPreview);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     mRealDeviceContextSpec = nullptr;
     return rv;
@@ -89,7 +93,7 @@ nsDeviceContextSpecProxy::MakePrintTarget()
 
   // The type of PrintTarget that we return here shouldn't really matter since
   // our implementation of GetDrawEventRecorder returns an object, which means
-  // the DrawTarget returned by the PrintTarget will be a DrawTargetRecording.
+  // the DrawTarget returned by the PrintTarget will be a DrawTargetWrapAndRecord.
   // The recording will be serialized and sent over to the parent process where
   // PrintTranslator::TranslateRecording will call MakePrintTarget (indirectly
   // via PrintTranslator::CreateDrawTarget) on whatever type of
@@ -134,7 +138,7 @@ nsDeviceContextSpecProxy::BeginDocument(const nsAString& aTitle,
                                         const nsAString& aPrintToFileName,
                                         int32_t aStartPage, int32_t aEndPage)
 {
-  mRecorder = new mozilla::gfx::DrawEventRecorderMemory();
+  mRecorder = new mozilla::layout::DrawEventRecorderPRFileDesc();
   return mRemotePrintJob->InitializePrint(nsString(aTitle),
                                           nsString(aPrintToFileName),
                                           aStartPage, aEndPage);
@@ -157,34 +161,17 @@ nsDeviceContextSpecProxy::AbortDocument()
 NS_IMETHODIMP
 nsDeviceContextSpecProxy::BeginPage()
 {
+  mRecorder->OpenFD(mRemotePrintJob->GetNextPageFD());
+
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsDeviceContextSpecProxy::EndPage()
 {
-  // Save the current page recording to shared memory.
-  mozilla::ipc::Shmem storedPage;
-  size_t recordingSize = mRecorder->RecordingSize();
-  if (!mRemotePrintJob->AllocShmem(recordingSize,
-                                   mozilla::ipc::SharedMemory::TYPE_BASIC,
-                                   &storedPage)) {
-    NS_WARNING("Failed to create shared memory for remote printing.");
-    return NS_ERROR_FAILURE;
-  }
-
-  bool success = mRecorder->CopyRecording(storedPage.get<char>(), recordingSize);
-  if (!success) {
-    NS_WARNING("Copying recording to shared memory was not succesful.");
-    return NS_ERROR_FAILURE;
-  }
-
-  // Wipe the recording to free memory. The recorder does not forget which data
-  // backed objects that it has stored.
-  mRecorder->WipeRecording();
-
   // Send the page recording to the parent.
-  mRemotePrintJob->ProcessPage(storedPage);
+  mRecorder->Close();
+  mRemotePrintJob->ProcessPage();
 
   return NS_OK;
 }

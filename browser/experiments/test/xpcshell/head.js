@@ -1,25 +1,31 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+/* exported PREF_EXPERIMENTS_ENABLED, PREF_LOGGING_LEVEL, PREF_LOGGING_DUMP
+            PREF_MANIFEST_URI, PREF_FETCHINTERVAL, EXPERIMENT1_ID,
+            EXPERIMENT1_NAME, EXPERIMENT1_XPI_SHA1, EXPERIMENT1A_NAME,
+            EXPERIMENT1A_XPI_SHA1, EXPERIMENT2_ID, EXPERIMENT2_XPI_SHA1,
+            EXPERIMENT3_ID, EXPERIMENT4_ID, FAKE_EXPERIMENTS_1,
+            FAKE_EXPERIMENTS_2, gAppInfo, removeCacheFile, defineNow,
+            futureDate, dateToSeconds, loadAddonManager, promiseRestartManager,
+            startAddonManagerOnly, getExperimentAddons, replaceExperiments */
+
 var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Promise.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
-Cu.import("resource://gre/modules/osfile.jsm");
-Cu.import("resource://testing-common/AddonManagerTesting.jsm");
-Cu.import("resource://testing-common/AddonTestUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/osfile.jsm");
+ChromeUtils.import("resource://testing-common/AddonManagerTesting.jsm");
+ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "AddonManager",
-                                  "resource://gre/modules/AddonManager.jsm");
+ChromeUtils.defineModuleGetter(this, "AddonManager",
+                               "resource://gre/modules/AddonManager.jsm");
 
 const PREF_EXPERIMENTS_ENABLED  = "experiments.enabled";
 const PREF_LOGGING_LEVEL        = "experiments.logging.level";
 const PREF_LOGGING_DUMP         = "experiments.logging.dump";
 const PREF_MANIFEST_URI         = "experiments.manifest.uri";
 const PREF_FETCHINTERVAL        = "experiments.manifest.fetchIntervalSeconds";
-const PREF_TELEMETRY_ENABLED    = "toolkit.telemetry.enabled";
 
 function getExperimentPath(base) {
   let p = do_get_cwd();
@@ -29,7 +35,7 @@ function getExperimentPath(base) {
 
 function sha1File(path) {
   let f = Cc["@mozilla.org/file/local;1"]
-            .createInstance(Ci.nsILocalFile);
+            .createInstance(Ci.nsIFile);
   f.initWithPath(path);
   let hasher = Cc["@mozilla.org/security/hash;1"]
                  .createInstance(Ci.nsICryptoHash);
@@ -61,7 +67,7 @@ const EXPERIMENT1A_NAME     = "Test experiment 1.1";
 const EXPERIMENT1A_PATH     = getExperimentPath(EXPERIMENT1A_XPI_NAME);
 const EXPERIMENT1A_XPI_SHA1 = "sha1:" + sha1File(EXPERIMENT1A_PATH);
 
-const EXPERIMENT2_ID       = "test-experiment-2@tests.mozilla.org"
+const EXPERIMENT2_ID       = "test-experiment-2@tests.mozilla.org";
 const EXPERIMENT2_XPI_NAME = "experiment-2.xpi";
 const EXPERIMENT2_PATH     = getExperimentPath(EXPERIMENT2_XPI_NAME);
 const EXPERIMENT2_XPI_SHA1 = "sha1:" + sha1File(EXPERIMENT2_PATH);
@@ -148,24 +154,25 @@ function startAddonManagerOnly() {
                        .getService(Ci.nsIObserver)
                        .QueryInterface(Ci.nsITimerCallback);
   addonManager.observe(null, "addons-startup", null);
+  Services.obs.notifyObservers(null, "sessionstore-windows-restored");
 }
 
-function getExperimentAddons(previous=false) {
-  let deferred = Promise.defer();
+function getExperimentAddons(previous = false) {
+  return new Promise(resolve => {
 
-  AddonManager.getAddonsByTypes(["experiment"], (addons) => {
-    if (previous) {
-      deferred.resolve(addons);
-    } else {
-      deferred.resolve(addons.filter(a => !a.appDisabled));
-    }
+    AddonManager.getAddonsByTypes(["experiment"], (addons) => {
+      if (previous) {
+        resolve(addons);
+      } else {
+        resolve(addons.filter(a => !a.appDisabled));
+      }
+    });
+
   });
-
-  return deferred.promise;
 }
 
-function createAppInfo(ID="xpcshell@tests.mozilla.org", name="XPCShell",
-                       version="1.0", platformVersion="1.0") {
+function createAppInfo(ID = "xpcshell@tests.mozilla.org", name = "XPCShell",
+                       version = "1.0", platformVersion = "1.0") {
   AddonTestUtils.createAppInfo(ID, name, version, platformVersion);
   gAppInfo = AddonTestUtils.appInfo;
 }
@@ -185,6 +192,4 @@ function replaceExperiments(experiment, list) {
   });
 }
 
-// Experiments require Telemetry to be enabled, and that's not true for debug
-// builds. Let's just enable it here instead of going through each test.
-Services.prefs.setBoolPref(PREF_TELEMETRY_ENABLED, true);
+Services.telemetry.canRecordExtended = true;

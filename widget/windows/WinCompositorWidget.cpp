@@ -19,8 +19,10 @@ namespace widget {
 
 using namespace mozilla::gfx;
 
-WinCompositorWidget::WinCompositorWidget(const CompositorWidgetInitData& aInitData)
- : mWidgetKey(aInitData.widgetKey()),
+WinCompositorWidget::WinCompositorWidget(const WinCompositorWidgetInitData& aInitData,
+                                         const layers::CompositorOptions& aOptions)
+ : CompositorWidget(aOptions)
+ , mWidgetKey(aInitData.widgetKey()),
    mWnd(reinterpret_cast<HWND>(aInitData.hWnd())),
    mTransparencyMode(static_cast<nsTransparencyMode>(aInitData.transparencyMode())),
    mMemoryDC(nullptr),
@@ -44,7 +46,7 @@ WinCompositorWidget::OnDestroyWindow()
 }
 
 bool
-WinCompositorWidget::PreRender(layers::LayerManagerComposite* aManager)
+WinCompositorWidget::PreRender(WidgetRenderingContext* aContext)
 {
   // This can block waiting for WM_SETTEXT to finish
   // Using PreRender is unnecessarily pessimistic because
@@ -55,7 +57,7 @@ WinCompositorWidget::PreRender(layers::LayerManagerComposite* aManager)
 }
 
 void
-WinCompositorWidget::PostRender(layers::LayerManagerComposite* aManager)
+WinCompositorWidget::PostRender(WidgetRenderingContext* aContext)
 {
   mPresentLock.Leave();
 }
@@ -102,10 +104,16 @@ WinCompositorWidget::StartRemoteDrawing()
     return nullptr;
   }
 
-  MOZ_ASSERT(!mCompositeDC);
-  mCompositeDC = dc;
+  RefPtr<DrawTarget> dt =
+    mozilla::gfx::Factory::CreateDrawTargetForCairoSurface(surf->CairoSurface(),
+                                                           size);
+  if (dt) {
+    mCompositeDC = dc;
+  } else {
+    FreeWindowSurface(dc);
+  }
 
-  return mozilla::gfx::Factory::CreateDrawTargetForCairoSurface(surf->CairoSurface(), size);
+  return dt.forget();
 }
 
 void
@@ -278,8 +286,11 @@ WinCompositorWidget::ClearTransparentWindow()
 
   IntSize size = mTransparentSurface->GetSize();
   if (!size.IsEmpty()) {
-    RefPtr<DrawTarget> drawTarget = gfxPlatform::GetPlatform()->
-      CreateDrawTargetForSurface(mTransparentSurface, size);
+    RefPtr<DrawTarget> drawTarget =
+      gfxPlatform::CreateDrawTargetForSurface(mTransparentSurface, size);
+    if (!drawTarget) {
+      return;
+    }
     drawTarget->ClearRect(Rect(0, 0, size.width, size.height));
     RedrawTransparentWindow();
   }
@@ -320,6 +331,12 @@ WinCompositorWidget::FreeWindowSurface(HDC dc)
 {
   if (eTransparencyTransparent != mTransparencyMode)
     ::ReleaseDC(mWnd, dc);
+}
+
+bool
+WinCompositorWidget::IsHidden() const
+{
+  return ::IsIconic(mWnd);
 }
 
 } // namespace widget

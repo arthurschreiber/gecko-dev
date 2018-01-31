@@ -24,8 +24,8 @@
     });
   }
 
-  add_task(function* () {
-    yield spin();
+  add_task(async function() {
+    await spin();
     var draggable = document.getElementById('image');
     var over = document.getElementById('over');
 
@@ -98,7 +98,7 @@
       is(oldLength + 1, dtList.length,
          "Replacing the entry with a file should add it to the list!");
       is(dtList[oldLength].getAsFile(), file3, "It should be stored in the last index as a file");
-      is(dtList[oldLength].type, "random/string", "It should have the correct type");
+      is(dtList[oldLength].type, "text/html", "It should have the correct type");
       is(dtList[oldLength].kind, "file", "It should have the correct kind");
 
       todo(files.length == 3, "This test has chrome privileges, so the FileList objects aren't updated live");
@@ -130,6 +130,9 @@
       var dt = e.dataTransfer;
       dragenterFired++;
 
+      // NOTE: This test is run with chrome privileges.
+      // For back-compat reasons, protected mode acts like readonly mode for
+      // chrome documents.
       readOnly(e);
     }
 
@@ -201,7 +204,7 @@
     synthesizeDrop(draggable, over, null, null);
 
     // Wait for the getAsString callbacks to complete
-    yield spin();
+    await spin();
     is(getAsStringCalled, 2, "getAsString should be called twice");
 
     // Sanity-check to make sure that the events were actually run

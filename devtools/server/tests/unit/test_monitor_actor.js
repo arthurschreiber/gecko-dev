@@ -7,9 +7,8 @@
 
 "use strict";
 
-function run_test()
-{
-  let EventEmitter = require("devtools/shared/event-emitter");
+function run_test() {
+  let EventEmitter = require("devtools/shared/old-event-emitter");
 
   function MonitorClient(client, form) {
     this.client = client;
@@ -61,10 +60,10 @@ function run_test()
     packet.data.forEach(function (event) {
       // Ignore updates that were not sent by this test.
       if (event.graph === "Test") {
-        do_check_eq(event.curve, "test");
-        do_check_eq(event.value, 42);
-        do_check_eq(event.time, time);
-        monitor.stop(function (aResponse) {
+        Assert.equal(event.curve, "test");
+        Assert.equal(event.value, 42);
+        Assert.equal(event.time, time);
+        monitor.stop(function (response) {
           monitor.destroy();
           finishClient(client);
         });

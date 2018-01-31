@@ -9,12 +9,11 @@ const PREF_BLOCKLIST_ENABLED          = "extensions.blocklist.enabled";
 const PREF_APP_DISTRIBUTION           = "distribution.id";
 const PREF_APP_DISTRIBUTION_VERSION   = "distribution.version";
 const PREF_APP_UPDATE_CHANNEL         = "app.update.channel";
-const PREF_GENERAL_USERAGENT_LOCALE   = "general.useragent.locale";
 const CATEGORY_UPDATE_TIMER           = "update-timer";
 
 // Get the HTTP server.
-Components.utils.import("resource://testing-common/httpd.js");
-Components.utils.import("resource://testing-common/MockRegistrar.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://testing-common/MockRegistrar.jsm");
 var testserver;
 var gOSVersion;
 var gBlocklist;
@@ -22,7 +21,7 @@ var gBlocklist;
 // This is a replacement for the timer service so we can trigger timers
 var timerService = {
 
-  hasTimer: function(id) {
+  hasTimer(id) {
     var catMan = Components.classes["@mozilla.org/categorymanager;1"]
                            .getService(Components.interfaces.nsICategoryManager);
     var entries = catMan.enumerateCategory(CATEGORY_UPDATE_TIMER);
@@ -37,11 +36,11 @@ var timerService = {
     return false;
   },
 
-  fireTimer: function(id) {
+  fireTimer(id) {
     gBlocklist.QueryInterface(Components.interfaces.nsITimerCallback).notify(null);
   },
 
-  QueryInterface: function(iid) {
+  QueryInterface(iid) {
     if (iid.equals(Components.interfaces.nsIUpdateTimerManager)
      || iid.equals(Components.interfaces.nsISupports))
       return this;
@@ -66,11 +65,11 @@ function pathHandler(metadata, response) {
     if (macutils.isUniversalBinary)
       ABI += "-u-" + macutils.architecturesInBinary;
   }
-  do_check_eq(metadata.queryString,
-              "xpcshell@tests.mozilla.org&1&XPCShell&1&" +
-              gAppInfo.appBuildID + "&" +
-              "XPCShell_" + ABI + "&locale&updatechannel&" +
-              gOSVersion + "&1.9&distribution&distribution-version");
+  Assert.equal(metadata.queryString,
+               "xpcshell@tests.mozilla.org&1&XPCShell&1&" +
+               gAppInfo.appBuildID + "&" +
+               "XPCShell_" + ABI + "&locale&updatechannel&" +
+               gOSVersion + "&1.9&distribution&distribution-version");
   gBlocklist.observe(null, "quit-application", "");
   gBlocklist.observe(null, "xpcom-shutdown", "");
   testserver.stop(do_test_finished);
@@ -78,20 +77,16 @@ function pathHandler(metadata, response) {
 
 function run_test() {
   var osVersion;
-  var sysInfo = Components.classes["@mozilla.org/system-info;1"]
-                          .getService(Components.interfaces.nsIPropertyBag2);
   try {
-    osVersion = sysInfo.getProperty("name") + " " + sysInfo.getProperty("version");
+    osVersion = Services.sysinfo.getProperty("name") + " " + Services.sysinfo.getProperty("version");
     if (osVersion) {
       try {
-        osVersion += " (" + sysInfo.getProperty("secondaryLibrary") + ")";
-      }
-      catch (e) {
+        osVersion += " (" + Services.sysinfo.getProperty("secondaryLibrary") + ")";
+      } catch (e) {
       }
       gOSVersion = encodeURIComponent(osVersion);
     }
-  }
-  catch (e) {
+  } catch (e) {
   }
 
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9");
@@ -103,12 +98,10 @@ function run_test() {
   gPort = testserver.identity.primaryPort;
 
   // Initialise the blocklist service
-  gBlocklist = Components.classes["@mozilla.org/extensions/blocklist;1"]
-                         .getService(Components.interfaces.nsIBlocklistService)
-                         .QueryInterface(Components.interfaces.nsIObserver);
+  gBlocklist = Services.blocklist.QueryInterface(Components.interfaces.nsIObserver);
   gBlocklist.observe(null, "profile-after-change", "");
 
-  do_check_true(timerService.hasTimer(BLOCKLIST_TIMER));
+  Assert.ok(timerService.hasTimer(BLOCKLIST_TIMER));
 
   do_test_pending();
 
@@ -123,7 +116,7 @@ function run_test() {
   defaults.setCharPref(PREF_APP_UPDATE_CHANNEL, "updatechannel");
   defaults.setCharPref(PREF_APP_DISTRIBUTION, "distribution");
   defaults.setCharPref(PREF_APP_DISTRIBUTION_VERSION, "distribution-version");
-  defaults.setCharPref(PREF_GENERAL_USERAGENT_LOCALE, "locale");
+  Services.locale.setRequestedLocales(["locale"]);
 
   // This should correctly escape everything
   Services.prefs.setCharPref(PREF_BLOCKLIST_URL, "http://localhost:" + gPort + "/2?" +

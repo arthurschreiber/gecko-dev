@@ -7,7 +7,7 @@
 "use strict";
 
 const {LocalizationHelper} = require("devtools/shared/l10n");
-const L10N = new LocalizationHelper("devtools/locale/inspector.properties");
+const L10N = new LocalizationHelper("devtools/client/locales/inspector.properties");
 
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
@@ -56,9 +56,12 @@ function getImageDimensions(doc, imageUrl) {
  *        - {Number} naturalHeight mandatory, height of the image to display
  *        - {Number} maxDim optional, max width/height of the preview
  *        - {Boolean} hideDimensionLabel optional, pass true to hide the label
+ *        - {Boolean} hideCheckeredBackground optional, pass true to hide
+                      the checkered background
  */
 function setImageTooltip(tooltip, doc, imageUrl, options) {
-  let {naturalWidth, naturalHeight, hideDimensionLabel, maxDim} = options;
+  let {naturalWidth, naturalHeight, hideDimensionLabel,
+       hideCheckeredBackground, maxDim} = options;
   maxDim = maxDim || MAX_DIMENSION;
 
   let imgHeight = naturalHeight;
@@ -68,6 +71,11 @@ function setImageTooltip(tooltip, doc, imageUrl, options) {
     // Only allow integer values to avoid rounding errors.
     imgHeight = Math.floor(scale * naturalHeight);
     imgWidth = Math.ceil(scale * naturalWidth);
+  }
+
+  let imageClass = "";
+  if (!hideCheckeredBackground) {
+    imageClass = "devtools-tooltip-tiles";
   }
 
   // Create tooltip content
@@ -85,7 +93,9 @@ function setImageTooltip(tooltip, doc, imageUrl, options) {
                 align-items: center;
                 justify-content: center;
                 min-height: 1px;">
-      <img style="height: ${imgHeight}px; max-height: 100%;" src="${imageUrl}"/>
+      <img class="${imageClass}"
+           style="height: ${imgHeight}px; max-height: 100%;"
+           src="${encodeURI(imageUrl)}"/>
     </div>`;
 
   if (!hideDimensionLabel) {
@@ -96,6 +106,7 @@ function setImageTooltip(tooltip, doc, imageUrl, options) {
         <span class="theme-comment devtools-tooltip-caption">${label}</span>
       </div>`;
   }
+  // eslint-disable-next-line no-unsanitized/property
   div.innerHTML = html;
 
   // Calculate tooltip dimensions
@@ -119,15 +130,10 @@ function setImageTooltip(tooltip, doc, imageUrl, options) {
  */
 function setBrokenImageTooltip(tooltip, doc) {
   let div = doc.createElementNS(XHTML_NS, "div");
-  div.style.cssText = `
-    box-sizing: border-box;
-    height: 100%;
-    text-align: center;
-    line-height: 30px;`;
-
+  div.className = "theme-comment devtools-tooltip-image-broken";
   let message = L10N.getStr("previewTooltip.image.brokenImage");
   div.textContent = message;
-  tooltip.setContent(div, {width: 150, height: 30});
+  tooltip.setContent(div);
 }
 
 module.exports.getImageDimensions = getImageDimensions;

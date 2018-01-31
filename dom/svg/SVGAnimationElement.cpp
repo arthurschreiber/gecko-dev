@@ -60,20 +60,20 @@ SVGAnimationElement::Init()
 //----------------------------------------------------------------------
 
 const nsAttrValue*
-SVGAnimationElement::GetAnimAttr(nsIAtom* aName) const
+SVGAnimationElement::GetAnimAttr(nsAtom* aName) const
 {
   return mAttrsAndChildren.GetAttr(aName, kNameSpaceID_None);
 }
 
 bool
-SVGAnimationElement::GetAnimAttr(nsIAtom* aAttName,
+SVGAnimationElement::GetAnimAttr(nsAtom* aAttName,
                                  nsAString& aResult) const
 {
   return GetAttr(kNameSpaceID_None, aAttName, aResult);
 }
 
 bool
-SVGAnimationElement::HasAnimAttr(nsIAtom* aAttName) const
+SVGAnimationElement::HasAnimAttr(nsAtom* aAttName) const
 {
   return HasAttr(kNameSpaceID_None, aAttName);
 }
@@ -96,7 +96,7 @@ SVGAnimationElement::GetTargetElementContent()
 
 bool
 SVGAnimationElement::GetTargetAttributeName(int32_t *aNamespaceID,
-                                            nsIAtom **aLocalName) const
+                                            nsAtom **aLocalName) const
 {
   const nsAttrValue* nameAttr
     = mAttrsAndChildren.GetAttr(nsGkAtoms::attributeName);
@@ -110,21 +110,6 @@ SVGAnimationElement::GetTargetAttributeName(int32_t *aNamespaceID,
   return NS_SUCCEEDED(nsContentUtils::SplitQName(
                         this, nsDependentAtomString(nameAttr->GetAtomValue()),
                         aNamespaceID, aLocalName));
-}
-
-nsSMILTargetAttrType
-SVGAnimationElement::GetTargetAttributeType() const
-{
-  nsIContent::AttrValuesArray typeValues[] = { &nsGkAtoms::css,
-                                               &nsGkAtoms::XML,
-                                               nullptr};
-  nsSMILTargetAttrType smilTypes[] = { eSMILTargetAttrType_CSS,
-                                       eSMILTargetAttrType_XML };
-  int32_t index = FindAttrValueIn(kNameSpaceID_None,
-                                  nsGkAtoms::attributeType,
-                                  typeValues,
-                                  eCaseMatters);
-  return (index >= 0) ? smilTypes[index] : eSMILTargetAttrType_auto;
 }
 
 nsSMILTimedElement&
@@ -257,14 +242,14 @@ SVGAnimationElement::UnbindFromTree(bool aDeep, bool aNullParent)
 
 bool
 SVGAnimationElement::ParseAttribute(int32_t aNamespaceID,
-                                    nsIAtom* aAttribute,
+                                    nsAtom* aAttribute,
                                     const nsAString& aValue,
+                                    nsIPrincipal* aMaybeScriptedPrincipal,
                                     nsAttrValue& aResult)
 {
   if (aNamespaceID == kNameSpaceID_None) {
     // Deal with target-related attributes here
-    if (aAttribute == nsGkAtoms::attributeName ||
-        aAttribute == nsGkAtoms::attributeType) {
+    if (aAttribute == nsGkAtoms::attributeName) {
       aResult.ParseAtom(aValue);
       AnimationNeedsResample();
       return true;
@@ -294,16 +279,29 @@ SVGAnimationElement::ParseAttribute(int32_t aNamespaceID,
   }
 
   return SVGAnimationElementBase::ParseAttribute(aNamespaceID, aAttribute,
-                                                 aValue, aResult);
+                                                 aValue,
+                                                 aMaybeScriptedPrincipal,
+                                                 aResult);
 }
 
 nsresult
-SVGAnimationElement::AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
-                                  const nsAttrValue* aValue, bool aNotify)
+SVGAnimationElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                  const nsAttrValue* aValue,
+                                  const nsAttrValue* aOldValue,
+                                  nsIPrincipal* aSubjectPrincipal,
+                                  bool aNotify)
 {
+  if (!aValue && aNamespaceID == kNameSpaceID_None) {
+    // Attribute is being removed.
+    if (AnimationFunction().UnsetAttr(aName) ||
+        mTimedElement.UnsetAttr(aName)) {
+      AnimationNeedsResample();
+    }
+  }
+
   nsresult rv =
     SVGAnimationElementBase::AfterSetAttr(aNamespaceID, aName, aValue,
-                                          aNotify);
+                                          aOldValue, aSubjectPrincipal, aNotify);
 
   if (SVGTests::IsConditionalProcessingAttribute(aName)) {
     bool isDisabled = !SVGTests::PassesConditionalProcessingTests();
@@ -349,28 +347,10 @@ SVGAnimationElement::AfterSetAttr(int32_t aNamespaceID, nsIAtom* aName,
   return rv;
 }
 
-nsresult
-SVGAnimationElement::UnsetAttr(int32_t aNamespaceID,
-                               nsIAtom* aAttribute, bool aNotify)
-{
-  nsresult rv = SVGAnimationElementBase::UnsetAttr(aNamespaceID, aAttribute,
-                                                   aNotify);
-  NS_ENSURE_SUCCESS(rv,rv);
-
-  if (aNamespaceID == kNameSpaceID_None) {
-    if (AnimationFunction().UnsetAttr(aAttribute) ||
-        mTimedElement.UnsetAttr(aAttribute)) {
-      AnimationNeedsResample();
-    }
-  }
-
-  return NS_OK;
-}
-
 bool
 SVGAnimationElement::IsNodeOfType(uint32_t aFlags) const
 {
-  return !(aFlags & ~(eCONTENT | eANIMATION));
+  return !(aFlags & ~eANIMATION);
 }
 
 //----------------------------------------------------------------------
@@ -460,7 +440,7 @@ SVGAnimationElement::EndElementAt(float offset, ErrorResult& rv)
 }
 
 bool
-SVGAnimationElement::IsEventAttributeName(nsIAtom* aName)
+SVGAnimationElement::IsEventAttributeNameInternal(nsAtom* aName)
 {
   return nsContentUtils::IsEventAttributeName(aName, EventNameType_SMIL);
 }

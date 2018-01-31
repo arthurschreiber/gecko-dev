@@ -57,17 +57,6 @@ X11Error(Display *display, XErrorEvent *event) {
         XFreeExtensionList(extNames);
       }
       XCloseDisplay(tmpDisplay);
-
-#if (MOZ_WIDGET_GTK == 2)
-      // GDK2 calls XCloseDevice the devices that it opened on startup, but
-      // the XI protocol no longer ensures that the devices will still exist.
-      // If they have been removed, then a BadDevice error results.  Ignore
-      // this error.
-      if (message.EqualsLiteral("XInputExtension.4") &&
-          event->error_code == first_error + 0) {
-        return 0;
-      }
-#endif
     }
   }
 
@@ -117,17 +106,15 @@ X11Error(Display *display, XErrorEvent *event) {
     }
   }
 
-#ifdef MOZ_CRASHREPORTER
   switch (XRE_GetProcessType()) {
   case GeckoProcessType_Default:
   case GeckoProcessType_Plugin:
   case GeckoProcessType_Content:
     CrashReporter::AppendAppNotesToCrashReport(notes);
     break;
-  default: 
+  default:
     ; // crash report notes not supported.
   }
-#endif
 
 #ifdef DEBUG
   // The resource id is unlikely to be useful in a crash report without
@@ -144,12 +131,10 @@ X11Error(Display *display, XErrorEvent *event) {
 #endif
 #endif
 
-  NS_RUNTIMEABORT(notes.get());
-  return 0; // not reached
+  MOZ_CRASH_UNSAFE_OOL(notes.get());
 }
 }
 
-#if (MOZ_WIDGET_GTK != 3)
 void
 InstallX11ErrorHandler()
 {
@@ -161,4 +146,3 @@ InstallX11ErrorHandler()
     XSynchronize(display, True);
   }
 }
-#endif

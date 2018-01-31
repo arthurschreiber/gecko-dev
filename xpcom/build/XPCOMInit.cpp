@@ -6,7 +6,6 @@
 
 #include "base/basictypes.h"
 
-#include "mozilla/AbstractThread.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Poison.h"
 #include "mozilla/SharedThreadPool.h"
@@ -18,7 +17,7 @@
 
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
-#include "mozilla/layers/SharedBufferManagerChild.h"
+#include "mozilla/dom/VideoDecoderManagerChild.h"
 
 #include "prlink.h"
 
@@ -38,7 +37,6 @@
 #include "nsTraceRefcnt.h"
 #include "nsErrorService.h"
 
-#include "nsSupportsArray.h"
 #include "nsArray.h"
 #include "nsINIParserImpl.h"
 #include "nsSupportsPrimitives.h"
@@ -78,7 +76,6 @@
 #include "nsStringStream.h"
 extern nsresult nsStringInputStreamConstructor(nsISupports*, REFNSIID, void**);
 
-#include "nsAtomService.h"
 #include "nsAtomTable.h"
 #include "nsISupportsImpl.h"
 
@@ -94,7 +91,6 @@ extern nsresult nsStringInputStreamConstructor(nsISupports*, REFNSIID, void**);
 #include "SpecialSystemDirectory.h"
 
 #if defined(XP_WIN)
-#include "mozilla/WindowsVersion.h"
 #include "nsWindowsRegKey.h"
 #endif
 
@@ -107,13 +103,14 @@ extern nsresult nsStringInputStreamConstructor(nsISupports*, REFNSIID, void**);
 #include "nsMemoryInfoDumper.h"
 #include "nsSecurityConsoleMessage.h"
 #include "nsMessageLoop.h"
-
-#include "nsStatusReporterManager.h"
+#include "nss.h"
 
 #include <locale.h>
 #include "mozilla/Services.h"
 #include "mozilla/Omnijar.h"
 #include "mozilla/HangMonitor.h"
+#include "mozilla/ScriptPreloader.h"
+#include "mozilla/SystemGroup.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/BackgroundHangMonitor.h"
 
@@ -132,7 +129,6 @@ extern nsresult nsStringInputStreamConstructor(nsISupports*, REFNSIID, void**);
 #include "mozilla/AvailableMemoryTracker.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/CountingAllocatorBase.h"
-#include "mozilla/SystemMemoryReporter.h"
 #include "mozilla/UniquePtr.h"
 
 #include "mozilla/ipc/GeckoChildProcessHost.h"
@@ -202,12 +198,10 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsSupportsPRInt32)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsSupportsPRInt64)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsSupportsFloat)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsSupportsDouble)
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsSupportsVoid)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsSupportsInterfacePointer)
 
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsConsoleService, Init)
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsAtomService)
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsTimerImpl)
+NS_GENERIC_FACTORY_CONSTRUCTOR(nsTimer)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsBinaryOutputStream)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsBinaryInputStream)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsStorageStream)
@@ -231,8 +225,6 @@ NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsSystemInfo, Init)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsMemoryReporterManager, Init)
 
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsMemoryInfoDumper)
-
-NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsStatusReporterManager, Init)
 
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsIOUtil)
 
@@ -455,13 +447,6 @@ NS_IMPL_ISUPPORTS(VPXReporter, nsIMemoryReporter)
 CountingAllocatorBase<VPXReporter>::sAmount(0);
 #endif /* MOZ_VPX */
 
-static double
-TimeSinceProcessCreation()
-{
-  bool ignore;
-  return (TimeStamp::Now() - TimeStamp::ProcessCreation(ignore)).ToMilliseconds();
-}
-
 static bool sInitializedJS = false;
 
 // Note that on OSX, aBinDirectory will point to .app/Contents/Resources/browser
@@ -485,10 +470,6 @@ NS_InitXPCOM2(nsIServiceManager** aResult,
 
   mozilla::LogModule::Init();
 
-  JS_SetCurrentEmbedderTimeFunction(TimeSinceProcessCreation);
-
-  char aLocal;
-  profiler_init(&aLocal);
   nsresult rv = NS_OK;
 
   // We are not shutting down
@@ -547,6 +528,9 @@ NS_InitXPCOM2(nsIServiceManager** aResult,
     return rv;
   }
 
+  // Init the SystemGroup for dispatching main thread runnables.
+  SystemGroup::InitStatic();
+
   // Set up the timer globals/timer thread
   rv = nsTimerImpl::Startup();
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -561,13 +545,7 @@ NS_InitXPCOM2(nsIServiceManager** aResult,
   }
 #endif
 
-#if defined(XP_UNIX)
-  NS_StartupNativeCharsetUtils();
-#endif
-
   NS_StartupLocalFile();
-
-  StartupSpecialSystemDirectory();
 
   nsDirectoryService::RealInit();
 
@@ -689,7 +667,7 @@ NS_InitXPCOM2(nsIServiceManager** aResult,
   // Initialize the JS engine.
   const char* jsInitFailureReason = JS_InitWithFailureDiagnostic();
   if (jsInitFailureReason) {
-    NS_RUNTIMEABORT(jsInitFailureReason);
+    MOZ_CRASH_UNSAFE_OOL(jsInitFailureReason);
   }
   sInitializedJS = true;
 
@@ -715,14 +693,14 @@ NS_InitXPCOM2(nsIServiceManager** aResult,
   // Init SharedThreadPool (which needs the service manager).
   SharedThreadPool::InitStatics();
 
-  // Init AbstractThread.
-  AbstractThread::InitStatics();
-
   // Force layout to spin up so that nsContentUtils is available for cx stack
-  // munging.
+  // munging.  Note that layout registers a number of static atoms, and also
+  // seals the static atom table, so NS_RegisterStaticAtom may not be called
+  // beyond this point.
   nsCOMPtr<nsISupports> componentLoader =
     do_GetService("@mozilla.org/moz/jsloader;1");
 
+  mozilla::ScriptPreloader::GetSingleton();
   mozilla::scache::StartupCache::GetSingleton();
   mozilla::AvailableMemoryTracker::Activate();
 
@@ -733,13 +711,6 @@ NS_InitXPCOM2(nsIServiceManager** aResult,
 #ifdef XP_WIN
   CreateAnonTempFileRemover();
 #endif
-
-  // We only want the SystemMemoryReporter running in one process, because it
-  // profiles the entire system.  The main process is the obvious place for
-  // it.
-  if (XRE_IsParentProcess()) {
-    mozilla::SystemMemoryReporter::Init();
-  }
 
   // The memory reporter manager is up and running -- register our reporters.
   RegisterStrongMemoryReporter(new ICUReporter());
@@ -772,13 +743,13 @@ NS_InitMinimalXPCOM()
   NS_InitAtomTable();
   mozilla::LogModule::Init();
 
-  char aLocal;
-  profiler_init(&aLocal);
-
   nsresult rv = nsThreadManager::get().Init();
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
+
+  // Init the SystemGroup for dispatching main thread runnables.
+  SystemGroup::InitStatic();
 
   // Set up the timer globals/timer thread.
   rv = nsTimerImpl::Startup();
@@ -800,6 +771,11 @@ NS_InitMinimalXPCOM()
   if (!nsCycleCollector_init()) {
     return NS_ERROR_UNEXPECTED;
   }
+
+  SharedThreadPool::InitStatics();
+  mozilla::Telemetry::Init();
+  mozilla::HangMonitor::Startup();
+  mozilla::BackgroundHangMonitor::Startup();
 
   return NS_OK;
 }
@@ -840,7 +816,7 @@ SetICUMemoryFunctions()
   if (!sICUReporterInitialized) {
     if (!JS_SetICUMemoryFunctions(ICUReporter::Alloc, ICUReporter::Realloc,
                                   ICUReporter::Free)) {
-      NS_RUNTIMEABORT("JS_SetICUMemoryFunctions failed.");
+      MOZ_CRASH("JS_SetICUMemoryFunctions failed.");
     }
     sICUReporterInitialized = true;
   }
@@ -853,7 +829,7 @@ ShutdownXPCOM(nsIServiceManager* aServMgr)
   HangMonitor::NotifyActivity();
 
   if (!NS_IsMainThread()) {
-    NS_RUNTIMEABORT("Shutdown on wrong thread");
+    MOZ_CRASH("Shutdown on wrong thread");
   }
 
   nsresult rv;
@@ -892,6 +868,7 @@ ShutdownXPCOM(nsIServiceManager* aServMgr)
     // are triggered by the NS_XPCOM_SHUTDOWN_OBSERVER_ID notification.
     NS_ProcessPendingEvents(thread);
     gfxPlatform::ShutdownLayersIPC();
+    mozilla::dom::VideoDecoderManagerChild::Shutdown();
 
     mozilla::scache::StartupCache::DeleteSingleton();
     if (observerService)
@@ -984,9 +961,15 @@ ShutdownXPCOM(nsIServiceManager* aServMgr)
     moduleLoaders = nullptr;
   }
 
-  nsCycleCollector_shutdown();
+  bool shutdownCollect;
+#ifdef NS_FREE_PERMANENT_DATA
+  shutdownCollect = true;
+#else
+  shutdownCollect = !!PR_GetEnv("MOZ_CC_RUN_DURING_SHUTDOWN");
+#endif
+  nsCycleCollector_shutdown(shutdownCollect);
 
-  PROFILER_MARKER("Shutdown xpcom");
+  PROFILER_ADD_MARKER("Shutdown xpcom");
   // If we are doing any shutdown checks, poison writes.
   if (gShutdownChecks != SCM_NOTHING) {
 #ifdef XP_MACOSX
@@ -997,9 +980,6 @@ ShutdownXPCOM(nsIServiceManager* aServMgr)
 
   // Shutdown nsLocalFile string conversion
   NS_ShutdownLocalFile();
-#ifdef XP_UNIX
-  NS_ShutdownNativeCharsetUtils();
-#endif
 
   // Shutdown xpcom. This will release all loaders and cause others holding
   // a refcount to the component manager to release it.
@@ -1010,24 +990,36 @@ ShutdownXPCOM(nsIServiceManager* aServMgr)
     NS_WARNING("Component Manager was never created ...");
   }
 
-#ifdef MOZ_ENABLE_PROFILER_SPS
   // In optimized builds we don't do shutdown collections by default, so
   // uncollected (garbage) objects may keep the nsXPConnect singleton alive,
-  // and its XPCJSRuntime along with it. However, we still destroy various
+  // and its XPCJSContext along with it. However, we still destroy various
   // bits of state in JS_ShutDown(), so we need to make sure the profiler
   // can't access them when it shuts down. This call nulls out the
-  // JS pseudo-stack's internal reference to the main thread JSRuntime,
-  // duplicating the call in XPCJSRuntime::~XPCJSRuntime() in case that
+  // JS pseudo-stack's internal reference to the main thread JSContext,
+  // duplicating the call in XPCJSContext::~XPCJSContext() in case that
   // never fired.
-  if (PseudoStack* stack = mozilla_get_pseudo_stack()) {
-    stack->sampleContext(nullptr);
-  }
-#endif
+  PROFILER_CLEAR_JS_CONTEXT();
 
   if (sInitializedJS) {
     // Shut down the JS engine.
     JS_ShutDown();
     sInitializedJS = false;
+  }
+
+  // After all threads have been joined and the component manager has been shut
+  // down, any remaining objects that could be holding NSS resources (should)
+  // have been released, so we can safely shut down NSS.
+  if (NSS_IsInitialized()) {
+    // It would be nice to enforce that this succeeds, at least on debug builds.
+    // This would alert us to NSS resource leaks. Unfortunately there are some
+    // architectural roadblocks in the way. Some tests (e.g. pkix gtests) need
+    // to be re-worked to release their NSS resources when they're done. In the
+    // meantime, just emit a warning. Chasing down these leaks is tracked in
+    // bug 1230312.
+    if (NSS_Shutdown() != SECSuccess) {
+      NS_WARNING("NSS_Shutdown failed - some NSS resources are still in use "
+                 "(see bugs 1417680 and 1230312)");
+    }
   }
 
   // Release our own singletons
@@ -1045,6 +1037,9 @@ ShutdownXPCOM(nsIServiceManager* aServMgr)
   }
   nsComponentManagerImpl::gComponentManager = nullptr;
   nsCategoryManager::Destroy();
+
+  // Shut down SystemGroup for main thread dispatching.
+  SystemGroup::Shutdown();
 
   NS_ShutdownAtomTable();
 
@@ -1067,26 +1062,12 @@ ShutdownXPCOM(nsIServiceManager* aServMgr)
   Omnijar::CleanUp();
 
   HangMonitor::Shutdown();
+  BackgroundHangMonitor::Shutdown();
 
   delete sMainHangMonitor;
   sMainHangMonitor = nullptr;
 
-  BackgroundHangMonitor::Shutdown();
-
-  profiler_shutdown();
-
   NS_LogTerm();
-
-#if defined(MOZ_WIDGET_GONK)
-  // This _exit(0) call is intended to be temporary, to get shutdown leak
-  // checking working on non-B2G platforms.
-  // On debug B2G, the child process crashes very late.  Instead, just
-  // give up so at least we exit cleanly. See bug 1071866.
-  if (XRE_IsContentProcess()) {
-      NS_WARNING("Exiting child process early!");
-      _exit(0);
-  }
-#endif
 
   return NS_OK;
 }

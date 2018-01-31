@@ -10,9 +10,13 @@
 #include "prnetdb.h"
 #include "prprf.h"
 
+#include "nsUrlClassifierDBService.h"
 #include "nsUrlClassifierUtils.h"
 #include "nsPrintfCString.h"
 #include "mozilla/Base64.h"
+#include "RiceDeltaDecoder.h"
+#include "mozilla/EndianUtils.h"
+#include "mozilla/IntegerPrintfMacros.h"
 
 // MOZ_LOG=UrlClassifierProtocolParser:5
 mozilla::LazyLogModule gUrlClassifierProtocolParserLog("UrlClassifierProtocolParser");
@@ -67,19 +71,13 @@ ParseChunkRange(nsACString::const_iterator& aBegin,
 
 ProtocolParser::ProtocolParser()
   : mUpdateStatus(NS_OK)
+  , mUpdateWaitSec(0)
 {
 }
 
 ProtocolParser::~ProtocolParser()
 {
   CleanupUpdates();
-}
-
-nsresult
-ProtocolParser::Init(nsICryptoHash* aHasher)
-{
-  mCryptoHash = aHasher;
-  return NS_OK;
 }
 
 void
@@ -114,7 +112,6 @@ ProtocolParser::GetTableUpdate(const nsACString& aTable)
 
 ProtocolParserV2::ProtocolParserV2()
   : mState(PROTOCOL_STATE_CONTROL)
-  , mUpdateWait(0)
   , mResetRequested(false)
   , mTableUpdate(nullptr)
 {
@@ -139,9 +136,16 @@ ProtocolParserV2::AppendStream(const nsACString& aData)
 
   nsresult rv;
   mPending.Append(aData);
+#ifdef MOZ_SAFEBROWSING_DUMP_FAILED_UPDATES
+  mRawUpdate.Append(aData);
+#endif
 
   bool done = false;
   while (!done) {
+    if (nsUrlClassifierDBService::ShutdownHasStarted()) {
+      return NS_ERROR_ABORT;
+    }
+
     if (mState == PROTOCOL_STATE_CONTROL) {
       rv = ProcessControl(&done);
     } else if (mState == PROTOCOL_STATE_CHUNK) {
@@ -178,8 +182,8 @@ ProtocolParserV2::ProcessControl(bool* aDone)
       // Set the table name from the table header line.
       SetCurrentTable(Substring(line, 2));
     } else if (StringBeginsWith(line, NS_LITERAL_CSTRING("n:"))) {
-      if (PR_sscanf(line.get(), "n:%d", &mUpdateWait) != 1) {
-        PARSER_LOG(("Error parsing n: '%s' (%d)", line.get(), mUpdateWait));
+      if (PR_sscanf(line.get(), "n:%d", &mUpdateWaitSec) != 1) {
+        PARSER_LOG(("Error parsing n: '%s' (%d)", line.get(), mUpdateWaitSec));
         return NS_ERROR_FAILURE;
       }
     } else if (line.EqualsLiteral("r:pleasereset")) {
@@ -211,7 +215,7 @@ ProtocolParserV2::ProcessExpirations(const nsCString& aLine)
     NS_WARNING("Got an expiration without a table.");
     return NS_ERROR_FAILURE;
   }
-  const nsCSubstring &list = Substring(aLine, 3);
+  const nsACString& list = Substring(aLine, 3);
   nsACString::const_iterator begin, end;
   list.BeginReading(begin);
   list.EndReading(end);
@@ -317,7 +321,7 @@ ProtocolParserV2::ProcessChunkControl(const nsCString& aLine)
 nsresult
 ProtocolParserV2::ProcessForward(const nsCString& aLine)
 {
-  const nsCSubstring &forward = Substring(aLine, 2);
+  const nsACString& forward = Substring(aLine, 2);
   return AddForward(forward);
 }
 
@@ -393,7 +397,7 @@ ProtocolParserV2::ProcessPlaintextChunk(const nsACString& aChunk)
     if (mChunkState.type == CHUNK_ADD) {
       if (mChunkState.hashSize == COMPLETE_SIZE) {
         Completion hash;
-        hash.FromPlaintext(line, mCryptoHash);
+        hash.FromPlaintext(line);
         nsresult rv = mTableUpdate->NewAddComplete(mChunkState.num, hash);
         if (NS_FAILED(rv)) {
           return rv;
@@ -401,7 +405,7 @@ ProtocolParserV2::ProcessPlaintextChunk(const nsACString& aChunk)
       } else {
         NS_ASSERTION(mChunkState.hashSize == 4, "Only 32- or 4-byte hashes can be used for add chunks.");
         Prefix hash;
-        hash.FromPlaintext(line, mCryptoHash);
+        hash.FromPlaintext(line);
         nsresult rv = mTableUpdate->NewAddPrefix(mChunkState.num, hash);
         if (NS_FAILED(rv)) {
           return rv;
@@ -422,7 +426,7 @@ ProtocolParserV2::ProcessPlaintextChunk(const nsACString& aChunk)
 
       if (mChunkState.hashSize == COMPLETE_SIZE) {
         Completion hash;
-        hash.FromPlaintext(Substring(iter, end), mCryptoHash);
+        hash.FromPlaintext(Substring(iter, end));
         nsresult rv = mTableUpdate->NewSubComplete(addChunk, hash, mChunkState.num);
         if (NS_FAILED(rv)) {
           return rv;
@@ -430,7 +434,7 @@ ProtocolParserV2::ProcessPlaintextChunk(const nsACString& aChunk)
       } else {
         NS_ASSERTION(mChunkState.hashSize == 4, "Only 32- or 4-byte hashes can be used for add chunks.");
         Prefix hash;
-        hash.FromPlaintext(Substring(iter, end), mCryptoHash);
+        hash.FromPlaintext(Substring(iter, end));
         nsresult rv = mTableUpdate->NewSubPrefix(addChunk, hash, mChunkState.num);
         if (NS_FAILED(rv)) {
           return rv;
@@ -525,7 +529,7 @@ ProtocolParserV2::ProcessDigestSub(const nsACString& aChunk)
   uint32_t start = 0;
   while (start < aChunk.Length()) {
     // Read ADDCHUNKNUM
-    const nsCSubstring& addChunkStr = Substring(aChunk, start, 4);
+    const nsACString& addChunkStr = Substring(aChunk, start, 4);
     start += 4;
 
     uint32_t addChunk;
@@ -592,7 +596,7 @@ ProtocolParserV2::ProcessHostSub(const Prefix& aDomain, uint8_t aNumEntries,
       return NS_ERROR_FAILURE;
     }
 
-    const nsCSubstring& addChunkStr = Substring(aChunk, *aStart, 4);
+    const nsACString& addChunkStr = Substring(aChunk, *aStart, 4);
     *aStart += 4;
 
     uint32_t addChunk;
@@ -613,7 +617,7 @@ ProtocolParserV2::ProcessHostSub(const Prefix& aDomain, uint8_t aNumEntries,
   }
 
   for (uint8_t i = 0; i < aNumEntries; i++) {
-    const nsCSubstring& addChunkStr = Substring(aChunk, *aStart, 4);
+    const nsACString& addChunkStr = Substring(aChunk, *aStart, 4);
     *aStart += 4;
 
     uint32_t addChunk;
@@ -689,7 +693,7 @@ ProtocolParserV2::ProcessHostSubComplete(uint8_t aNumEntries,
     hash.Assign(Substring(aChunk, *aStart, COMPLETE_SIZE));
     *aStart += COMPLETE_SIZE;
 
-    const nsCSubstring& addChunkStr = Substring(aChunk, *aStart, 4);
+    const nsACString& addChunkStr = Substring(aChunk, *aStart, 4);
     *aStart += 4;
 
     uint32_t addChunk;
@@ -769,6 +773,10 @@ ProtocolParserProtobuf::End()
     return;
   }
 
+  auto minWaitDuration = response.minimum_wait_duration();
+  mUpdateWaitSec = minWaitDuration.seconds() +
+                   minWaitDuration.nanos() / 1000000000;
+
   for (int i = 0; i < response.list_update_responses_size(); i++) {
     auto r = response.list_update_responses(i);
     nsresult rv = ProcessOneResponse(r);
@@ -778,27 +786,6 @@ ProtocolParserProtobuf::End()
       NS_WARNING("Failed to process one response.");
     }
   }
-}
-
-// Save state of |aListName| to the following pref:
-//
-//   "browser.safebrowsing.provider.google4.state.[aListName]"
-//
-static nsresult
-SaveStateToPref(const nsACString& aListName, const nsACString& aState)
-{
-  nsresult rv;
-  nsCOMPtr<nsIPrefBranch> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID, &rv));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCString prefName("browser.safebrowsing.provider.google4.state.");
-  prefName.Append(aListName);
-
-  nsCString stateBase64;
-  rv = Base64Encode(aState, stateBase64);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return prefs->SetCharPref(prefName.get(), stateBase64.get());
 }
 
 nsresult
@@ -817,8 +804,8 @@ ProtocolParserProtobuf::ProcessOneResponse(const ListUpdateResponse& aResponse)
   nsresult rv = urlUtil->ConvertThreatTypeToListNames(aResponse.threat_type(),
                                                       possibleListNames);
   if (NS_FAILED(rv)) {
-    PARSER_LOG((nsPrintfCString("Threat type to list name conversion error: %d",
-                               aResponse.threat_type())).get());
+    PARSER_LOG(("Threat type to list name conversion error: %d",
+                aResponse.threat_type()));
     return NS_ERROR_FAILURE;
   }
 
@@ -860,21 +847,27 @@ ProtocolParserProtobuf::ProcessOneResponse(const ListUpdateResponse& aResponse)
   auto tuV4 = TableUpdate::Cast<TableUpdateV4>(tu);
   NS_ENSURE_TRUE(tuV4, NS_ERROR_FAILURE);
 
-  // See Bug 1287059. We save the state to prefs until we support
-  // "saving states to HashStore".
   nsCString state(aResponse.new_client_state().c_str(),
                   aResponse.new_client_state().size());
-  NS_DispatchToMainThread(NS_NewRunnableFunction([listName, state] () {
-    DebugOnly<nsresult> rv = SaveStateToPref(listName, state);
-    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "SaveStateToPref failed");
-  }));
+  tuV4->SetNewClientState(state);
+
+  if (aResponse.has_checksum()) {
+    tuV4->NewChecksum(aResponse.checksum().sha256());
+  }
 
   PARSER_LOG(("==== Update for threat type '%d' ====", aResponse.threat_type()));
   PARSER_LOG(("* listName: %s\n", listName.get()));
   PARSER_LOG(("* newState: %s\n", aResponse.new_client_state().c_str()));
   PARSER_LOG(("* isFullUpdate: %s\n", (isFullUpdate ? "yes" : "no")));
-  ProcessAdditionOrRemoval(*tuV4, aResponse.additions(), true /*aIsAddition*/);
-  ProcessAdditionOrRemoval(*tuV4, aResponse.removals(), false);
+  PARSER_LOG(("* hasChecksum: %s\n", (aResponse.has_checksum() ? "yes" : "no")));
+
+  tuV4->SetFullUpdate(isFullUpdate);
+
+  rv = ProcessAdditionOrRemoval(*tuV4, aResponse.additions(), true /*aIsAddition*/);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = ProcessAdditionOrRemoval(*tuV4, aResponse.removals(), false);
+  NS_ENSURE_SUCCESS(rv, rv);
+
   PARSER_LOG(("\n\n"));
 
   return NS_OK;
@@ -906,8 +899,8 @@ ProtocolParserProtobuf::ProcessAdditionOrRemoval(TableUpdateV4& aTableUpdate,
       break;
 
     case RICE:
-      // Not implemented yet (see bug 1285848),
-      NS_WARNING("Encoded table update is not supported yet.");
+      ret = (aIsAddition ? ProcessEncodedAddition(aTableUpdate, update)
+                         : ProcessEncodedRemoval(aTableUpdate, update));
       break;
     }
   }
@@ -936,7 +929,7 @@ ProtocolParserProtobuf::ProcessRawAddition(TableUpdateV4& aTableUpdate,
     uint32_t* fixedLengthPrefixes = (uint32_t*)prefixes.c_str();
     size_t numOfFixedLengthPrefixes = prefixes.size() / 4;
     PARSER_LOG(("* Raw addition (4 bytes)"));
-    PARSER_LOG(("  - # of prefixes: %d", numOfFixedLengthPrefixes));
+    PARSER_LOG(("  - # of prefixes: %zu", numOfFixedLengthPrefixes));
     PARSER_LOG(("  - Memory address: 0x%p", fixedLengthPrefixes));
   } else {
     // TODO: Process variable length prefixes including full hashes.
@@ -969,12 +962,152 @@ ProtocolParserProtobuf::ProcessRawRemoval(TableUpdateV4& aTableUpdate,
   PARSER_LOG(("* Raw removal"));
   PARSER_LOG(("  - # of removal: %d", indices.size()));
 
-  aTableUpdate.NewRemovalIndices((const uint32_t*)indices.data(),
-                                 indices.size());
+  nsresult rv = aTableUpdate.NewRemovalIndices((const uint32_t*)indices.data(),
+                                               indices.size());
+  if (NS_FAILED(rv)) {
+    PARSER_LOG(("Failed to create new removal indices."));
+    return rv;
+  }
 
   return NS_OK;
 }
 
+static nsresult
+DoRiceDeltaDecode(const RiceDeltaEncoding& aEncoding,
+                  nsTArray<uint32_t>& aDecoded)
+{
+  if (!aEncoding.has_first_value()) {
+    PARSER_LOG(("The encoding info is incomplete."));
+    return NS_ERROR_FAILURE;
+  }
+  if (aEncoding.num_entries() > 0 &&
+      (!aEncoding.has_rice_parameter() || !aEncoding.has_encoded_data())) {
+    PARSER_LOG(("Rice parameter or encoded data is missing."));
+    return NS_ERROR_FAILURE;
+  }
+
+  PARSER_LOG(("* Encoding info:"));
+  PARSER_LOG(("  - First value: %" PRId64, aEncoding.first_value()));
+  PARSER_LOG(("  - Num of entries: %d", aEncoding.num_entries()));
+  PARSER_LOG(("  - Rice parameter: %d", aEncoding.rice_parameter()));
+
+  // Set up the input buffer. Note that the bits should be read
+  // from LSB to MSB so that we in-place reverse the bits before
+  // feeding to the decoder.
+  auto encoded = const_cast<RiceDeltaEncoding&>(aEncoding).mutable_encoded_data();
+  RiceDeltaDecoder decoder((uint8_t*)encoded->c_str(), encoded->size());
+
+  // Setup the output buffer. The "first value" is included in
+  // the output buffer.
+  aDecoded.SetLength(aEncoding.num_entries() + 1);
+
+  // Decode!
+  bool rv = decoder.Decode(aEncoding.rice_parameter(),
+                           aEncoding.first_value(), // first value.
+                           aEncoding.num_entries(), // # of entries (first value not included).
+                           &aDecoded[0]);
+
+  NS_ENSURE_TRUE(rv, NS_ERROR_FAILURE);
+
+  return NS_OK;
+}
+
+nsresult
+ProtocolParserProtobuf::ProcessEncodedAddition(TableUpdateV4& aTableUpdate,
+                                               const ThreatEntrySet& aAddition)
+{
+  if (!aAddition.has_rice_hashes()) {
+    PARSER_LOG(("* No rice encoded addition."));
+    return NS_OK;
+  }
+
+  nsTArray<uint32_t> decoded;
+  nsresult rv = DoRiceDeltaDecode(aAddition.rice_hashes(), decoded);
+  if (NS_FAILED(rv)) {
+    PARSER_LOG(("Failed to parse encoded prefixes."));
+    return rv;
+  }
+
+  //  Say we have the following raw prefixes
+  //                              BE            LE
+  //   00 00 00 01                 1      16777216
+  //   00 00 02 00               512        131072
+  //   00 03 00 00            196608           768
+  //   04 00 00 00          67108864             4
+  //
+  // which can be treated as uint32 (big-endian) sorted in increasing order:
+  //
+  // [1, 512, 196608, 67108864]
+  //
+  // According to https://developers.google.com/safe-browsing/v4/compression,
+  // the following should be done prior to compression:
+  //
+  // 1) re-interpret in little-endian ==> [16777216, 131072, 768, 4]
+  // 2) sort in increasing order       ==> [4, 768, 131072, 16777216]
+  //
+  // In order to get the original byte stream from |decoded|
+  // ([4, 768, 131072, 16777216] in this case), we have to:
+  //
+  // 1) sort in big-endian order      ==> [16777216, 131072, 768, 4]
+  // 2) copy each uint32 in little-endian to the result string
+  //
+
+  // The 4-byte prefixes have to be re-sorted in Big-endian increasing order.
+  struct CompareBigEndian
+  {
+    bool Equals(const uint32_t& aA, const uint32_t& aB) const
+    {
+      return aA == aB;
+    }
+
+    bool LessThan(const uint32_t& aA, const uint32_t& aB) const
+    {
+      return NativeEndian::swapToBigEndian(aA) <
+             NativeEndian::swapToBigEndian(aB);
+    }
+  };
+  decoded.Sort(CompareBigEndian());
+
+  // The encoded prefixes are always 4 bytes.
+  std::string prefixes;
+  for (size_t i = 0; i < decoded.Length(); i++) {
+    // Note that the third argument is the number of elements we want
+    // to copy (and swap) but not the number of bytes we want to copy.
+    char p[4];
+    NativeEndian::copyAndSwapToLittleEndian(p, &decoded[i], 1);
+    prefixes.append(p, 4);
+  }
+
+  aTableUpdate.NewPrefixes(4, prefixes);
+
+  return NS_OK;
+}
+
+nsresult
+ProtocolParserProtobuf::ProcessEncodedRemoval(TableUpdateV4& aTableUpdate,
+                                              const ThreatEntrySet& aRemoval)
+{
+  if (!aRemoval.has_rice_indices()) {
+    PARSER_LOG(("* No rice encoded removal."));
+    return NS_OK;
+  }
+
+  nsTArray<uint32_t> decoded;
+  nsresult rv = DoRiceDeltaDecode(aRemoval.rice_indices(), decoded);
+  if (NS_FAILED(rv)) {
+    PARSER_LOG(("Failed to decode encoded removal indices."));
+    return rv;
+  }
+
+  // The encoded prefixes are always 4 bytes.
+  rv = aTableUpdate.NewRemovalIndices(&decoded[0], decoded.Length());
+  if (NS_FAILED(rv)) {
+    PARSER_LOG(("Failed to create new removal indices."));
+    return rv;
+  }
+
+  return NS_OK;
+}
 
 } // namespace safebrowsing
 } // namespace mozilla

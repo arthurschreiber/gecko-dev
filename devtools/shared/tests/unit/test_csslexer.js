@@ -9,15 +9,14 @@
 
 "use strict";
 
-const jsLexer = require("devtools/shared/css-lexer");
-const domutils = Components.classes["@mozilla.org/inspector/dom-utils;1"]
-                           .getService(Components.interfaces.inIDOMUtils);
+const jsLexer = require("devtools/shared/css/lexer");
+const InspectorUtils = require("InspectorUtils");
 
 // An object that acts like a CSSLexer but verifies that the DOM lexer
 // and the JS lexer do the same thing.
 function DoubleLexer(input) {
-  do_print("DoubleLexer input: " + input);
-  this.domLexer = domutils.getCSSLexer(input);
+  info("DoubleLexer input: " + input);
+  this.domLexer = InspectorUtils.getCSSLexer(input);
   this.jsLexer = jsLexer.getCSSLexer(input);
 }
 
@@ -105,18 +104,18 @@ function test_lexer(cssText, tokenTypes) {
 var LEX_TESTS = [
   ["simple", ["ident:simple"]],
   ["simple: { hi; }",
-             ["ident:simple", "symbol::",
-              "whitespace", "symbol:{",
-              "whitespace", "ident:hi",
-              "symbol:;", "whitespace",
-              "symbol:}"]],
+   ["ident:simple", "symbol::",
+    "whitespace", "symbol:{",
+    "whitespace", "ident:hi",
+    "symbol:;", "whitespace",
+    "symbol:}"]],
   ["/* whatever */", ["comment"]],
   ["'string'", ["string:string"]],
   ['"string"', ["string:string"]],
   ["rgb(1,2,3)", ["function:rgb", "number",
-                                      "symbol:,", "number",
-                                      "symbol:,", "number",
-                                      "symbol:)"]],
+                  "symbol:,", "number",
+                  "symbol:,", "number",
+                  "symbol:)"]],
   ["@media", ["at:media"]],
   ["#hibob", ["id:hibob"]],
   ["#123", ["hash:123"]],
@@ -128,9 +127,7 @@ var LEX_TESTS = [
              ["url:http://example.com"]],
   // In CSS Level 3, this is an ordinary URL, not a BAD_URL.
   ["url(http://example.com", ["url:http://example.com"]],
-  // We end up losing the whitespace before the '@' because it's skipped by the
-  // lexer before we discover we have a BAD_URL token.
-  ["url(http://example.com @", ["bad_url:http://example.com@"]],
+  ["url(http://example.com @", ["bad_url:http://example.com"]],
   ["quo\\ting", ["ident:quoting"]],
   ["'bad string\n", ["bad_string:bad string", "whitespace"]],
   ["~=", ["includes"]],
@@ -184,7 +181,7 @@ function test_lexer_eofchar(cssText, argText, expectedAppend,
     // Nothing.
   }
 
-  do_print("EOF char test, input = " + cssText);
+  info("EOF char test, input = " + cssText);
 
   let result = lexer.performEOFFixup(argText, true);
   equal(result, expectedAppend);

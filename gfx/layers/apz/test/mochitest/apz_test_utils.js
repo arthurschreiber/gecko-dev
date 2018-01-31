@@ -120,10 +120,10 @@ function flushApzRepaints(aCallback, aWindow = window) {
     throw "A callback must be provided!";
   }
   var repaintDone = function() {
-    SpecialPowers.Services.obs.removeObserver(repaintDone, "apz-repaints-flushed", false);
+    SpecialPowers.Services.obs.removeObserver(repaintDone, "apz-repaints-flushed");
     setTimeout(aCallback, 0);
   };
-  SpecialPowers.Services.obs.addObserver(repaintDone, "apz-repaints-flushed", false);
+  SpecialPowers.Services.obs.addObserver(repaintDone, "apz-repaints-flushed");
   if (SpecialPowers.getDOMWindowUtils(aWindow).flushApzRepaints()) {
     dump("Flushed APZ repaints, waiting for callback...\n");
   } else {
@@ -275,6 +275,10 @@ function isApzEnabled() {
   return enabled;
 }
 
+function isKeyApzEnabled() {
+  return isApzEnabled() && SpecialPowers.getBoolPref("apz.keyboard.enabled");
+}
+
 // Despite what this function name says, this does not *directly* run the
 // provided continuation testFunction. Instead, it returns a function that
 // can be used to run the continuation. The extra level of indirection allows
@@ -327,7 +331,7 @@ function runContinuation(testFunction) {
 function getSnapshot(rect) {
   function parentProcessSnapshot() {
     addMessageListener('snapshot', function(rect) {
-      Components.utils.import('resource://gre/modules/Services.jsm');
+      ChromeUtils.import('resource://gre/modules/Services.jsm');
       var topWin = Services.wm.getMostRecentWindow('navigator:browser');
 
       // reposition the rect relative to the top-level browser window

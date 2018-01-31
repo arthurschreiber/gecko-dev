@@ -6,7 +6,7 @@
 // Tests that NetworkHelper.parseCertificateInfo parses certificate information
 // correctly.
 
-const { require } = Components.utils.import("resource://devtools/shared/Loader.jsm", {});
+const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
 
 Object.defineProperty(this, "NetworkHelper", {
   get: function () {
@@ -17,7 +17,6 @@ Object.defineProperty(this, "NetworkHelper", {
   enumerable: true
 });
 
-var Ci = Components.interfaces;
 const DUMMY_CERT = {
   commonName: "cn",
   organization: "o",
@@ -34,7 +33,7 @@ const DUMMY_CERT = {
 };
 
 function run_test() {
-  do_print("Testing NetworkHelper.parseCertificateInfo.");
+  info("Testing NetworkHelper.parseCertificateInfo.");
 
   let result = NetworkHelper.parseCertificateInfo(DUMMY_CERT);
 

@@ -1,5 +1,7 @@
+"use strict";
+
 var protocol = require("devtools/shared/protocol");
-var {Arg, Option, RetVal} = protocol;
+var {RetVal} = protocol;
 
 protocol.types.addActorType("child");
 protocol.types.addActorType("root");
@@ -155,22 +157,23 @@ const run_test = Test(function* () {
 
   // Trigger some methods that return forms.
   let retval = yield rootFront.getDefault();
-  do_check_true(retval instanceof RootFront);
-  do_check_true(rootFront.lastForm.childActor instanceof ChildFront);
+  Assert.ok(retval instanceof RootFront);
+  Assert.ok(rootFront.lastForm.childActor instanceof ChildFront);
 
   retval = yield rootFront.getDetail1();
-  do_check_true(retval instanceof RootFront);
-  do_check_true(rootFront.lastForm.detailItem instanceof ChildFront);
+  Assert.ok(retval instanceof RootFront);
+  Assert.ok(rootFront.lastForm.detailItem instanceof ChildFront);
 
   retval = yield rootFront.getDetail2();
-  do_check_true(retval instanceof RootFront);
-  do_check_true(typeof (rootFront.lastForm) === "string");
+  Assert.ok(retval instanceof RootFront);
+  Assert.ok(typeof (rootFront.lastForm) === "string");
 
   // getUnknownDetail should fail, since no typeName is specified.
   try {
     yield rootFront.getUnknownDetail();
-    do_check_true(false);
+    Assert.ok(false);
   } catch (ex) {
+    // empty
   }
 
   yield client.close();

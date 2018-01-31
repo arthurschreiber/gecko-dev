@@ -17,7 +17,7 @@ interface Request {
   readonly attribute USVString url;
   [SameObject] readonly attribute Headers headers;
 
-  [Func="mozilla::dom::Request::RequestContextEnabled"]
+  [Func="mozilla::dom::DOMPrefs::RequestContextEnabled"]
   readonly attribute RequestContext context;
   readonly attribute USVString referrer;
   readonly attribute ReferrerPolicy referrerPolicy;
@@ -26,6 +26,14 @@ interface Request {
   readonly attribute RequestCache cache;
   readonly attribute RequestRedirect redirect;
   readonly attribute DOMString integrity;
+
+  // If a main-thread fetch() promise rejects, the error passed will be a
+  // nsresult code.
+  [ChromeOnly]
+  readonly attribute boolean mozErrors;
+
+  [BinaryName="getOrCreateSignal"]
+  readonly attribute AbortSignal signal;
 
   [Throws,
    NewObject] Request clone();
@@ -47,6 +55,14 @@ dictionary RequestInit {
   RequestCache cache;
   RequestRedirect redirect;
   DOMString integrity;
+
+  [ChromeOnly]
+  boolean mozErrors;
+
+  AbortSignal? signal;
+
+  [Func="mozilla::dom::DOMPrefs::FetchObserverEnabled"]
+  ObserverCallback observe;
 };
 
 // Gecko currently does not ship RequestContext, so please don't use it in IDL
@@ -63,4 +79,8 @@ enum RequestMode { "same-origin", "no-cors", "cors", "navigate" };
 enum RequestCredentials { "omit", "same-origin", "include" };
 enum RequestCache { "default", "no-store", "reload", "no-cache", "force-cache", "only-if-cached" };
 enum RequestRedirect { "follow", "error", "manual" };
-enum ReferrerPolicy { "", "no-referrer", "no-referrer-when-downgrade", "origin", "origin-when-cross-origin", "unsafe-url" };
+enum ReferrerPolicy {
+  "", "no-referrer", "no-referrer-when-downgrade", "origin",
+  "origin-when-cross-origin", "unsafe-url", "same-origin", "strict-origin",
+  "strict-origin-when-cross-origin"
+};

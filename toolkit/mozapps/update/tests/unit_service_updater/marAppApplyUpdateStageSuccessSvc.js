@@ -23,7 +23,7 @@ function run_test() {
  * Called after the call to setupUpdaterTest finishes.
  */
 function setupUpdaterTestFinished() {
-  stageUpdate();
+  stageUpdate(true);
 }
 
 /**
@@ -32,7 +32,7 @@ function setupUpdaterTestFinished() {
 function stageUpdateFinished() {
   checkPostUpdateRunningFile(false);
   checkFilesAfterUpdateSuccess(getStageDirFile, true);
-  checkUpdateLogContents(LOG_COMPLETE_SUCCESS_STAGE, true);
+  checkUpdateLogContents(LOG_COMPLETE_SUCCESS, true);
   // Switch the application to the staged application that was updated.
   runUpdateUsingApp(STATE_SUCCEEDED);
 }
@@ -50,17 +50,17 @@ function runUpdateFinished() {
 function checkPostUpdateAppLogFinished() {
   checkAppBundleModTime();
   standardInit();
-  Assert.equal(readStatusState(), STATE_NONE,
-               "the status file state" + MSG_SHOULD_EQUAL);
-  Assert.ok(!gUpdateManager.activeUpdate,
-            "the active update should not be defined");
-  Assert.equal(gUpdateManager.updateCount, 1,
-               "the update manager updateCount attribute" + MSG_SHOULD_EQUAL);
-  Assert.equal(gUpdateManager.getUpdateAt(0).state, STATE_SUCCEEDED,
-               "the update state" + MSG_SHOULD_EQUAL);
   checkPostUpdateRunningFile(true);
   checkFilesAfterUpdateSuccess(getApplyDirFile, false, true);
   checkUpdateLogContents(LOG_REPLACE_SUCCESS, false, true);
+  executeSoon(waitForUpdateXMLFiles);
+}
+
+/**
+ * Called after the call to waitForUpdateXMLFiles finishes.
+ */
+function waitForUpdateXMLFilesFinished() {
+  checkUpdateManager(STATE_NONE, false, STATE_SUCCEEDED, 0, 1);
 
   let updatesDir = getUpdatesPatchDir();
   Assert.ok(updatesDir.exists(),

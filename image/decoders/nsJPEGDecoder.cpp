@@ -24,6 +24,7 @@
 
 #include "gfxPlatform.h"
 #include "mozilla/EndianUtils.h"
+#include "mozilla/gfx/Types.h"
 #include "mozilla/Telemetry.h"
 
 extern "C" {
@@ -37,6 +38,8 @@ extern "C" {
 #endif
 
 static void cmyk_convert_rgb(JSAMPROW row, JDIMENSION width);
+
+using mozilla::gfx::SurfaceFormat;
 
 namespace mozilla {
 namespace image {
@@ -77,7 +80,6 @@ nsJPEGDecoder::nsJPEGDecoder(RasterImage* aImage,
                                    SIZE_MAX),
           Transition::TerminateSuccess())
  , mDecodeStyle(aDecodeStyle)
- , mSampleSize(0)
 {
   mState = JPEG_HEADER;
   mReading = true;
@@ -110,7 +112,8 @@ nsJPEGDecoder::~nsJPEGDecoder()
   mInfo.src = nullptr;
   jpeg_destroy_decompress(&mInfo);
 
-  PR_FREEIF(mBackBuffer);
+  free(mBackBuffer);
+  mBackBuffer = nullptr;
   if (mTransform) {
     qcms_transform_release(mTransform);
   }
@@ -123,7 +126,7 @@ nsJPEGDecoder::~nsJPEGDecoder()
           this));
 }
 
-Maybe<Telemetry::ID>
+Maybe<Telemetry::HistogramID>
 nsJPEGDecoder::SpeedHistogram() const
 {
   return Some(Telemetry::IMAGE_DECODE_SPEED_JPEG);
@@ -242,17 +245,8 @@ nsJPEGDecoder::ReadJPEGData(const char* aData, size_t aLength)
         return Transition::ContinueUnbuffered(State::JPEG_DATA); // I/O suspension
       }
 
-      // If we have a sample size specified for -moz-sample-size, use it.
-      if (mSampleSize > 0) {
-        mInfo.scale_num = 1;
-        mInfo.scale_denom = mSampleSize;
-      }
-
-      // Used to set up image size so arrays can be allocated
-      jpeg_calc_output_dimensions(&mInfo);
-
       // Post our size to the superclass
-      PostSize(mInfo.output_width, mInfo.output_height,
+      PostSize(mInfo.image_width, mInfo.image_height,
                ReadOrientationFromEXIF());
       if (HasError()) {
         // Setting the size led to an error.
@@ -387,9 +381,12 @@ nsJPEGDecoder::ReadJPEGData(const char* aData, size_t aLength)
     mInfo.buffered_image = mDecodeStyle == PROGRESSIVE &&
                            jpeg_has_multiple_scans(&mInfo);
 
+    /* Used to set up image size so arrays can be allocated */
+    jpeg_calc_output_dimensions(&mInfo);
+
     MOZ_ASSERT(!mImageData, "Already have a buffer allocated?");
     nsresult rv = AllocateFrame(/* aFrameNum = */ 0, OutputSize(),
-                                FullOutputFrame(), SurfaceFormat::B8G8R8A8);
+                                FullOutputFrame(), SurfaceFormat::B8G8R8X8);
     if (NS_FAILED(rv)) {
       mState = JPEG_ERROR;
       MOZ_LOG(sJPEGDecoderAccountingLog, LogLevel::Debug,
@@ -412,7 +409,7 @@ nsJPEGDecoder::ReadJPEGData(const char* aData, size_t aLength)
     MOZ_LOG(sJPEGDecoderAccountingLog, LogLevel::Debug,
            ("        JPEGDecoderAccounting: nsJPEGDecoder::"
             "Write -- created image frame with %ux%u pixels",
-            mInfo.output_width, mInfo.output_height));
+            mInfo.image_width, mInfo.image_height));
 
     mState = JPEG_START_DECOMPRESS;
     MOZ_FALLTHROUGH; // to start decompressing.
@@ -911,7 +908,7 @@ fill_input_buffer (j_decompress_ptr jd)
 
     // Round up to multiple of 256 bytes.
     const size_t roundup_buflen = ((new_backtrack_buflen + 255) >> 8) << 8;
-    JOCTET* buf = (JOCTET*)PR_REALLOC(decoder->mBackBuffer, roundup_buflen);
+    JOCTET* buf = (JOCTET*) realloc(decoder->mBackBuffer, roundup_buflen);
     // Check for OOM
     if (!buf) {
       decoder->mInfo.err->msg_code = JERR_OUT_OF_MEMORY;
@@ -921,10 +918,18 @@ fill_input_buffer (j_decompress_ptr jd)
     decoder->mBackBufferSize = roundup_buflen;
   }
 
-  // Copy remainder of netlib segment into backtrack buffer.
-  memmove(decoder->mBackBuffer + decoder->mBackBufferLen,
-          src->next_input_byte,
-          src->bytes_in_buffer);
+  // Ensure we actually have a backtrack buffer. Without it, then we know that
+  // there is no data to copy and bytes_in_buffer is already zero.
+  if (decoder->mBackBuffer) {
+    // Copy remainder of netlib segment into backtrack buffer.
+    memmove(decoder->mBackBuffer + decoder->mBackBufferLen,
+            src->next_input_byte,
+            src->bytes_in_buffer);
+  } else {
+    MOZ_ASSERT(src->bytes_in_buffer == 0);
+    MOZ_ASSERT(decoder->mBackBufferLen == 0);
+    MOZ_ASSERT(decoder->mBackBufferUnreadLen == 0);
+  }
 
   // Point to start of data to be rescanned.
   src->next_input_byte = decoder->mBackBuffer + decoder->mBackBufferLen -

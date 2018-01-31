@@ -2,11 +2,7 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /* eslint-env browser */
-/* exported openAboutDebugging, changeAboutDebuggingHash, closeAboutDebugging,
-   installAddon, uninstallAddon, waitForMutation, assertHasTarget,
-   getServiceWorkerList, getTabList, openPanel, waitForInitialAddonList,
-   waitForServiceWorkerRegistered, unregisterServiceWorker,
-   waitForDelayedStartupFinished, setupTestAboutDebuggingWebExtension */
+/* eslint no-unused-vars: [2, {"vars": "local"}] */
 /* import-globals-from ../../framework/test/shared-head.js */
 
 "use strict";
@@ -31,87 +27,26 @@ function* openAboutDebugging(page, win) {
     url += "#" + page;
   }
 
-  let tab = yield addTab(url, win);
+  let tab = yield addTab(url, { window: win });
   let browser = tab.linkedBrowser;
   let document = browser.contentDocument;
+  let window = browser.contentWindow;
 
-  if (!document.querySelector(".app")) {
-    yield waitForMutation(document.body, { childList: true });
-  }
+  info("Wait until the main about debugging container is available");
+  yield waitUntilElement(".app", document);
 
-  return { tab, document };
+  return { tab, document, window };
 }
 
-/**
- * Change url hash for current about:debugging tab, return a promise after
- * new content is loaded.
- * @param  {DOMDocument}  document   container document from current tab
- * @param  {String}       hash       hash for about:debugging
- * @return {Promise}
- */
-function changeAboutDebuggingHash(document, hash) {
-  info(`Opening about:debugging#${hash}`);
-  window.openUILinkIn(`about:debugging#${hash}`, "current");
-  return waitForMutation(
-    document.querySelector(".main-content"), {childList: true});
-}
-
-function openPanel(document, panelId) {
-  info(`Opening ${panelId} panel`);
-  document.querySelector(`[aria-controls="${panelId}"]`).click();
-  return waitForMutation(
-    document.querySelector(".main-content"), {childList: true});
-}
-
-function closeAboutDebugging(tab, win) {
+function closeAboutDebugging(tab) {
   info("Closing about:debugging");
-  return removeTab(tab, win);
-}
-
-function addTab(url, win, backgroundTab = false) {
-  info("Adding tab: " + url);
-
-  return new Promise(done => {
-    let targetWindow = win || window;
-    let targetBrowser = targetWindow.gBrowser;
-
-    targetWindow.focus();
-    let tab = targetBrowser.addTab(url);
-    if (!backgroundTab) {
-      targetBrowser.selectedTab = tab;
-    }
-    let linkedBrowser = tab.linkedBrowser;
-
-    linkedBrowser.addEventListener("load", function onLoad() {
-      linkedBrowser.removeEventListener("load", onLoad, true);
-      info("Tab added and finished loading: " + url);
-      done(tab);
-    }, true);
-  });
-}
-
-function removeTab(tab, win) {
-  info("Removing tab.");
-
-  return new Promise(done => {
-    let targetWindow = win || window;
-    let targetBrowser = targetWindow.gBrowser;
-    let tabContainer = targetBrowser.tabContainer;
-
-    tabContainer.addEventListener("TabClose", function onClose() {
-      tabContainer.removeEventListener("TabClose", onClose, false);
-      info("Tab removed and finished closing.");
-      done();
-    }, false);
-
-    targetBrowser.removeTab(tab);
-  });
+  return removeTab(tab);
 }
 
 function getSupportsFile(path) {
   let cr = Cc["@mozilla.org/chrome/chrome-registry;1"]
     .getService(Ci.nsIChromeRegistry);
-  let uri = Services.io.newURI(CHROME_URL_ROOT + path, null, null);
+  let uri = Services.io.newURI(CHROME_URL_ROOT + path);
   let fileurl = cr.convertChromeURL(uri);
   return fileurl.QueryInterface(Ci.nsIFileURL);
 }
@@ -128,6 +63,37 @@ function getAddonList(document) {
 }
 
 /**
+ * Depending on whether there are temporary addons installed, return either a
+ * target list element or its container.
+ * @param  {DOMDocument}  document   #temporary-addons section container document
+ * @return {DOMNode}                 target list or container element
+ */
+function getTemporaryAddonList(document) {
+  return document.querySelector("#temporary-addons .target-list") ||
+    document.querySelector("#temporary-addons .targets");
+}
+
+/**
+ * Depending on whether the addon is installed, return either the addon list
+ * element or throw an Error.
+ * @param  {DOMDocument}  document   addon section container document
+ * @return {DOMNode}                 target list
+ * @throws {Error}                   add-on not found error
+ */
+function getAddonListWithAddon(document, id) {
+  const addon = document.querySelector(`[data-addon-id="${id}"]`);
+  if (!addon) {
+    throw new Error("couldn't find add-on by id");
+  }
+  return addon.closest(".target-list");
+}
+
+function getInstalledAddonNames(document) {
+  const selector = "#addons .target-name, #temporary-addons .target-name";
+  return [...document.querySelectorAll(selector)];
+}
+
+/**
  * Depending on whether there are service workers installed, return either a
  * target list element or its container.
  * @param  {DOMDocument}  document   #service-workers section container document
@@ -136,6 +102,61 @@ function getAddonList(document) {
 function getServiceWorkerList(document) {
   return document.querySelector("#service-workers .target-list") ||
     document.querySelector("#service-workers.targets");
+}
+
+/**
+ * Retrieve the container element for the service worker corresponding to the provided
+ * name.
+ *
+ * @param  {String} name
+ *         expected service worker name
+ * @param  {DOMDocument} document
+ *         #service-workers section container document
+ * @return {DOMNode} container element
+ */
+function getServiceWorkerContainer(name, document) {
+  let nameElements = [...document.querySelectorAll("#service-workers .target-name")];
+  let nameElement = nameElements.filter(element => element.textContent === name)[0];
+  if (nameElement) {
+    return nameElement.closest(".target-container");
+  }
+
+  return null;
+}
+
+/**
+ * Wait until a service worker "container" element is found with a specific service worker
+ * name, in the provided document.
+ * Returns a promise that resolves the service worker container element.
+ *
+ * @param  {String} name
+ *         expected service worker name
+ * @param  {DOMDocument} document
+ *         #service-workers section container document
+ * @return {Promise} promise that resolves the service worker container element.
+ */
+function* waitUntilServiceWorkerContainer(name, document) {
+  yield waitUntil(() => {
+    return getServiceWorkerContainer(name, document);
+  }, 100);
+  return getServiceWorkerContainer(name, document);
+}
+
+/**
+ * Wait until a selector matches an element in a given parent node.
+ * Returns a promise that resolves the matched element.
+ *
+ * @param {String} selector
+ *        CSS selector to match.
+ * @param {DOMNode} parent
+ *        Parent that should contain the element.
+ * @return {Promise} promise that resolves the matched DOMNode.
+ */
+function* waitUntilElement(selector, parent) {
+  yield waitUntil(() => {
+    return parent.querySelector(selector);
+  }, 100);
+  return parent.querySelector(selector);
 }
 
 /**
@@ -152,12 +173,9 @@ function getTabList(document) {
 function* installAddon({document, path, name, isWebExtension}) {
   // Mock the file picker to select a test addon
   let MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(null);
+  MockFilePicker.init(window);
   let file = getSupportsFile(path);
-  MockFilePicker.returnFiles = [file.file];
-
-  let addonList = getAddonList(document);
-  let addonListMutation = waitForMutation(addonList, { childList: true });
+  MockFilePicker.setFiles([file.file]);
 
   let onAddonInstalled;
 
@@ -179,7 +197,7 @@ function* installAddon({document, path, name, isWebExtension}) {
         Services.obs.removeObserver(listener, "test-devtools");
 
         done();
-      }, "test-devtools", false);
+      }, "test-devtools");
     });
   }
   // Trigger the file picker by clicking on the button
@@ -188,18 +206,11 @@ function* installAddon({document, path, name, isWebExtension}) {
   yield onAddonInstalled;
   ok(true, "Addon installed and running its bootstrap.js file");
 
-  // Check that the addon appears in the UI
-  yield addonListMutation;
-  let names = [...addonList.querySelectorAll(".target-name")];
-  names = names.map(element => element.textContent);
-  ok(names.includes(name),
-    "The addon name appears in the list of addons: " + names);
+  info("Wait for the addon to appear in the UI");
+  yield waitUntilAddonContainer(name, document);
 }
 
 function* uninstallAddon({document, id, name}) {
-  let addonList = getAddonList(document);
-  let addonListMutation = waitForMutation(addonList, { childList: true });
-
   // Now uninstall this addon
   yield new Promise(done => {
     AddonManager.getAddonByID(id, addon => {
@@ -218,13 +229,14 @@ function* uninstallAddon({document, id, name}) {
     });
   });
 
-  // Ensure that the UI removes the addon from the list
-  yield addonListMutation;
-  let names = [...addonList.querySelectorAll(".target-name")];
-  names = names.map(element => element.textContent);
-  ok(!names.includes(name),
-    "After uninstall, the addon name disappears from the list of addons: "
-    + names);
+  info("Wait until the addon is removed from about:debugging");
+  yield waitUntil(() => !getAddonContainer(name, document), 100);
+}
+
+function getAddonCount(document) {
+  const addonListContainer = getAddonList(document);
+  let addonElements = addonListContainer.querySelectorAll(".target");
+  return addonElements.length;
 }
 
 /**
@@ -234,38 +246,25 @@ function* uninstallAddon({document, id, name}) {
  * @return {Promise}
  */
 function waitForInitialAddonList(document) {
-  const addonListContainer = getAddonList(document);
-  let addonCount = addonListContainer.querySelectorAll(".target");
-  addonCount = addonCount ? [...addonCount].length : -1;
-  info("Waiting for add-ons to load. Current add-on count: " + addonCount);
-
-  // This relies on the network speed of the actor responding to the
-  // listAddons() request and also the speed of openAboutDebugging().
-  let result;
-  if (addonCount > 0) {
-    info("Actually, the add-ons have already loaded");
-    result = Promise.resolve();
-  } else {
-    result = waitForMutation(addonListContainer, { childList: true });
-  }
-  return result;
+  info("Waiting for add-ons to load. Current add-on count: " + getAddonCount(document));
+  return waitUntil(() => getAddonCount(document) > 0, 100);
 }
 
-/**
- * Returns a promise that will resolve after receiving a mutation matching the
- * provided mutation options on the provided target.
- * @param {Node} target
- * @param {Object} mutationOptions
- * @return {Promise}
- */
-function waitForMutation(target, mutationOptions) {
-  return new Promise(resolve => {
-    let observer = new MutationObserver(() => {
-      observer.disconnect();
-      resolve();
-    });
-    observer.observe(target, mutationOptions);
+function getAddonContainer(name, document) {
+  let nameElements = [...document.querySelectorAll("#addons-panel .target-name")];
+  let nameElement = nameElements.filter(element => element.textContent === name)[0];
+  if (nameElement) {
+    return nameElement.closest(".addon-target-container");
+  }
+
+  return null;
+}
+
+function* waitUntilAddonContainer(name, document) {
+  yield waitUntil(() => {
+    return getAddonContainer(name, document);
   });
+  return getAddonContainer(name, document);
 }
 
 /**
@@ -299,17 +298,33 @@ function waitForServiceWorkerRegistered(tab) {
 
 /**
  * Asks the service worker within the test page to unregister, and returns a
- * promise that will resolve when it has successfully unregistered itself.
+ * promise that will resolve when it has successfully unregistered itself and the
+ * about:debugging UI has fully processed this update.
+ *
  * @param {Tab} tab
+ * @param {Node} serviceWorkersElement
  * @return {Promise} Resolves when the service worker is unregistered.
  */
-function unregisterServiceWorker(tab) {
-  return ContentTask.spawn(tab.linkedBrowser, {}, function* () {
+function* unregisterServiceWorker(tab, serviceWorkersElement) {
+  // Get the initial count of service worker registrations.
+  let registrations = serviceWorkersElement.querySelectorAll(".target-container");
+  let registrationCount = registrations.length;
+
+  // Wait until the registration count is decreased by one.
+  let isRemoved = waitUntil(() => {
+    registrations = serviceWorkersElement.querySelectorAll(".target-container");
+    return registrations.length === registrationCount - 1;
+  }, 100);
+
+  // Unregister the service worker from the content page
+  yield ContentTask.spawn(tab.linkedBrowser, {}, function* () {
     // Retrieve the `sw` promise created in the html page
     let { sw } = content.wrappedJSObject;
     let registration = yield sw;
     yield registration.unregister();
   });
+
+  return isRemoved;
 }
 
 /**
@@ -325,7 +340,7 @@ function waitForDelayedStartupFinished(win) {
         Services.obs.removeObserver(observer, topic);
         resolve();
       }
-    }, "browser-delayed-startup-finished", false);
+    }, "browser-delayed-startup-finished");
   });
 }
 
@@ -357,7 +372,7 @@ function* setupTestAboutDebuggingWebExtension(name, path) {
   });
 
   // Retrieve the DEBUG button for the addon
-  let names = [...document.querySelectorAll("#addons .target-name")];
+  let names = getInstalledAddonNames(document);
   let nameEl = names.filter(element => element.textContent === name)[0];
   ok(name, "Found the addon in the list");
   let targetElement = nameEl.parentNode.parentNode;
@@ -365,4 +380,96 @@ function* setupTestAboutDebuggingWebExtension(name, path) {
   ok(debugBtn, "Found its debug button");
 
   return { tab, document, debugBtn };
+}
+
+/**
+ * Wait for aboutdebugging to be notified about the activation of the service worker
+ * corresponding to the provided service worker url.
+ */
+function* waitForServiceWorkerActivation(swUrl, document) {
+  let serviceWorkersElement = getServiceWorkerList(document);
+  let names = serviceWorkersElement.querySelectorAll(".target-name");
+  let name = [...names].filter(element => element.textContent === swUrl)[0];
+
+  let targetElement = name.parentNode.parentNode;
+  let targetStatus = targetElement.querySelector(".target-status");
+  yield waitUntil(() => {
+    return targetStatus.textContent !== "Registering";
+  }, 100);
+}
+
+/**
+ * Set all preferences needed to enable service worker debugging and testing.
+ */
+function* enableServiceWorkerDebugging() {
+  let options = { "set": [
+    // Enable service workers.
+    ["dom.serviceWorkers.enabled", true],
+    // Accept workers from mochitest's http.
+    ["dom.serviceWorkers.testing.enabled", true],
+    // Force single content process.
+    ["dom.ipc.processCount", 1],
+  ]};
+
+  // Wait for dom.ipc.processCount to be updated before releasing processes.
+  yield new Promise(done => {
+    SpecialPowers.pushPrefEnv(options, done);
+  });
+
+  Services.ppmm.releaseCachedProcesses();
+}
+
+/**
+ * Returns a promise that resolves when the given add-on event is fired. The
+ * resolved value is an array of arguments passed for the event.
+ */
+function promiseAddonEvent(event) {
+  return new Promise(resolve => {
+    let listener = {
+      [event]: function (...args) {
+        AddonManager.removeAddonListener(listener);
+        resolve(args);
+      }
+    };
+
+    AddonManager.addAddonListener(listener);
+  });
+}
+
+/**
+ * Install an add-on using the AddonManager so it does not show up as temporary.
+ */
+function installAddonWithManager(filePath) {
+  return new Promise((resolve, reject) => {
+    AddonManager.getInstallForFile(filePath, install => {
+      if (!install) {
+        throw new Error(`An install was not created for ${filePath}`);
+      }
+      install.addListener({
+        onDownloadFailed: reject,
+        onDownloadCancelled: reject,
+        onInstallFailed: reject,
+        onInstallCancelled: reject,
+        onInstallEnded: resolve
+      });
+      install.install();
+    });
+  });
+}
+
+function getAddonByID(addonId) {
+  return new Promise(resolve => {
+    AddonManager.getAddonByID(addonId, addon => resolve(addon));
+  });
+}
+
+/**
+ * Uninstall an add-on.
+ */
+function* tearDownAddon(addon) {
+  const onUninstalled = promiseAddonEvent("onUninstalled");
+  addon.uninstall();
+  const [uninstalledAddon] = yield onUninstalled;
+  is(uninstalledAddon.id, addon.id,
+     `Add-on was uninstalled: ${uninstalledAddon.id}`);
 }

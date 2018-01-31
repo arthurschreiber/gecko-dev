@@ -6,7 +6,7 @@
 
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
-let { EventEmitter } = Cu.import("resource:///modules/syncedtabs/EventEmitter.jsm", {});
+let { EventEmitter } = ChromeUtils.import("resource:///modules/syncedtabs/EventEmitter.jsm", {});
 
 this.EXPORTED_SYMBOLS = [
   "SyncedTabsListStore"
@@ -126,7 +126,6 @@ Object.assign(SyncedTabsListStore.prototype, EventEmitter.prototype, {
   moveSelectionUp() {
     let branchRow = this._selectedRow[0];
     let childRow = this._selectedRow[1];
-    let branch = this.data[branchRow];
 
     if (this.filter) {
       this.selectRow(branchRow - 1);
@@ -234,4 +233,3 @@ Object.assign(SyncedTabsListStore.prototype, EventEmitter.prototype, {
       .catch(Cu.reportError);
   }
 });
-

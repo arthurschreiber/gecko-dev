@@ -6,7 +6,6 @@
 #ifndef GFX_PLATFORM_ANDROID_H
 #define GFX_PLATFORM_ANDROID_H
 
-#include "gfxFT2Fonts.h"
 #include "gfxPlatform.h"
 #include "gfxUserFontSet.h"
 #include "nsCOMPtr.h"
@@ -18,8 +17,6 @@ namespace mozilla {
     };
 };
 using mozilla::dom::FontListEntry;
-
-typedef struct FT_LibraryRec_ *FT_Library;
 
 class gfxAndroidPlatform : public gfxPlatform {
 public:
@@ -35,15 +32,11 @@ public:
                            gfxImageFormat aFormat) override;
     
     virtual gfxImageFormat GetOffscreenFormat() override { return mOffscreenFormat; }
-    
-    already_AddRefed<mozilla::gfx::ScaledFont>
-      GetScaledFontForFont(mozilla::gfx::DrawTarget* aTarget, gfxFont *aFont) override;
 
     // to support IPC font list (sharing between chrome and content)
     void GetSystemFontList(InfallibleTArray<FontListEntry>* retValue);
 
     // platform implementations of font functions
-    virtual bool IsFontFormatSupported(nsIURI *aFontURI, uint32_t aFormatFlags) override;
     virtual gfxPlatformFontList* CreatePlatformFontList() override;
 
     virtual void GetCommonFallbackFonts(uint32_t aCh, uint32_t aNextCh,
@@ -60,21 +53,9 @@ public:
     virtual bool FontHintingEnabled() override;
     virtual bool RequiresLinearZoom() override;
 
-    FT_Library GetFTLibrary();
-
-    virtual bool CanRenderContentToDataSurface() const override {
-      return true;
-    }
+    FT_Library GetFTLibrary() override;
 
     virtual already_AddRefed<mozilla::gfx::VsyncSource> CreateHardwareVsyncSource() override;
-
-#ifdef MOZ_WIDGET_GONK
-    virtual bool IsInGonkEmulator() const { return mIsInGonkEmulator; }
-#endif
-
-    virtual bool SupportsApzTouchInput() const override {
-      return true;
-    }
 
 protected:
     bool AccelerateLayersByDefault() override {
@@ -83,10 +64,6 @@ protected:
 
 private:
     gfxImageFormat mOffscreenFormat;
-
-#ifdef MOZ_WIDGET_GONK
-    bool mIsInGonkEmulator;
-#endif
 };
 
 #endif /* GFX_PLATFORM_ANDROID_H */

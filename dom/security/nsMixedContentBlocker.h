@@ -28,6 +28,10 @@ enum MixedContentTypes {
 #include "nsIChannelEventSink.h"
 #include "imgRequest.h"
 
+using mozilla::OriginAttributes;
+
+class nsILoadInfo; // forward declaration
+
 class nsMixedContentBlocker : public nsIContentPolicy,
                               public nsIChannelEventSink
 {
@@ -40,6 +44,10 @@ public:
   NS_DECL_NSICHANNELEVENTSINK
 
   nsMixedContentBlocker();
+
+  // See:
+  // https://w3c.github.io/webappsec-secure-contexts/#is-origin-trustworthy
+  static bool IsPotentiallyTrustworthyLoopbackURL(nsIURI* aURL);
 
   /* Static version of ShouldLoad() that contains all the Mixed Content Blocker
    * logic.  Called from non-static ShouldLoad().
@@ -59,8 +67,12 @@ public:
                              nsISupports* aExtra,
                              nsIPrincipal* aRequestPrincipal,
                              int16_t* aDecision);
-  static void AccumulateMixedContentHSTS(nsIURI* aURI, bool aActive);
+  static void AccumulateMixedContentHSTS(nsIURI* aURI,
+                                         bool aActive,
+                                         const OriginAttributes& aOriginAttributes);
+
   static bool sBlockMixedScript;
+  static bool sBlockMixedObjectSubrequest;
   static bool sBlockMixedDisplay;
 };
 

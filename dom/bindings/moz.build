@@ -4,7 +4,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM")
+
 TEST_DIRS += ['test']
+
+XPIDL_SOURCES += [
+    'nsIScriptError.idl'
+]
+
+XPIDL_MODULE = 'dom_bindings'
 
 EXPORTS.ipc += [
     'ErrorIPCUtils.h',
@@ -32,17 +41,20 @@ EXPORTS.mozilla.dom += [
     'FakeString.h',
     'IterableIterator.h',
     'JSSlots.h',
-    'MozMap.h',
     'NonRefcountedDOMObject.h',
     'Nullable.h',
     'PrimitiveConversions.h',
+    'ReadableStream.h',
+    'Record.h',
     'RootedDictionary.h',
     'SimpleGlobalObject.h',
+    'SpiderMonkeyInterface.h',
     'StructuredClone.h',
     'ToJSValue.h',
     'TypedArray.h',
     'UnionMember.h',
     'WebIDLGlobalNameHash.h',
+    'XrayExpandoClass.h',
 ]
 
 # Generated bindings reference *Binding.h, not mozilla/dom/*Binding.h. And,
@@ -58,8 +70,6 @@ LOCAL_INCLUDES += [
 LOCAL_INCLUDES += [
     '/dom/base',
     '/dom/battery',
-    '/dom/bluetooth/common/webapi',
-    '/dom/camera',
     '/dom/canvas',
     '/dom/geolocation',
     '/dom/html',
@@ -82,7 +92,11 @@ LOCAL_INCLUDES += [
     '/media/webrtc/',
     '/media/webrtc/signaling/src/common/time_profiling',
     '/media/webrtc/signaling/src/peerconnection',
+    '/media/webrtc/trunk/',
 ]
+
+DEFINES['GOOGLE_PROTOBUF_NO_RTTI'] = True
+DEFINES['GOOGLE_PROTOBUF_NO_STATIC_INITIALIZER'] = True
 
 UNIFIED_SOURCES += [
     'BindingUtils.cpp',
@@ -92,6 +106,8 @@ UNIFIED_SOURCES += [
     'DOMJSProxyHandler.cpp',
     'Exceptions.cpp',
     'IterableIterator.cpp',
+    'nsScriptError.cpp',
+    'nsScriptErrorWithStack.cpp',
     'SimpleGlobalObject.cpp',
     'ToJSValue.cpp',
     'WebIDLGlobalNameHash.cpp',
@@ -130,27 +146,33 @@ if CONFIG['MOZ_DEBUG']:
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
-if CONFIG['MOZ_AUDIO_CHANNEL_MANAGER']:
-    LOCAL_INCLUDES += [
-        '/dom/system/gonk',
-    ]
-
 FINAL_LIBRARY = 'xul'
 
 SPHINX_TREES['webidl'] = 'docs'
+
+with Files('docs/**'):
+    SCHEDULES.exclusive = ['docs']
+
 SPHINX_PYTHON_PACKAGE_DIRS += ['mozwebidlcodegen']
+
+with Files('mozwebidlcodegen/**.py'):
+    SCHEDULES.inclusive += ['docs']
 
 if CONFIG['MOZ_BUILD_APP'] in ['browser', 'mobile/android', 'xulrunner']:
     # This is needed for Window.webidl
     DEFINES['HAVE_SIDEBAR'] = True
 
 
-PYTHON_UNIT_TESTS += [
-    'mozwebidlcodegen/test/test_mozwebidlcodegen.py',
+PYTHON_UNITTEST_MANIFESTS += [
+    'mozwebidlcodegen/test/python.ini',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
+    # Suppress warnings in third-party code.
+    CXXFLAGS += [
+        '-Wno-maybe-uninitialized',
+    ]
 
 if CONFIG['COMPILE_ENVIRONMENT']:
     GENERATED_FILES += ['CSS2Properties.webidl']

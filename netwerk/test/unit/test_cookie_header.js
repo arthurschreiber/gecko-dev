@@ -1,8 +1,8 @@
 // This file tests bug 250375
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort + "/";
@@ -22,7 +22,7 @@ function check_request_header(chan, name, value) {
     do_throw("Expected to find header '" + name + "' but didn't find it, got exception: " + e);
   }
   dump("Value for header '" + name + "' is '" + chanValue + "'\n");
-  do_check_eq(chanValue, value);
+  Assert.equal(chanValue, value);
 }
 
 var cookieVal = "C1=V1";

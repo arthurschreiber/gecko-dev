@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -48,13 +47,16 @@ public:
                          const ScrollableLayerGuid& aGuid,
                          uint64_t aInputBlockId) override;
 
+  virtual void NotifyPinchGesture(PinchGestureInput::PinchGestureType aType,
+                                  const ScrollableLayerGuid& aGuid,
+                                  LayoutDeviceCoord aSpanChange,
+                                  Modifiers aModifiers) override;
+
   virtual void PostDelayedTask(already_AddRefed<Runnable> aTask, int aDelayMs) override;
 
   virtual bool IsRepaintThread() override;
 
   virtual void DispatchToRepaintThread(already_AddRefed<Runnable> aTask) override;
-
-  virtual bool GetTouchSensitiveRegion(CSSRect* aOutRegion) override;
 
   virtual void NotifyAPZStateChange(const ScrollableLayerGuid& aGuid,
                                     APZStateChange aChange,
@@ -64,14 +66,16 @@ public:
 
   virtual void UpdateOverscrollOffset(float aX, float aY, bool aIsRootContent) override;
 
-  virtual void SetScrollingRootContent(bool aIsRootContent) override;
-
   virtual void NotifyMozMouseScrollEvent(const FrameMetrics::ViewID& aScrollId,
                                          const nsString& aEvent) override;
 
   virtual void NotifyFlushComplete() override;
 
-  virtual bool RecvUpdateHitRegion(const nsRegion& aRegion) override;
+  virtual void NotifyAsyncScrollbarDragRejected(const FrameMetrics::ViewID& aScrollId) override;
+
+  virtual void NotifyAsyncAutoscrollRejected(const FrameMetrics::ViewID& aScrollId) override;
+
+  virtual void CancelAutoscroll(const ScrollableLayerGuid& aScrollId) override;
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -81,9 +85,14 @@ private:
   MessageLoop* mCompositorThread;
   bool mCanSend;
 
-  // Mutex protecting members below accessed from multiple threads.
-  mozilla::Mutex mMutex;
-  nsRegion mTouchSensitiveRegion;
+  void HandleTapOnMainThread(TapType aType,
+                             LayoutDevicePoint aPoint,
+                             Modifiers aModifiers,
+                             ScrollableLayerGuid aGuid,
+                             uint64_t aInputBlockId);
+
+  void CancelAutoscrollInProcess(const ScrollableLayerGuid& aScrollId);
+  void CancelAutoscrollCrossProcess(const ScrollableLayerGuid& aScrollId);
 };
 
 } // namespace layers

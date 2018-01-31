@@ -15,7 +15,7 @@
  *
  * - CssSheet provides a more useful API to a DOM CSSSheet for our purposes,
  *   including shortSource and href.
- * - CssRule a more useful API to a nsIDOMCSSRule including access to the group
+ * - CssRule a more useful API to a DOM CSSRule including access to the group
  *   of CssSelectors that the rule provides properties for
  * - CssSelector A single selector - i.e. not a selector group. In other words
  *   a CssSelector does not contain ','. This terminology is different from the
@@ -29,13 +29,18 @@
 
 "use strict";
 
-const { Cc, Ci, Cu } = require("chrome");
-const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const { getRootBindingParent } = require("devtools/shared/layout/utils");
+const { Cu } = require("chrome");
 const nodeConstants = require("devtools/shared/dom-node-constants");
-const {l10n, isContentStylesheet, shortSource, FILTER, STATUS} = require("devtools/shared/inspector/css-logic");
-
-loader.lazyRequireGetter(this, "CSSLexer", "devtools/shared/css-lexer");
+const {
+  getBindingElementAndPseudo,
+  getCSSStyleRules,
+  l10n,
+  isContentStylesheet,
+  shortSource,
+  FILTER,
+  STATUS
+} = require("devtools/shared/inspector/css-logic");
+const InspectorUtils = require("InspectorUtils");
 
 /**
  * @param {function} isInherited A function that determines if the CSS property
@@ -252,7 +257,7 @@ CssLogic.prototype = {
       cssSheet._passId = this._passId;
 
       // Find import and keyframes rules.
-      for (let aDomRule of domSheet.cssRules) {
+      for (let aDomRule of cssSheet.getCssRules()) {
         if (aDomRule.type == CSSRule.IMPORT_RULE &&
             aDomRule.styleSheet &&
             this.mediaMatches(aDomRule)) {
@@ -379,15 +384,15 @@ CssLogic.prototype = {
   /**
 
   /**
-   * Get the number nsIDOMCSSRule objects in the document, counted from all of
+   * Get the number CSSRule objects in the document, counted from all of
    * the stylesheets. System sheets are excluded. If a filter is active, this
-   * tells only the number of nsIDOMCSSRule objects inside the selected
+   * tells only the number of CSSRule objects inside the selected
    * CSSStyleSheet.
    *
    * WARNING: This only provides an estimate of the rule count, and the results
    * could change at a later date. Todo remove this
    *
-   * @return {number} the number of nsIDOMCSSRule (all rules).
+   * @return {number} the number of CSSRule (all rules).
    */
   get ruleCount() {
     if (!this._sheetsCached) {
@@ -469,7 +474,7 @@ CssLogic.prototype = {
   selectorMatchesElement: function (domRule, idx) {
     let element = this.viewedElement;
     do {
-      if (domUtils.selectorMatchesElement(element, domRule, idx)) {
+      if (InspectorUtils.selectorMatchesElement(element, domRule, idx)) {
         return true;
       }
     } while ((element = element.parentNode) &&
@@ -540,20 +545,16 @@ CssLogic.prototype = {
                    STATUS.MATCHED : STATUS.PARENT_MATCH;
 
       try {
-        // Handle finding rules on pseudo by reading style rules
-        // on the parent node with proper pseudo arg to getCSSStyleRules.
-        let {bindingElement, pseudo} =
-            CssLogic.getBindingElementAndPseudo(element);
-        domRules = domUtils.getCSSStyleRules(bindingElement, pseudo);
+        domRules = getCSSStyleRules(element);
       } catch (ex) {
         console.log("CL__buildMatchedRules error: " + ex);
         continue;
       }
 
       // getCSSStyleRules can return null with a shadow DOM element.
-      let numDomRules = domRules ? domRules.Count() : 0;
+      let numDomRules = domRules ? domRules.length : 0;
       for (let i = 0; i < numDomRules; i++) {
-        let domRule = domRules.GetElementAt(i);
+        let domRule = domRules[i];
         if (domRule.type !== CSSRule.STYLE_RULE) {
           continue;
         }
@@ -639,9 +640,9 @@ CssLogic.getShortName = function (element) {
 CssLogic.getSelectors = function (domRule) {
   let selectors = [];
 
-  let len = domUtils.getSelectorCount(domRule);
+  let len = InspectorUtils.getSelectorCount(domRule);
   for (let i = 0; i < len; i++) {
-    let text = domUtils.getSelectorText(domRule, i);
+    let text = InspectorUtils.getSelectorText(domRule, i);
     selectors.push(text);
   }
   return selectors;
@@ -657,21 +658,7 @@ CssLogic.getSelectors = function (domRule) {
  *            - {DOMNode} node The non-anonymous node
  *            - {string} pseudo One of ':before', ':after', or null.
  */
-CssLogic.getBindingElementAndPseudo = function (node) {
-  let bindingElement = node;
-  let pseudo = null;
-  if (node.nodeName == "_moz_generated_content_before") {
-    bindingElement = node.parentNode;
-    pseudo = ":before";
-  } else if (node.nodeName == "_moz_generated_content_after") {
-    bindingElement = node.parentNode;
-    pseudo = ":after";
-  }
-  return {
-    bindingElement: bindingElement,
-    pseudo: pseudo
-  };
-};
+CssLogic.getBindingElementAndPseudo = getBindingElementAndPseudo;
 
 /**
  * Get the computed style on a node.  Automatically handles reading
@@ -685,14 +672,12 @@ CssLogic.getComputedStyle = function (node) {
   if (!node ||
       Cu.isDeadWrapper(node) ||
       node.nodeType !== nodeConstants.ELEMENT_NODE ||
-      !node.ownerDocument ||
-      !node.ownerDocument.defaultView) {
+      !node.ownerGlobal) {
     return null;
   }
 
   let {bindingElement, pseudo} = CssLogic.getBindingElementAndPseudo(node);
-  return node.ownerDocument.defaultView.getComputedStyle(bindingElement,
-                                                         pseudo);
+  return node.ownerGlobal.getComputedStyle(bindingElement, pseudo);
 };
 
 /**
@@ -710,86 +695,6 @@ CssLogic.href = function (sheet) {
   }
 
   return href;
-};
-
-/**
- * Find the position of [element] in [nodeList].
- * @returns an index of the match, or -1 if there is no match
- */
-function positionInNodeList(element, nodeList) {
-  for (let i = 0; i < nodeList.length; i++) {
-    if (element === nodeList[i]) {
-      return i;
-    }
-  }
-  return -1;
-}
-
-/**
- * Find a unique CSS selector for a given element
- * @returns a string such that ele.ownerDocument.querySelector(reply) === ele
- * and ele.ownerDocument.querySelectorAll(reply).length === 1
- */
-CssLogic.findCssSelector = function (ele) {
-  ele = getRootBindingParent(ele);
-  let document = ele.ownerDocument;
-  if (!document || !document.contains(ele)) {
-    throw new Error("findCssSelector received element not inside document");
-  }
-
-  // document.querySelectorAll("#id") returns multiple if elements share an ID
-  if (ele.id &&
-      document.querySelectorAll("#" + CSS.escape(ele.id)).length === 1) {
-    return "#" + CSS.escape(ele.id);
-  }
-
-  // Inherently unique by tag name
-  let tagName = ele.localName;
-  if (tagName === "html") {
-    return "html";
-  }
-  if (tagName === "head") {
-    return "head";
-  }
-  if (tagName === "body") {
-    return "body";
-  }
-
-  // We might be able to find a unique class name
-  let selector, index, matches;
-  if (ele.classList.length > 0) {
-    for (let i = 0; i < ele.classList.length; i++) {
-      // Is this className unique by itself?
-      selector = "." + CSS.escape(ele.classList.item(i));
-      matches = document.querySelectorAll(selector);
-      if (matches.length === 1) {
-        return selector;
-      }
-      // Maybe it's unique with a tag name?
-      selector = tagName + selector;
-      matches = document.querySelectorAll(selector);
-      if (matches.length === 1) {
-        return selector;
-      }
-      // Maybe it's unique using a tag name and nth-child
-      index = positionInNodeList(ele, ele.parentNode.children) + 1;
-      selector = selector + ":nth-child(" + index + ")";
-      matches = document.querySelectorAll(selector);
-      if (matches.length === 1) {
-        return selector;
-      }
-    }
-  }
-
-  // Not unique enough yet.  As long as it's not a child of the document,
-  // continue recursing up until it is unique enough.
-  if (ele.parentNode !== document) {
-    index = positionInNodeList(ele, ele.parentNode.children) + 1;
-    selector = CssLogic.findCssSelector(ele.parentNode) + " > " +
-      tagName + ":nth-child(" + index + ")";
-  }
-
-  return selector;
 };
 
 /**
@@ -901,12 +806,32 @@ CssSheet.prototype = {
   /**
    * Retrieve the number of rules in this stylesheet.
    *
-   * @return {number} the number of nsIDOMCSSRule objects in this stylesheet.
+   * @return {number} the number of CSSRule objects in this stylesheet.
    */
   get ruleCount() {
-    return this._ruleCount > -1 ?
-      this._ruleCount :
-      this.domSheet.cssRules.length;
+    try {
+      return this._ruleCount > -1 ?
+        this._ruleCount :
+        this.getCssRules().length;
+    } catch (e) {
+      return 0;
+    }
+  },
+
+  /**
+   * Retrieve the array of css rules for this stylesheet.
+   *
+   * Accessing cssRules on a stylesheet that is not completely loaded can throw a
+   * DOMException (Bug 625013). This wrapper will return an empty array instead.
+   *
+   * @return {Array} array of css rules.
+   **/
+  getCssRules: function () {
+    try {
+      return this.domSheet.cssRules;
+    } catch (e) {
+      return [];
+    }
   },
 
   /**
@@ -979,7 +904,8 @@ function CssRule(cssSheet, domRule, element) {
   if (this._cssSheet) {
     // parse domRule.selectorText on call to this.selectors
     this._selectors = null;
-    this.line = domUtils.getRuleLine(this.domRule);
+    this.line = InspectorUtils.getRuleLine(this.domRule);
+    this.column = InspectorUtils.getRuleColumn(this.domRule);
     this.source = this._cssSheet.shortSource + ":" + this.line;
     if (this.mediaText) {
       this.source += " @media " + this.mediaText;
@@ -1173,6 +1099,16 @@ CssSelector.prototype = {
   },
 
   /**
+   * Retrieve the column of the parent CSSStyleRule in the parent CSSStyleSheet.
+   *
+   * @return {number} the column of the parent CSSStyleRule in the parent
+   * stylesheet.
+   */
+  get ruleColumn() {
+    return this.cssRule.column;
+  },
+
+  /**
    * Retrieve specificity information for the current selector.
    *
    * @see http://www.w3.org/TR/css3-selectors/#specificity
@@ -1184,17 +1120,17 @@ CssSelector.prototype = {
     if (this.elementStyle) {
       // We can't ask specificity from DOMUtils as element styles don't provide
       // CSSStyleRule interface DOMUtils expect. However, specificity of element
-      // style is constant, 1,0,0,0 or 0x01000000, just return the constant
+      // style is constant, 1,0,0,0 or 0x40000000, just return the constant
       // directly. @see http://www.w3.org/TR/CSS2/cascade.html#specificity
-      return 0x01000000;
+      return 0x40000000;
     }
 
     if (this._specificity) {
       return this._specificity;
     }
 
-    this._specificity = domUtils.getSpecificity(this.cssRule.domRule,
-                                                this.selectorIndex);
+    this._specificity = InspectorUtils.getSpecificity(this.cssRule.domRule,
+                                                      this.selectorIndex);
 
     return this._specificity;
   },
@@ -1328,14 +1264,10 @@ CssPropertyInfo.prototype = {
    */
   _refilterSelectors: function () {
     let passId = ++this._cssLogic._passId;
-    let ruleCount = 0;
 
     let iterator = function (selectorInfo) {
       let cssRule = selectorInfo.selector.cssRule;
       if (cssRule._passId != passId) {
-        if (cssRule.sheetAllowed) {
-          ruleCount++;
-        }
         cssRule._passId = passId;
       }
     };
@@ -1461,6 +1393,16 @@ CssSelectorInfo.prototype = {
   },
 
   /**
+   * Retrieve the column of the parent CSSStyleRule in the parent CSSStyleSheet.
+   *
+   * @return {number} the column of the parent CSSStyleRule in the parent
+   * stylesheet.
+   */
+  get ruleColumn() {
+    return this.selector.ruleColumn;
+  },
+
+  /**
    * Check if the selector comes from a browser-provided stylesheet.
    *
    * @return {boolean} true if the selector comes from a browser-provided
@@ -1527,6 +1469,13 @@ CssSelectorInfo.prototype = {
       return 1;
     }
 
+    if (this.ruleColumn > that.ruleColumn) {
+      return -1;
+    }
+    if (that.ruleColumn > this.ruleColumn) {
+      return 1;
+    }
+
     return 0;
   },
 
@@ -1534,7 +1483,3 @@ CssSelectorInfo.prototype = {
     return this.selector + " -> " + this.value;
   },
 };
-
-DevToolsUtils.defineLazyGetter(this, "domUtils", function () {
-  return Cc["@mozilla.org/inspector/dom-utils;1"].getService(Ci.inIDOMUtils);
-});

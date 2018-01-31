@@ -7,6 +7,7 @@
 #include "FileSystemRootDirectoryReader.h"
 #include "CallbackRunnables.h"
 #include "nsIGlobalObject.h"
+#include "mozilla/dom/FileSystemUtils.h"
 
 namespace mozilla {
 namespace dom {
@@ -18,7 +19,8 @@ class EntriesCallbackRunnable final : public Runnable
 public:
   EntriesCallbackRunnable(FileSystemEntriesCallback* aCallback,
                           const Sequence<RefPtr<FileSystemEntry>>& aEntries)
-    : mCallback(aCallback)
+    : Runnable("EntriesCallbackRunnable")
+    , mCallback(aCallback)
     , mEntries(aEntries)
   {
     MOZ_ASSERT(aCallback);
@@ -53,17 +55,17 @@ NS_IMPL_ADDREF_INHERITED(FileSystemRootDirectoryReader,
 NS_IMPL_RELEASE_INHERITED(FileSystemRootDirectoryReader,
                           FileSystemDirectoryReader)
 
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(FileSystemRootDirectoryReader)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(FileSystemRootDirectoryReader)
 NS_INTERFACE_MAP_END_INHERITING(FileSystemDirectoryReader)
 
-FileSystemRootDirectoryReader::FileSystemRootDirectoryReader(nsIGlobalObject* aGlobal,
+FileSystemRootDirectoryReader::FileSystemRootDirectoryReader(FileSystemDirectoryEntry* aParentEntry,
                                                              FileSystem* aFileSystem,
                                                              const Sequence<RefPtr<FileSystemEntry>>& aEntries)
-  : FileSystemDirectoryReader(aGlobal, aFileSystem, nullptr)
+  : FileSystemDirectoryReader(aParentEntry, aFileSystem, nullptr)
   , mEntries(aEntries)
   , mAlreadyRead(false)
 {
-  MOZ_ASSERT(aGlobal);
+  MOZ_ASSERT(aParentEntry);
   MOZ_ASSERT(aFileSystem);
 }
 
@@ -78,8 +80,8 @@ FileSystemRootDirectoryReader::ReadEntries(FileSystemEntriesCallback& aSuccessCa
   if (mAlreadyRead) {
     RefPtr<EmptyEntriesCallbackRunnable> runnable =
       new EmptyEntriesCallbackRunnable(&aSuccessCallback);
-    aRv = NS_DispatchToMainThread(runnable);
-    NS_WARNING_ASSERTION(!aRv.Failed(), "NS_DispatchToMainThread failed");
+
+    aRv = FileSystemUtils::DispatchRunnable(GetParentObject(), runnable.forget());
     return;
   }
 
@@ -88,8 +90,8 @@ FileSystemRootDirectoryReader::ReadEntries(FileSystemEntriesCallback& aSuccessCa
 
   RefPtr<EntriesCallbackRunnable> runnable =
     new EntriesCallbackRunnable(&aSuccessCallback, mEntries);
-  aRv = NS_DispatchToMainThread(runnable);
-  NS_WARNING_ASSERTION(!aRv.Failed(), "NS_DispatchToMainThread failed");
+
+  aRv = FileSystemUtils::DispatchRunnable(GetParentObject(), runnable.forget());
 }
 
 } // dom namespace

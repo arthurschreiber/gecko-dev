@@ -7,13 +7,12 @@ function test()
 {
   waitForExplicitFinish();
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.selectedBrowser.addEventListener("load", function onLoad() {
-    gBrowser.selectedBrowser.removeEventListener("load", onLoad, true);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(function () {
     openScratchpad(testFalsy);
-  }, true);
+  });
 
-  content.location = "data:text/html,<p>test falsy display() values in Scratchpad";
+  gBrowser.loadURI("data:text/html,<p>test falsy display() values in Scratchpad");
 }
 
 function testFalsy()

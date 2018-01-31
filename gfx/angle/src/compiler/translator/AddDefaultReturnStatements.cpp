@@ -10,6 +10,7 @@
 #include "compiler/translator/AddDefaultReturnStatements.h"
 
 #include "compiler/translator/IntermNode.h"
+#include "compiler/translator/IntermNode_util.h"
 #include "compiler/translator/util.h"
 
 namespace sh
@@ -18,99 +19,40 @@ namespace sh
 namespace
 {
 
-class AddDefaultReturnStatementsTraverser : private TIntermTraverser
+bool NeedsReturnStatement(TIntermFunctionDefinition *node, TType *returnType)
 {
-  public:
-    static void Apply(TIntermNode *root)
+    *returnType = node->getFunctionPrototype()->getType();
+    if (returnType->getBasicType() == EbtVoid)
     {
-        AddDefaultReturnStatementsTraverser separateInit;
-        root->traverse(&separateInit);
-        separateInit.updateTree();
+        return false;
     }
 
-  private:
-    AddDefaultReturnStatementsTraverser() : TIntermTraverser(true, false, false) {}
-
-    static bool IsFunctionWithoutReturnStatement(TIntermAggregate *node, TType *returnType)
+    TIntermBlock *bodyNode    = node->getBody();
+    TIntermBranch *returnNode = bodyNode->getSequence()->back()->getAsBranchNode();
+    if (returnNode != nullptr && returnNode->getFlowOp() == EOpReturn)
     {
-        *returnType = node->getType();
-        if (node->getOp() != EOpFunction || node->getType().getBasicType() == EbtVoid)
-        {
-            return false;
-        }
-
-        TIntermAggregate *lastNode = node->getSequence()->back()->getAsAggregate();
-        if (lastNode == nullptr)
-        {
-            return true;
-        }
-
-        TIntermBranch *returnNode = lastNode->getSequence()->front()->getAsBranchNode();
-        if (returnNode != nullptr && returnNode->getFlowOp() == EOpReturn)
-        {
-            return false;
-        }
-
-        return true;
+        return false;
     }
 
-    static TIntermTyped *GenerateTypeConstructor(const TType &returnType)
-    {
-        // Base case, constructing a single element
-        if (!returnType.isArray())
-        {
-            size_t objectSize             = returnType.getObjectSize();
-            TConstantUnion *constantUnion = new TConstantUnion[objectSize];
-            for (size_t constantIdx = 0; constantIdx < objectSize; constantIdx++)
-            {
-                constantUnion[constantIdx].setFConst(0.0f);
-            }
+    return true;
+}
 
-            TIntermConstantUnion *intermConstantUnion =
-                new TIntermConstantUnion(constantUnion, returnType);
-            return intermConstantUnion;
-        }
-
-        // Recursive case, construct an array of single elements
-        TIntermAggregate *constructorAggrigate =
-            new TIntermAggregate(TypeToConstructorOperator(returnType));
-        constructorAggrigate->setType(returnType);
-
-        size_t arraySize = returnType.getArraySize();
-        for (size_t arrayIdx = 0; arrayIdx < arraySize; arrayIdx++)
-        {
-            TType arrayElementType(returnType);
-            arrayElementType.clearArrayness();
-
-            constructorAggrigate->getSequence()->push_back(
-                GenerateTypeConstructor(arrayElementType));
-        }
-
-        return constructorAggrigate;
-    }
-
-    bool visitAggregate(Visit, TIntermAggregate *node) override
-    {
-        TType returnType;
-        if (IsFunctionWithoutReturnStatement(node, &returnType))
-        {
-            TIntermBranch *branch =
-                new TIntermBranch(EOpReturn, GenerateTypeConstructor(returnType));
-
-            TIntermAggregate *lastNode = node->getSequence()->back()->getAsAggregate();
-            lastNode->getSequence()->push_back(branch);
-
-            return false;
-        }
-
-        return true;
-    }
-};
 }  // anonymous namespace
 
-void AddDefaultReturnStatements(TIntermNode *node)
+void AddDefaultReturnStatements(TIntermBlock *root)
 {
-    AddDefaultReturnStatementsTraverser::Apply(node);
+    TType returnType;
+    for (TIntermNode *node : *root->getSequence())
+    {
+        TIntermFunctionDefinition *definition = node->getAsFunctionDefinition();
+        if (definition != nullptr && NeedsReturnStatement(definition, &returnType))
+        {
+            TIntermBranch *branch = new TIntermBranch(EOpReturn, CreateZeroNode(returnType));
+
+            TIntermBlock *bodyNode = definition->getBody();
+            bodyNode->getSequence()->push_back(branch);
+        }
+    }
 }
 
 }  // namespace sh

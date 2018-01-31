@@ -56,6 +56,55 @@
 # define HAVE_ARC4RANDOM
 #endif
 
+#if defined(__linux__)
+# include <linux/random.h> // For GRND_NONBLOCK.
+# include <sys/syscall.h> // For SYS_getrandom.
+
+// Older glibc versions don't define SYS_getrandom, so we define it here if
+// it's not available. See bug 995069.
+# if defined(__x86_64__)
+#  define GETRANDOM_NR 318
+# elif defined(__i386__)
+#  define GETRANDOM_NR 355
+# elif defined(__aarch64__)
+#  define GETRANDOM_NR 278
+# elif defined(__arm__)
+#  define GETRANDOM_NR 384
+# elif defined(__powerpc__)
+#  define GETRANDOM_NR 359
+# elif defined(__s390__)
+#  define GETRANDOM_NR 349
+# elif defined(__mips__)
+#  include <sgidefs.h>
+#  if _MIPS_SIM == _MIPS_SIM_ABI32
+#    define GETRANDOM_NR 4353
+#  elif _MIPS_SIM == _MIPS_SIM_ABI64
+#    define GETRANDOM_NR 5313
+#  elif _MIPS_SIM == _MIPS_SIM_NABI32
+#    define GETRANDOM_NR 6317
+#  endif
+# endif
+
+# if defined(SYS_getrandom)
+// We have SYS_getrandom. Use it to check GETRANDOM_NR. Only do this if we set
+// GETRANDOM_NR so tier 3 platforms with recent glibc are not forced to define
+// it for no good reason.
+#  if defined(GETRANDOM_NR)
+static_assert(GETRANDOM_NR == SYS_getrandom,
+              "GETRANDOM_NR should match the actual SYS_getrandom value");
+#  endif
+# else
+#  define SYS_getrandom GETRANDOM_NR
+# endif
+
+# if defined(GRND_NONBLOCK)
+static_assert(GRND_NONBLOCK == 1, "If GRND_NONBLOCK is not 1 the #define below is wrong");
+# else
+#  define GRND_NONBLOCK 1
+# endif
+
+#endif // defined(__linux__)
+
 using namespace js;
 
 using mozilla::Abs;
@@ -82,7 +131,7 @@ static const JSConstDoubleSpec math_constants[] = {
     {"PI"     ,  M_PI      },
     {"SQRT2"  ,  M_SQRT2   },
     {"SQRT1_2",  M_SQRT1_2 },
-    {0,0}
+    {nullptr  ,  0         }
 };
 
 MathCache::MathCache() {
@@ -134,12 +183,14 @@ js::math_abs(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_acos_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::acos, x, MathCache::Acos);
 }
 
 double
 js::math_acos_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::acos(x);
 }
 
@@ -157,7 +208,7 @@ js::math_acos(JSContext* cx, unsigned argc, Value* vp)
     if (!ToNumber(cx, args[0], &x))
         return false;
 
-    MathCache* mathCache = cx->caches.getMathCache(cx);
+    MathCache* mathCache = cx->caches().getMathCache(cx);
     if (!mathCache)
         return false;
 
@@ -169,12 +220,14 @@ js::math_acos(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_asin_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::asin, x, MathCache::Asin);
 }
 
 double
 js::math_asin_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::asin(x);
 }
 
@@ -192,7 +245,7 @@ js::math_asin(JSContext* cx, unsigned argc, Value* vp)
     if (!ToNumber(cx, args[0], &x))
         return false;
 
-    MathCache* mathCache = cx->caches.getMathCache(cx);
+    MathCache* mathCache = cx->caches().getMathCache(cx);
     if (!mathCache)
         return false;
 
@@ -204,12 +257,14 @@ js::math_asin(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_atan_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::atan, x, MathCache::Atan);
 }
 
 double
 js::math_atan_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::atan(x);
 }
 
@@ -227,7 +282,7 @@ js::math_atan(JSContext* cx, unsigned argc, Value* vp)
     if (!ToNumber(cx, args[0], &x))
         return false;
 
-    MathCache* mathCache = cx->caches.getMathCache(cx);
+    MathCache* mathCache = cx->caches().getMathCache(cx);
     if (!mathCache)
         return false;
 
@@ -239,6 +294,7 @@ js::math_atan(JSContext* cx, unsigned argc, Value* vp)
 double
 js::ecmaAtan2(double y, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::atan2(y, x);
 }
 
@@ -269,6 +325,7 @@ js::math_atan2(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_ceil_impl(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::ceil(x);
 }
 
@@ -323,12 +380,14 @@ js::math_clz32(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_cos_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(cos, x, MathCache::Cos);
 }
 
 double
 js::math_cos_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cos(x);
 }
 
@@ -346,7 +405,7 @@ js::math_cos(JSContext* cx, unsigned argc, Value* vp)
     if (!ToNumber(cx, args[0], &x))
         return false;
 
-    MathCache* mathCache = cx->caches.getMathCache(cx);
+    MathCache* mathCache = cx->caches().getMathCache(cx);
     if (!mathCache)
         return false;
 
@@ -358,12 +417,14 @@ js::math_cos(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_exp_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::exp, x, MathCache::Exp);
 }
 
 double
 js::math_exp_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::exp(x);
 }
 
@@ -381,7 +442,7 @@ js::math_exp(JSContext* cx, unsigned argc, Value* vp)
     if (!ToNumber(cx, args[0], &x))
         return false;
 
-    MathCache* mathCache = cx->caches.getMathCache(cx);
+    MathCache* mathCache = cx->caches().getMathCache(cx);
     if (!mathCache)
         return false;
 
@@ -393,6 +454,7 @@ js::math_exp(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_floor_impl(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::floor(x);
 }
 
@@ -483,12 +545,14 @@ js::math_fround(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_log_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(math_log_uncached, x, MathCache::Log);
 }
 
 double
 js::math_log_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::log(x);
 }
 
@@ -499,7 +563,7 @@ js::math_log_handle(JSContext* cx, HandleValue val, MutableHandleValue res)
     if (!ToNumber(cx, val, &in))
         return false;
 
-    MathCache* mathCache = cx->caches.getMathCache(cx);
+    MathCache* mathCache = cx->caches().getMathCache(cx);
     if (!mathCache)
         return false;
 
@@ -524,6 +588,8 @@ js::math_log(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_max_impl(double x, double y)
 {
+    AutoUnsafeCallWithABI unsafe;
+
     // Math.max(num, NaN) => NaN, Math.max(-0, +0) => +0
     if (x > y || IsNaN(x) || (x == y && IsNegative(y)))
         return x;
@@ -549,6 +615,8 @@ js::math_max(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_min_impl(double x, double y)
 {
+    AutoUnsafeCallWithABI unsafe;
+
     // Math.min(num, NaN) => NaN, Math.min(-0, +0) => -0
     if (x < y || IsNaN(x) || (x == y && IsNegativeZero(x)))
         return x;
@@ -592,6 +660,7 @@ js::minmax_impl(JSContext* cx, bool max, HandleValue a, HandleValue b, MutableHa
 double
 js::powi(double x, int y)
 {
+    AutoUnsafeCallWithABI unsafe;
     unsigned n = (y < 0) ? -y : y;
     double m = x;
     double p = 1;
@@ -620,6 +689,8 @@ js::powi(double x, int y)
 double
 js::ecmaPow(double x, double y)
 {
+    AutoUnsafeCallWithABI unsafe;
+
     /*
      * Use powi if the exponent is an integer-valued double. We don't have to
      * check for NaN since a comparison with NaN is always false.
@@ -676,8 +747,8 @@ js::math_pow(JSContext* cx, unsigned argc, Value* vp)
     return math_pow_handle(cx, args.get(0), args.get(1), args.rval());
 }
 
-static uint64_t
-GenerateSeed()
+uint64_t
+js::GenerateRandomSeed()
 {
     uint64_t seed = 0;
 
@@ -686,17 +757,28 @@ GenerateSeed()
 #elif defined(HAVE_ARC4RANDOM)
     seed = (static_cast<uint64_t>(arc4random()) << 32) | arc4random();
 #elif defined(XP_UNIX)
-    int fd = open("/dev/urandom", O_RDONLY);
-    if (fd >= 0) {
-        mozilla::Unused << read(fd, static_cast<void*>(&seed), sizeof(seed));
-        close(fd);
+    bool done = false;
+# if defined(__linux__)
+    // Try the relatively new getrandom syscall first. It's the preferred way
+    // on Linux as /dev/urandom may not work inside chroots and is harder to
+    // sandbox (see bug 995069).
+    int ret = syscall(SYS_getrandom, &seed, sizeof(seed), GRND_NONBLOCK);
+    done = (ret == sizeof(seed));
+# endif
+    if (!done) {
+        int fd = open("/dev/urandom", O_RDONLY);
+        if (fd >= 0) {
+            mozilla::Unused << read(fd, static_cast<void*>(&seed), sizeof(seed));
+            close(fd);
+        }
     }
 #else
-# error "Platform needs to implement GenerateSeed()"
+# error "Platform needs to implement GenerateRandomSeed()"
 #endif
 
     // Also mix in PRMJ_Now() in case we couldn't read random bits from the OS.
-    return seed ^ PRMJ_Now();
+    uint64_t timestamp = PRMJ_Now();
+    return seed ^ timestamp ^ (timestamp << 32);
 }
 
 void
@@ -704,8 +786,8 @@ js::GenerateXorShift128PlusSeed(mozilla::Array<uint64_t, 2>& seed)
 {
     // XorShift128PlusRNG must be initialized with a non-zero seed.
     do {
-        seed[0] = GenerateSeed();
-        seed[1] = GenerateSeed();
+        seed[0] = GenerateRandomSeed();
+        seed[1] = GenerateRandomSeed();
     } while (seed[0] == 0 && seed[1] == 0);
 }
 
@@ -765,6 +847,8 @@ template float js::GetBiggestNumberLessThan<>(float x);
 double
 js::math_round_impl(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
+
     int32_t ignored;
     if (NumberIsInt32(x, &ignored))
         return x;
@@ -780,6 +864,8 @@ js::math_round_impl(double x)
 float
 js::math_roundf_impl(float x)
 {
+    AutoUnsafeCallWithABI unsafe;
+
     int32_t ignored;
     if (NumberIsInt32(x, &ignored))
         return x;
@@ -808,12 +894,14 @@ js::math_round(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_sin_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(math_sin_uncached, x, MathCache::Sin);
 }
 
 double
 js::math_sin_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
 #ifdef _WIN64
     // Workaround MSVC bug where sin(-0) is +0 instead of -0 on x64 on
     // CPUs without FMA3 (pre-Haswell). See bug 1076670.
@@ -830,7 +918,7 @@ js::math_sin_handle(JSContext* cx, HandleValue val, MutableHandleValue res)
     if (!ToNumber(cx, val, &in))
         return false;
 
-    MathCache* mathCache = cx->caches.getMathCache(cx);
+    MathCache* mathCache = cx->caches().getMathCache(cx);
     if (!mathCache)
         return false;
 
@@ -855,9 +943,10 @@ js::math_sin(JSContext* cx, unsigned argc, Value* vp)
 void
 js::math_sincos_uncached(double x, double *sin, double *cos)
 {
-#if defined(__GLIBC__)
+    AutoUnsafeCallWithABI unsafe;
+#if defined(HAVE_SINCOS)
     sincos(x, sin, cos);
-#elif defined(HAVE_SINCOS)
+#elif defined(HAVE___SINCOS)
     __sincos(x, sin, cos);
 #else
     *sin = js::math_sin_uncached(x);
@@ -868,6 +957,7 @@ js::math_sincos_uncached(double x, double *sin, double *cos)
 void
 js::math_sincos_impl(MathCache* mathCache, double x, double *sin, double *cos)
 {
+    AutoUnsafeCallWithABI unsafe;
     unsigned indexSin;
     unsigned indexCos;
     bool hasSin = mathCache->isCached(x, MathCache::Sin, sin, &indexSin);
@@ -893,7 +983,7 @@ js::math_sqrt_handle(JSContext* cx, HandleValue number, MutableHandleValue resul
     if (!ToNumber(cx, number, &x))
         return false;
 
-    MathCache* mathCache = cx->caches.getMathCache(cx);
+    MathCache* mathCache = cx->caches().getMathCache(cx);
     if (!mathCache)
         return false;
 
@@ -918,12 +1008,14 @@ js::math_sqrt(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_tan_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(tan, x, MathCache::Tan);
 }
 
 double
 js::math_tan_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return tan(x);
 }
 
@@ -941,7 +1033,7 @@ js::math_tan(JSContext* cx, unsigned argc, Value* vp)
     if (!ToNumber(cx, args[0], &x))
         return false;
 
-    MathCache* mathCache = cx->caches.getMathCache(cx);
+    MathCache* mathCache = cx->caches().getMathCache(cx);
     if (!mathCache)
         return false;
 
@@ -965,7 +1057,7 @@ static bool math_function(JSContext* cx, unsigned argc, Value* vp)
     if (!ToNumber(cx, args[0], &x))
         return false;
 
-    MathCache* mathCache = cx->caches.getMathCache(cx);
+    MathCache* mathCache = cx->caches().getMathCache(cx);
     if (!mathCache)
         return false;
     double z = F(mathCache, x);
@@ -977,12 +1069,14 @@ static bool math_function(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_log10_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::log10, x, MathCache::Log10);
 }
 
 double
 js::math_log10_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::log10(x);
 }
 
@@ -995,12 +1089,14 @@ js::math_log10(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_log2_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::log2, x, MathCache::Log2);
 }
 
 double
 js::math_log2_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::log2(x);
 }
 
@@ -1013,12 +1109,14 @@ js::math_log2(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_log1p_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::log1p, x, MathCache::Log1p);
 }
 
 double
 js::math_log1p_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::log1p(x);
 }
 
@@ -1031,12 +1129,14 @@ js::math_log1p(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_expm1_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::expm1, x, MathCache::Expm1);
 }
 
 double
 js::math_expm1_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::expm1(x);
 }
 
@@ -1049,12 +1149,14 @@ js::math_expm1(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_cosh_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::cosh, x, MathCache::Cosh);
 }
 
 double
 js::math_cosh_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::cosh(x);
 }
 
@@ -1067,12 +1169,14 @@ js::math_cosh(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_sinh_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::sinh, x, MathCache::Sinh);
 }
 
 double
 js::math_sinh_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::sinh(x);
 }
 
@@ -1085,12 +1189,14 @@ js::math_sinh(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_tanh_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::tanh, x, MathCache::Tanh);
 }
 
 double
 js::math_tanh_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::tanh(x);
 }
 
@@ -1103,12 +1209,14 @@ js::math_tanh(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_acosh_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::acosh, x, MathCache::Acosh);
 }
 
 double
 js::math_acosh_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::acosh(x);
 }
 
@@ -1121,12 +1229,14 @@ js::math_acosh(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_asinh_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::asinh, x, MathCache::Asinh);
 }
 
 double
 js::math_asinh_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::asinh(x);
 }
 
@@ -1139,12 +1249,14 @@ js::math_asinh(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_atanh_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::atanh, x, MathCache::Atanh);
 }
 
 double
 js::math_atanh_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::atanh(x);
 }
 
@@ -1158,6 +1270,7 @@ js::math_atanh(JSContext* cx, unsigned argc, Value* vp)
 double
 js::ecmaHypot(double x, double y)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::hypot(x, y);
 }
 
@@ -1177,6 +1290,8 @@ hypot_step(double& scale, double& sumsq, double x)
 double
 js::hypot4(double x, double y, double z, double w)
 {
+    AutoUnsafeCallWithABI unsafe;
+
     /* Check for infinity or NaNs so that we can return immediatelly.
      * Does not need to be WIN_XP specific as ecmaHypot
      */
@@ -1202,6 +1317,7 @@ js::hypot4(double x, double y, double z, double w)
 double
 js::hypot3(double x, double y, double z)
 {
+    AutoUnsafeCallWithABI unsafe;
     return hypot4(x, y, z, 0.0);
 }
 
@@ -1258,12 +1374,14 @@ js::math_hypot_handle(JSContext* cx, HandleValueArray args, MutableHandleValue r
 double
 js::math_trunc_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::trunc, x, MathCache::Trunc);
 }
 
 double
 js::math_trunc_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::trunc(x);
 }
 
@@ -1284,12 +1402,14 @@ static double sign(double x)
 double
 js::math_sign_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(sign, x, MathCache::Sign);
 }
 
 double
 js::math_sign_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return sign(x);
 }
 
@@ -1302,12 +1422,14 @@ js::math_sign(JSContext* cx, unsigned argc, Value* vp)
 double
 js::math_cbrt_impl(MathCache* cache, double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return cache->lookup(fdlibm::cbrt, x, MathCache::Cbrt);
 }
 
 double
 js::math_cbrt_uncached(double x)
 {
+    AutoUnsafeCallWithABI unsafe;
     return fdlibm::cbrt(x);
 }
 
@@ -1372,18 +1494,16 @@ static const JSFunctionSpec math_static_methods[] = {
 JSObject*
 js::InitMathClass(JSContext* cx, HandleObject obj)
 {
-    RootedObject proto(cx, obj->as<GlobalObject>().getOrCreateObjectPrototype(cx));
+    Handle<GlobalObject*> global = obj.as<GlobalObject>();
+    RootedObject proto(cx, GlobalObject::getOrCreateObjectPrototype(cx, global));
     if (!proto)
         return nullptr;
     RootedObject Math(cx, NewObjectWithGivenProto(cx, &MathClass, proto, SingletonObject));
     if (!Math)
         return nullptr;
 
-    if (!JS_DefineProperty(cx, obj, js_Math_str, Math, JSPROP_RESOLVING,
-                           JS_STUBGETTER, JS_STUBSETTER))
-    {
+    if (!JS_DefineProperty(cx, obj, js_Math_str, Math, JSPROP_RESOLVING))
         return nullptr;
-    }
     if (!JS_DefineFunctions(cx, Math, math_static_methods))
         return nullptr;
     if (!JS_DefineConstDoubles(cx, Math, math_constants))

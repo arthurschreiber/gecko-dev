@@ -78,8 +78,7 @@ static const gl::GLFeature kRequiredFeatures[] = {
     gl::GLFeature::query_objects,
     gl::GLFeature::renderbuffer_color_float,
     gl::GLFeature::renderbuffer_color_half_float,
-    gl::GLFeature::sRGB_framebuffer,
-    gl::GLFeature::sRGB_texture,
+    gl::GLFeature::sRGB,
     gl::GLFeature::sampler_objects,
     gl::GLFeature::standard_derivatives,
     gl::GLFeature::texture_3D,
@@ -138,7 +137,7 @@ WebGLContext::InitWebGL2(FailureReason* const out_failReason)
 
     ////
 
-    if (missingList.size()) {
+    if (!missingList.empty()) {
         nsAutoCString exts;
         for (auto itr = missingList.begin(); itr != missingList.end(); ++itr) {
             exts.AppendLiteral("\n  ");
@@ -158,11 +157,12 @@ WebGLContext::InitWebGL2(FailureReason* const out_failReason)
     gl->GetUIntegerv(LOCAL_GL_MAX_UNIFORM_BUFFER_BINDINGS,
                      &mGLMaxUniformBufferBindings);
 
-    mBoundTransformFeedbackBuffers.SetLength(mGLMaxTransformFeedbackSeparateAttribs);
-    mBoundUniformBuffers.SetLength(mGLMaxUniformBufferBindings);
+    mIndexedUniformBufferBindings.resize(mGLMaxUniformBufferBindings);
 
     mDefaultTransformFeedback = new WebGLTransformFeedback(this, 0);
     mBoundTransformFeedback = mDefaultTransformFeedback;
+
+    gl->fGenTransformFeedbacks(1, &mEmptyTFO);
 
     ////
 
@@ -176,26 +176,7 @@ WebGLContext::InitWebGL2(FailureReason* const out_failReason)
         gl->fEnable(LOCAL_GL_PRIMITIVE_RESTART_FIXED_INDEX);
     } else {
         MOZ_ASSERT(gl->IsSupported(gl::GLFeature::prim_restart));
-        gl->fEnable(LOCAL_GL_PRIMITIVE_RESTART);
     }
-
-    //////
-
-    static const GLenum kWebGL2_CompressedFormats[] = {
-        LOCAL_GL_COMPRESSED_R11_EAC,
-        LOCAL_GL_COMPRESSED_SIGNED_R11_EAC,
-        LOCAL_GL_COMPRESSED_RG11_EAC,
-        LOCAL_GL_COMPRESSED_SIGNED_RG11_EAC,
-        LOCAL_GL_COMPRESSED_RGB8_ETC2,
-        LOCAL_GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2,
-        LOCAL_GL_COMPRESSED_RGBA8_ETC2_EAC,
-        LOCAL_GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC,
-        LOCAL_GL_COMPRESSED_SRGB8_ETC2,
-        LOCAL_GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2
-    };
-
-    mCompressedTextureFormats.AppendElements(kWebGL2_CompressedFormats,
-                                             MOZ_ARRAY_LENGTH(kWebGL2_CompressedFormats));
 
     //////
 

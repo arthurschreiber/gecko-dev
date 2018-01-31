@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 "use strict";
 
@@ -11,26 +12,18 @@ const TAB_URL = URL_ROOT + "service-workers/empty-sw.html";
 const SW_TIMEOUT = 1000;
 
 add_task(function* () {
-  yield new Promise(done => {
-    let options = {"set": [
-      // Accept workers from mochitest's http
-      ["dom.serviceWorkers.testing.enabled", true],
-      // Reduce the timeout to expose issues when service worker
-      // freezing is broken
-      ["dom.serviceWorkers.idle_timeout", SW_TIMEOUT],
-      ["dom.serviceWorkers.idle_extended_timeout", SW_TIMEOUT],
-    ]};
-    SpecialPowers.pushPrefEnv(options, done);
-  });
+  yield enableServiceWorkerDebugging();
+  yield pushPref("dom.serviceWorkers.idle_timeout", SW_TIMEOUT);
+  yield pushPref("dom.serviceWorkers.idle_extended_timeout", SW_TIMEOUT);
 
   let { tab, document } = yield openAboutDebugging("workers");
 
+  let serviceWorkersElement = getServiceWorkerList(document);
+
   let swTab = yield addTab(TAB_URL);
 
-  let serviceWorkersElement = getServiceWorkerList(document);
-  yield waitForMutation(serviceWorkersElement, { childList: true });
-
-  assertHasTarget(true, document, "service-workers", SERVICE_WORKER);
+  info("Wait until the service worker appears in about:debugging");
+  yield waitUntilServiceWorkerContainer(SERVICE_WORKER, document);
 
   // Ensure that the registration resolved before trying to connect to the sw
   yield waitForServiceWorkerRegistered(swTab);
@@ -71,21 +64,19 @@ add_task(function* () {
   // Now ensure that the worker is correctly destroyed
   // after we destroy the toolbox.
   // The DEBUG button should disappear once the worker is destroyed.
-  yield waitForMutation(targetElement, { childList: true });
-  ok(!targetElement.querySelector(".debug-button"),
-    "The debug button was removed when the worker was killed");
+  info("Wait until the debug button disappears");
+  yield waitUntil(() => {
+    return !targetElement.querySelector(".debug-button");
+  });
 
   // Finally, unregister the service worker itself.
   try {
-    yield unregisterServiceWorker(swTab);
+    yield unregisterServiceWorker(swTab, serviceWorkersElement);
     ok(true, "Service worker registration unregistered");
   } catch (e) {
     ok(false, "SW not unregistered; " + e);
   }
 
-  // Now ensure that the worker registration is correctly removed.
-  // The list should update once the registration is destroyed.
-  yield waitForMutation(serviceWorkersElement, { childList: true });
   assertHasTarget(false, document, "service-workers", SERVICE_WORKER);
 
   yield removeTab(swTab);

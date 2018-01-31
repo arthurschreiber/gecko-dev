@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -18,7 +19,7 @@ namespace layers {
 class DIBTextureData : public TextureData
 {
 public:
-  virtual bool Lock(OpenMode, FenceHandle*) override { return true; }
+  virtual bool Lock(OpenMode) override { return true; }
 
   virtual void Unlock() override {}
 
@@ -28,7 +29,7 @@ public:
 
   static
   DIBTextureData* Create(gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
-                         ClientIPCAllocator* aAllocator);
+                         LayersIPCChannel* aAllocator);
 
 protected:
   DIBTextureData(gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
@@ -64,9 +65,7 @@ public:
 
   virtual void DeallocateDeviceData() override;
 
-  virtual void SetCompositor(Compositor* aCompositor) override;
-
-  virtual Compositor* GetCompositor() override { return mCompositor; }
+  virtual void SetTextureSourceProvider(TextureSourceProvider* aProvider) override;
 
   virtual gfx::SurfaceFormat GetFormat() const override { return mFormat; }
 
@@ -79,10 +78,11 @@ public:
   virtual bool HasIntermediateBuffer() const { return true; }
 
   virtual bool BindTextureSource(CompositableTextureSourceRef& aTexture) override;
+  virtual bool AcquireTextureSource(CompositableTextureSourceRef& aTexture) override;
 
 protected:
+  RefPtr<TextureSourceProvider> mProvider;
   RefPtr<DataTextureSource> mTextureSource;
-  RefPtr<Compositor> mCompositor;
   gfx::SurfaceFormat mFormat;
   gfx::IntSize mSize;
   bool mIsLocked;

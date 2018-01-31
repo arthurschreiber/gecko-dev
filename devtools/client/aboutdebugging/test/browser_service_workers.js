@@ -9,13 +9,7 @@ const SERVICE_WORKER = URL_ROOT + "service-workers/empty-sw.js";
 const TAB_URL = URL_ROOT + "service-workers/empty-sw.html";
 
 add_task(function* () {
-  yield new Promise(done => {
-    let options = {"set": [
-      ["dom.serviceWorkers.enabled", true],
-      ["dom.serviceWorkers.testing.enabled", true],
-    ]};
-    SpecialPowers.pushPrefEnv(options, done);
-  });
+  yield enableServiceWorkerDebugging();
 
   let { tab, document } = yield openAboutDebugging("workers");
 
@@ -23,29 +17,23 @@ add_task(function* () {
 
   let serviceWorkersElement = getServiceWorkerList(document);
 
-  yield waitForMutation(serviceWorkersElement, { childList: true });
-
-  // Check that the service worker appears in the UI
-  let names = [...document.querySelectorAll("#service-workers .target-name")];
-  names = names.map(element => element.textContent);
-  ok(names.includes(SERVICE_WORKER),
-    "The service worker url appears in the list: " + names);
-
-  // Finally, unregister the service worker itself
-  let aboutDebuggingUpdate = waitForMutation(serviceWorkersElement,
-    { childList: true });
+  yield waitUntil(() => {
+    // Check that the service worker appears in the UI
+    let names = [...document.querySelectorAll("#service-workers .target-name")];
+    names = names.map(element => element.textContent);
+    return names.includes(SERVICE_WORKER);
+  });
+  info("The service worker url appears in the list");
 
   try {
-    yield unregisterServiceWorker(swTab);
+    yield unregisterServiceWorker(swTab, serviceWorkersElement);
     ok(true, "Service worker registration unregistered");
   } catch (e) {
     ok(false, "SW not unregistered; " + e);
   }
 
-  yield aboutDebuggingUpdate;
-
   // Check that the service worker disappeared from the UI
-  names = [...document.querySelectorAll("#service-workers .target-name")];
+  let names = [...document.querySelectorAll("#service-workers .target-name")];
   names = names.map(element => element.textContent);
   ok(!names.includes(SERVICE_WORKER),
     "The service worker url is no longer in the list: " + names);

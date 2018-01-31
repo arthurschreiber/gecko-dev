@@ -12,6 +12,8 @@
 #include "GLSLANG/ShaderLang.h"
 #include "tests/test_utils/compiler_test.h"
 
+using namespace sh;
+
 namespace
 {
 
@@ -35,8 +37,10 @@ TEST_F(PruneEmptyDeclarationsTest, EmptyDeclarationStartsDeclaratorList)
         "   gl_Position = vec4(u * f);\n"
         "}\n";
     compile(shaderString);
-    ASSERT_TRUE(foundInCode("float f"));
+    ASSERT_TRUE(foundInCode("float _uf"));
+    ASSERT_TRUE(notFoundInCode("float, _uf"));
     ASSERT_TRUE(notFoundInCode("float, f"));
+    ASSERT_TRUE(notFoundInCode("float _u, _uf"));
 }
 
 TEST_F(PruneEmptyDeclarationsTest, EmptyStructDeclarationWithQualifiers)
@@ -50,9 +54,9 @@ TEST_F(PruneEmptyDeclarationsTest, EmptyStructDeclarationWithQualifiers)
         "   gl_Position = vec4(s.f);\n"
         "}\n";
     compile(shaderString);
-    ASSERT_TRUE(foundInCode("struct S"));
-    ASSERT_TRUE(foundInCode("uniform S"));
-    ASSERT_TRUE(notFoundInCode("const struct S"));
+    ASSERT_TRUE(foundInCode("struct _uS"));
+    ASSERT_TRUE(foundInCode("uniform _uS"));
+    ASSERT_TRUE(notFoundInCode("const struct _uS"));
 }
 
 }  // namespace

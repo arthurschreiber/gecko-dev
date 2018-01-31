@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -49,11 +50,13 @@ class nsListControlFrame final : public nsHTMLScrollFrame,
                                  public nsISelectControlFrame
 {
 public:
+  typedef mozilla::dom::HTMLOptionElement HTMLOptionElement;
+
   friend nsContainerFrame* NS_NewListControlFrame(nsIPresShell* aPresShell,
                                                   nsStyleContext* aContext);
 
   NS_DECL_QUERYFRAME
-  NS_DECL_FRAMEARENA_HELPERS
+  NS_DECL_FRAMEARENA_HELPERS(nsListControlFrame)
 
     // nsIFrame
   virtual nsresult HandleEvent(nsPresContext* aPresContext,
@@ -63,8 +66,8 @@ public:
   virtual void SetInitialChildList(ChildListID     aListID,
                                    nsFrameList&    aChildList) override;
 
-  virtual nscoord GetPrefISize(nsRenderingContext *aRenderingContext) override;
-  virtual nscoord GetMinISize(nsRenderingContext *aRenderingContext) override;
+  virtual nscoord GetPrefISize(gfxContext *aRenderingContext) override;
+  virtual nscoord GetMinISize(gfxContext *aRenderingContext) override;
 
   virtual void Reflow(nsPresContext*           aCX,
                       ReflowOutput&     aDesiredSize,
@@ -76,22 +79,13 @@ public:
                     nsIFrame*         aPrevInFlow) override;
 
   virtual void DidReflow(nsPresContext*            aPresContext,
-                         const ReflowInput*  aReflowInput,
-                         nsDidReflowStatus         aStatus) override;
-  virtual void DestroyFrom(nsIFrame* aDestructRoot) override;
+                         const ReflowInput*  aReflowInput) override;
+  virtual void DestroyFrom(nsIFrame* aDestructRoot, PostDestroyData& aPostDestroyData) override;
 
   virtual void BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                const nsRect&           aDirtyRect,
                                 const nsDisplayListSet& aLists) override;
 
   virtual nsContainerFrame* GetContentInsertionFrame() override;
-
-  /**
-   * Get the "type" of the frame
-   *
-   * @see nsGkAtoms::scrollFrame
-   */
-  virtual nsIAtom* GetType() const override;
 
   virtual bool IsFrameOfType(uint32_t aFlags) const override
   {
@@ -104,7 +98,7 @@ public:
 #endif
 
     // nsIFormControlFrame
-  virtual nsresult SetFormProperty(nsIAtom* aName, const nsAString& aValue) override;
+  virtual nsresult SetFormProperty(nsAtom* aName, const nsAString& aValue) override;
   virtual void SetFocus(bool aOn = true, bool aRepaint = false) override;
 
   virtual mozilla::ScrollbarStyles GetScrollbarStyles() const override;
@@ -118,7 +112,7 @@ public:
     // nsIListControlFrame
   virtual void SetComboboxFrame(nsIFrame* aComboboxFrame) override;
   virtual int32_t GetSelectedIndex() override;
-  virtual mozilla::dom::HTMLOptionElement* GetCurrentOption() override;
+  virtual HTMLOptionElement* GetCurrentOption() override;
 
   /**
    * Gets the text of the currently selected item.
@@ -180,7 +174,7 @@ public:
   /**
    * Returns the HTMLOptionElement for a given index in mContent's collection.
    */
-  mozilla::dom::HTMLOptionElement* GetOption(uint32_t aIndex) const;
+  HTMLOptionElement* GetOption(uint32_t aIndex) const;
 
   static void ComboboxFocusSet();
 
@@ -238,11 +232,6 @@ public:
   bool GetDropdownCanGrow() const { return mDropdownCanGrow; }
 
   /**
-   * Dropdowns need views
-   */
-  virtual bool NeedsView() override { return IsInDropDownMode(); }
-
-  /**
    * Frees statics owned by this class.
    */
   static void Shutdown();
@@ -258,17 +247,24 @@ public:
 
 protected:
   /**
+   * Return the first non-disabled option starting at aFromIndex (inclusive).
+   * @param aFoundIndex if non-null, set to the index of the returned option
+   */
+  HTMLOptionElement* GetNonDisabledOptionFrom(int32_t aFromIndex,
+                                              int32_t* aFoundIndex = nullptr);
+
+  /**
    * Updates the selected text in a combobox and then calls FireOnChange().
    * @note This method might destroy the frame, pres shell and other objects.
    * Returns false if calling it destroyed |this|.
    */
-  bool       UpdateSelection();
+  bool UpdateSelection();
 
   /**
    * Returns whether mContent supports multiple selection.
    */
-  bool       GetMultiple() const {
-    return mContent->HasAttr(kNameSpaceID_None, nsGkAtoms::multiple);
+  bool GetMultiple() const {
+    return mContent->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::multiple);
   }
 
 
@@ -276,13 +272,13 @@ protected:
    * Toggles (show/hide) the combobox dropdown menu.
    * @note This method might destroy the frame, pres shell and other objects.
    */
-  void       DropDownToggleKey(nsIDOMEvent* aKeyEvent);
+  void DropDownToggleKey(nsIDOMEvent* aKeyEvent);
 
   nsresult   IsOptionDisabled(int32_t anIndex, bool &aIsDisabled);
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    */
-  void ScrollToFrame(mozilla::dom::HTMLOptionElement& aOptElement);
+  void ScrollToFrame(HTMLOptionElement& aOptElement);
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    */
@@ -389,16 +385,23 @@ protected:
    */
   uint32_t GetNumberOfRows();
 
+  nsView* GetViewInternal() const override { return mView; }
+  void SetViewInternal(nsView* aView) override { mView = aView; }
+
   // Data Members
   int32_t      mStartSelectionIndex;
   int32_t      mEndSelectionIndex;
 
-  nsIComboboxControlFrame *mComboboxFrame;
-  uint32_t     mNumDisplayRows;
+  nsIComboboxControlFrame* mComboboxFrame;
+
+  // The view is only created (& non-null) if IsInDropDownMode() is true.
+  nsView* mView;
+
+  uint32_t mNumDisplayRows;
   bool mChangesSinceDragStart:1;
   bool mButtonDown:1;
-  // Has the user selected a visible item since we showed the
-  // dropdown?
+
+  // Has the user selected a visible item since we showed the dropdown?
   bool mItemSelectionStarted:1;
 
   bool mIsAllContentHere:1;

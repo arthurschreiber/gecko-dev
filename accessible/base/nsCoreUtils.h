@@ -7,6 +7,7 @@
 #define nsCoreUtils_h_
 
 #include "mozilla/EventForwards.h"
+#include "mozilla/dom/Element.h"
 #include "nsIAccessibleEvent.h"
 #include "nsIContent.h"
 #include "nsIDocument.h" // for GetShell()
@@ -220,7 +221,7 @@ public:
    * Convert attribute value of the given node to positive integer. If no
    * attribute or wrong value then false is returned.
    */
-  static bool GetUIntAttr(nsIContent *aContent, nsIAtom *aAttr,
+  static bool GetUIntAttr(nsIContent *aContent, nsAtom *aAttr,
                           int32_t* aUInt);
 
   /**
@@ -291,7 +292,8 @@ public:
   static bool IsHTMLTableHeader(nsIContent *aContent)
   {
     return aContent->NodeInfo()->Equals(nsGkAtoms::th) ||
-      aContent->HasAttr(kNameSpaceID_None, nsGkAtoms::scope);
+      (aContent->IsElement() &&
+       aContent->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::scope));
   }
 
   /**
@@ -299,7 +301,7 @@ public:
    * only. In contrast to nsWhitespaceTokenizer class it takes into account
    * non-breaking space (0xa0).
    */
-  static bool IsWhitespaceString(const nsSubstring& aString);
+  static bool IsWhitespaceString(const nsAString& aString);
 
   /**
    * Returns true if the given character is whitespace symbol.

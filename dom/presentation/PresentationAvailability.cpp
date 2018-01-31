@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +9,7 @@
 #include "mozilla/dom/PresentationAvailabilityBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/Unused.h"
+#include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIPresentationDeviceManager.h"
 #include "nsIPresentationService.h"
@@ -32,7 +33,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_ADDREF_INHERITED(PresentationAvailability, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(PresentationAvailability, DOMEventTargetHelper)
 
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(PresentationAvailability)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(PresentationAvailability)
   NS_INTERFACE_MAP_ENTRY(nsIPresentationAvailabilityListener)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
@@ -53,6 +54,9 @@ PresentationAvailability::PresentationAvailability(nsPIDOMWindowInner* aWindow,
   , mIsAvailable(false)
   , mUrls(aUrls)
 {
+  for (uint32_t i = 0; i < mUrls.Length(); ++i) {
+    mAvailabilityOfUrl.AppendElement(false);
+  }
 }
 
 PresentationAvailability::~PresentationAvailability()
@@ -69,7 +73,7 @@ PresentationAvailability::Init(RefPtr<Promise>& aPromise)
     return false;
   }
 
-  nsresult rv = service->RegisterAvailabilityListener(this);
+  nsresult rv = service->RegisterAvailabilityListener(mUrls, this);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     // If the user agent is unable to monitor available device,
     // Resolve promise with |value| set to false.
@@ -102,7 +106,8 @@ void PresentationAvailability::Shutdown()
   }
 
   Unused <<
-    NS_WARN_IF(NS_FAILED(service->UnregisterAvailabilityListener(this)));
+    NS_WARN_IF(NS_FAILED(service->UnregisterAvailabilityListener(mUrls,
+                                                                 this)));
 }
 
 /* virtual */ void
@@ -153,16 +158,30 @@ PresentationAvailability::EnqueuePromise(RefPtr<Promise>& aPromise)
 bool
 PresentationAvailability::Value() const
 {
+  if (nsContentUtils::ShouldResistFingerprinting()) {
+    return false;
+  }
+
   return mIsAvailable;
 }
 
 NS_IMETHODIMP
-PresentationAvailability::NotifyAvailableChange(bool aIsAvailable)
+PresentationAvailability::NotifyAvailableChange(const nsTArray<nsString>& aAvailabilityUrls,
+                                                bool aIsAvailable)
 {
-  return NS_DispatchToCurrentThread(NewRunnableMethod
-                                    <bool>(this,
-                                           &PresentationAvailability::UpdateAvailabilityAndDispatchEvent,
-                                           aIsAvailable));
+  bool available = false;
+  for (uint32_t i = 0; i < mUrls.Length(); ++i) {
+    if (aAvailabilityUrls.Contains(mUrls[i])) {
+      mAvailabilityOfUrl[i] = aIsAvailable;
+    }
+    available |= mAvailabilityOfUrl[i];
+  }
+
+  return NS_DispatchToCurrentThread(NewRunnableMethod<bool>(
+    "dom::PresentationAvailability::UpdateAvailabilityAndDispatchEvent",
+    this,
+    &PresentationAvailability::UpdateAvailabilityAndDispatchEvent,
+    available));
 }
 
 void
@@ -177,12 +196,21 @@ PresentationAvailability::UpdateAvailabilityAndDispatchEvent(bool aIsAvailable)
     // Use the first availability change notification to resolve promise.
     do {
       nsTArray<RefPtr<Promise>> promises = Move(mPromises);
+
+      if (nsContentUtils::ShouldResistFingerprinting()) {
+        continue;
+      }
+
       for (auto& promise : promises) {
         promise->MaybeResolve(this);
       }
       // more promises may have been added to mPromises, at least in theory
     } while (!mPromises.IsEmpty());
 
+    return;
+  }
+
+  if (nsContentUtils::ShouldResistFingerprinting()) {
     return;
   }
 

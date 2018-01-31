@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -71,12 +72,6 @@ DataTransferItem::Clone(DataTransfer* aDataTransfer) const
   it->mChromeOnly = mChromeOnly;
 
   return it.forget();
-}
-
-void
-DataTransferItem::SetType(const nsAString& aType)
-{
-  mType = aType;
 }
 
 void
@@ -230,30 +225,59 @@ DataTransferItem::FillInExternalData()
 
   SetData(variant);
 
-#ifdef DEBUG
   if (oldKind != Kind()) {
     NS_WARNING("Clipboard data provided by the OS does not match predicted kind");
+    mDataTransfer->TypesListMayHaveChanged();
   }
-#endif
+}
+
+void
+DataTransferItem::GetType(nsAString& aType)
+{
+  // If we don't have a File, we can just put whatever our recorded internal
+  // type is.
+  if (Kind() != KIND_FILE) {
+    aType = mType;
+    return;
+  }
+
+  // If we do have a File, then we need to look at our File object to discover
+  // what its mime type is. We can use the System Principal here, as this
+  // information should be avaliable even if the data is currently inaccessible
+  // (for example during a dragover).
+  //
+  // XXX: This seems inefficient, as it seems like we should be able to get this
+  // data without getting the entire File object, which may require talking to
+  // the OS.
+  ErrorResult rv;
+  RefPtr<File> file = GetAsFile(*nsContentUtils::GetSystemPrincipal(), rv);
+  MOZ_ASSERT(!rv.Failed(), "Failed to get file data with system principal");
+
+  // If we don't actually have a file, fall back to returning the internal type.
+  if (NS_WARN_IF(!file)) {
+    aType = mType;
+    return;
+  }
+
+  file->GetType(aType);
 }
 
 already_AddRefed<File>
-DataTransferItem::GetAsFile(ErrorResult& aRv)
+DataTransferItem::GetAsFile(nsIPrincipal& aSubjectPrincipal,
+                            ErrorResult& aRv)
 {
-  return GetAsFileWithPrincipal(nsContentUtils::SubjectPrincipal(), aRv);
-}
-
-already_AddRefed<File>
-DataTransferItem::GetAsFileWithPrincipal(nsIPrincipal* aPrincipal, ErrorResult& aRv)
-{
-  if (mKind != KIND_FILE) {
+  // This is done even if we have an mCachedFile, as it performs the necessary
+  // permissions checks to ensure that we are allowed to access this type.
+  nsCOMPtr<nsIVariant> data = Data(&aSubjectPrincipal, aRv);
+  if (NS_WARN_IF(!data || aRv.Failed())) {
     return nullptr;
   }
 
-  // This is done even if we have an mCachedFile, as it performs the necessary
-  // permissions checks to ensure that we are allowed to access this type.
-  nsCOMPtr<nsIVariant> data = Data(aPrincipal, aRv);
-  if (NS_WARN_IF(!data || aRv.Failed())) {
+  // We have to check our kind after getting the data, because if we have
+  // external data and the OS lied to us (which unfortunately does happen
+  // sometimes), then we might not have the same type of data as we did coming
+  // into this function.
+  if (NS_WARN_IF(mKind != KIND_FILE)) {
     return nullptr;
   }
 
@@ -278,6 +302,7 @@ DataTransferItem::GetAsFileWithPrincipal(nsIPrincipal* aPrincipal, ErrorResult& 
       mCachedFile = File::CreateFromFile(mDataTransfer, ifile);
     } else {
       MOZ_ASSERT(false, "One of the above code paths should be taken");
+      return nullptr;
     }
   }
 
@@ -286,16 +311,10 @@ DataTransferItem::GetAsFileWithPrincipal(nsIPrincipal* aPrincipal, ErrorResult& 
 }
 
 already_AddRefed<FileSystemEntry>
-DataTransferItem::GetAsEntry(ErrorResult& aRv)
+DataTransferItem::GetAsEntry(nsIPrincipal& aSubjectPrincipal,
+                             ErrorResult& aRv)
 {
-  return GetAsEntryWithPrincipal(nsContentUtils::SubjectPrincipal(), aRv);
-}
-
-already_AddRefed<FileSystemEntry>
-DataTransferItem::GetAsEntryWithPrincipal(nsIPrincipal* aPrincipal,
-                                          ErrorResult& aRv)
-{
-  RefPtr<File> file = GetAsFileWithPrincipal(aPrincipal, aRv);
+  RefPtr<File> file = GetAsFile(aSubjectPrincipal, aRv);
   if (NS_WARN_IF(aRv.Failed()) || !file) {
     return nullptr;
   }
@@ -332,16 +351,18 @@ DataTransferItem::GetAsEntryWithPrincipal(nsIPrincipal* aPrincipal,
     }
 
     nsCOMPtr<nsIFile> directoryFile;
-    nsresult rv = NS_NewNativeLocalFile(NS_ConvertUTF16toUTF8(fullpath),
-                                        true, getter_AddRefs(directoryFile));
+    // fullPath is already in unicode, we don't have to use
+    // NS_NewNativeLocalFile.
+    nsresult rv = NS_NewLocalFile(fullpath, true,
+                                  getter_AddRefs(directoryFile));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return nullptr;
     }
 
     RefPtr<Directory> directory = Directory::Create(global, directoryFile);
-    entry = new FileSystemDirectoryEntry(global, directory, fs);
+    entry = new FileSystemDirectoryEntry(global, directory, nullptr, fs);
   } else {
-    entry = new FileSystemFileEntry(global, file, fs);
+    entry = new FileSystemFileEntry(global, file, nullptr, fs);
   }
 
   Sequence<RefPtr<FileSystemEntry>> entries;
@@ -368,7 +389,7 @@ DataTransferItem::CreateFileFromInputStream(nsIInputStream* aStream)
     key = "GenericFileName";
   }
 
-  nsXPIDLString fileName;
+  nsAutoString fileName;
   nsresult rv = nsContentUtils::GetLocalizedString(nsContentUtils::eDOM_PROPERTIES,
                                                    key, fileName);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -376,13 +397,8 @@ DataTransferItem::CreateFileFromInputStream(nsIInputStream* aStream)
   }
 
   uint64_t available;
-  rv = aStream->Available(&available);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return nullptr;
-  }
-
   void* data = nullptr;
-  rv = NS_ReadInputStreamToBuffer(aStream, &data, available);
+  rv = NS_ReadInputStreamToBuffer(aStream, &data, -1, &available);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return nullptr;
   }
@@ -393,17 +409,26 @@ DataTransferItem::CreateFileFromInputStream(nsIInputStream* aStream)
 
 void
 DataTransferItem::GetAsString(FunctionStringCallback* aCallback,
+                              nsIPrincipal& aSubjectPrincipal,
                               ErrorResult& aRv)
 {
-  if (!aCallback || mKind != KIND_STRING) {
+  if (!aCallback) {
     return;
   }
 
   // Theoretically this should be done inside of the runnable, as it might be an
   // expensive operation on some systems, however we wouldn't get access to the
   // NS_ERROR_DOM_SECURITY_ERROR messages which may be raised by this method.
-  nsCOMPtr<nsIVariant> data = Data(nsContentUtils::SubjectPrincipal(), aRv);
+  nsCOMPtr<nsIVariant> data = Data(&aSubjectPrincipal, aRv);
   if (NS_WARN_IF(!data || aRv.Failed())) {
+    return;
+  }
+
+  // We have to check our kind after getting the data, because if we have
+  // external data and the OS lied to us (which unfortunately does happen
+  // sometimes), then we might not have the same type of data as we did coming
+  // into this function.
+  if (NS_WARN_IF(mKind != KIND_STRING)) {
     return;
   }
 
@@ -417,9 +442,10 @@ DataTransferItem::GetAsString(FunctionStringCallback* aCallback,
   class GASRunnable final : public Runnable
   {
   public:
-    GASRunnable(FunctionStringCallback* aCallback,
-                const nsAString& aStringData)
-      : mCallback(aCallback), mStringData(aStringData)
+    GASRunnable(FunctionStringCallback* aCallback, const nsAString& aStringData)
+      : mozilla::Runnable("GASRunnable")
+      , mCallback(aCallback)
+      , mStringData(aStringData)
     {}
 
     NS_IMETHOD Run() override
@@ -435,9 +461,25 @@ DataTransferItem::GetAsString(FunctionStringCallback* aCallback,
   };
 
   RefPtr<GASRunnable> runnable = new GASRunnable(aCallback, stringData);
-  rv = NS_DispatchToMainThread(runnable);
+
+  // DataTransfer.mParent might be EventTarget, nsIGlobalObject, ClipboardEvent
+  // nsPIDOMWindowOuter, null
+  nsISupports* parent = mDataTransfer->GetParentObject();
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(parent);
+  if (parent && !global) {
+    if (nsCOMPtr<dom::EventTarget> target = do_QueryInterface(parent)) {
+      global = target->GetOwnerGlobal();
+    } else if (nsCOMPtr<nsIDOMEvent> event = do_QueryInterface(parent)) {
+      global = event->InternalDOMEvent()->GetParentObject();
+    }
+  }
+  if (global) {
+    rv = global->Dispatch(TaskCategory::Other, runnable.forget());
+  } else {
+    rv = NS_DispatchToMainThread(runnable);
+  }
   if (NS_FAILED(rv)) {
-    NS_WARNING("NS_DispatchToMainThread Failed in "
+    NS_WARNING("Dispatch to main thread Failed in "
                "DataTransferItem::GetAsString!");
   }
 }
@@ -457,13 +499,19 @@ DataTransferItem::Data(nsIPrincipal* aPrincipal, ErrorResult& aRv)
 {
   MOZ_ASSERT(aPrincipal);
 
-  nsCOMPtr<nsIVariant> variant = DataNoSecurityCheck();
-
   // If the inbound principal is system, we can skip the below checks, as
   // they will trivially succeed.
   if (nsContentUtils::IsSystemPrincipal(aPrincipal)) {
-    return variant.forget();
+    return DataNoSecurityCheck();
   }
+
+  // We should not allow raw data to be accessed from a Protected DataTransfer.
+  // We don't prevent this access if the accessing document is Chrome.
+  if (mDataTransfer->IsProtected()) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIVariant> variant = DataNoSecurityCheck();
 
   MOZ_ASSERT(!ChromeOnly(), "Non-chrome code shouldn't see a ChromeOnly DataTransferItem");
   if (ChromeOnly()) {
@@ -481,9 +529,13 @@ DataTransferItem::Data(nsIPrincipal* aPrincipal, ErrorResult& aRv)
   // source of the drag is in a child frame of the caller. In that case,
   // we only allow access to data of the same principal. During other events,
   // only allow access to the data with the same principal.
+  //
+  // We don't want to fail with an exception in this siutation, rather we want
+  // to just pretend as though the stored data is "nullptr". This is consistent
+  // with Chrome's behavior and is less surprising for web applications which
+  // don't expect execptions to be raised when performing certain operations.
   if (Principal() && checkItemPrincipal &&
       !aPrincipal->Subsumes(Principal())) {
-    aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return nullptr;
   }
 
@@ -498,13 +550,11 @@ DataTransferItem::Data(nsIPrincipal* aPrincipal, ErrorResult& aRv)
     if (pt) {
       nsIScriptContext* c = pt->GetContextForEventHandlers(&rv);
       if (NS_WARN_IF(NS_FAILED(rv) || !c)) {
-        aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
         return nullptr;
       }
 
       nsIGlobalObject* go = c->GetGlobalObject();
       if (NS_WARN_IF(!go)) {
-        aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
         return nullptr;
       }
 
@@ -513,7 +563,6 @@ DataTransferItem::Data(nsIPrincipal* aPrincipal, ErrorResult& aRv)
 
       nsIPrincipal* dataPrincipal = sp->GetPrincipal();
       if (NS_WARN_IF(!dataPrincipal || !aPrincipal->Equals(dataPrincipal))) {
-        aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
         return nullptr;
       }
     }

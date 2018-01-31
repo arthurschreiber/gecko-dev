@@ -18,10 +18,6 @@
 #include "mozilla/AppUnits.h"
 #include "mozilla/gfx/2D.h"
 
-#if defined(MOZ_WIDGET_GTK)
-#include "gfxPlatformGtk.h" // xxx - for UseFcFontList
-#endif
-
 using namespace mozilla;
 using namespace mozilla::a11y;
 
@@ -305,13 +301,13 @@ TextAttrsMgr::InvalidTextAttr::
   nsIContent* elm = aElm;
   do {
     if (nsAccUtils::HasDefinedARIAToken(elm, nsGkAtoms::aria_invalid)) {
-      static nsIContent::AttrValuesArray tokens[] =
+      static Element::AttrValuesArray tokens[] =
         { &nsGkAtoms::_false, &nsGkAtoms::grammar, &nsGkAtoms::spelling,
           nullptr };
 
-      int32_t idx = elm->FindAttrValueIn(kNameSpaceID_None,
-                                         nsGkAtoms::aria_invalid, tokens,
-                                         eCaseMatters);
+      int32_t idx = elm->AsElement()->FindAttrValueIn(kNameSpaceID_None,
+                                                      nsGkAtoms::aria_invalid,
+                                                      tokens, eCaseMatters);
       switch (idx) {
         case 0:
           *aValue = eFalse;
@@ -374,10 +370,9 @@ bool
 TextAttrsMgr::BGColorTextAttr::
   GetColor(nsIFrame* aFrame, nscolor* aColor)
 {
-  const nsStyleBackground* styleBackground = aFrame->StyleBackground();
-
-  if (NS_GET_A(styleBackground->mBackgroundColor) > 0) {
-    *aColor = styleBackground->mBackgroundColor;
+  nscolor backgroundColor = aFrame->StyleBackground()->BackgroundColor(aFrame);
+  if (NS_GET_A(backgroundColor) > 0) {
+    *aColor = backgroundColor;
     return true;
   }
 
@@ -653,28 +648,14 @@ TextAttrsMgr::FontWeightTextAttr::
   if (font->IsSyntheticBold())
     return 700;
 
-  bool useFontEntryWeight = true;
-
-  // Under Linux, when gfxPangoFontGroup code is used,
-  // font->GetStyle()->weight will give the absolute weight requested of the
-  // font face. The gfxPangoFontGroup code uses the gfxFontEntry constructor
-  // which doesn't initialize the weight field.
-#if defined(MOZ_WIDGET_GTK)
-  useFontEntryWeight = gfxPlatformGtk::UseFcFontList();
-#endif
-
-  if (useFontEntryWeight) {
-    // On Windows, font->GetStyle()->weight will give the same weight as
-    // fontEntry->Weight(), the weight of the first font in the font group,
-    // which may not be the weight of the font face used to render the
-    // characters. On Mac, font->GetStyle()->weight will just give the same
-    // number as getComputedStyle(). fontEntry->Weight() will give the weight
-    // of the font face used.
-    gfxFontEntry *fontEntry = font->GetFontEntry();
-    return fontEntry->Weight();
-  } else {
-    return font->GetStyle()->weight;
-  }
+  // On Windows, font->GetStyle()->weight will give the same weight as
+  // fontEntry->Weight(), the weight of the first font in the font group,
+  // which may not be the weight of the font face used to render the
+  // characters. On Mac, font->GetStyle()->weight will just give the same
+  // number as getComputedStyle(). fontEntry->Weight() will give the weight
+  // of the font face used.
+  gfxFontEntry *fontEntry = font->GetFontEntry();
+  return fontEntry->Weight();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -716,13 +697,9 @@ TextAttrsMgr::TextDecorValue::
   TextDecorValue(nsIFrame* aFrame)
 {
   const nsStyleTextReset* textReset = aFrame->StyleTextReset();
-  mStyle = textReset->GetDecorationStyle();
-
-  bool isForegroundColor = false;
-  textReset->GetDecorationColor(mColor, isForegroundColor);
-  if (isForegroundColor)
-    mColor = aFrame->StyleColor()->mColor;
-
+  mStyle = textReset->mTextDecorationStyle;
+  mColor = aFrame->StyleColor()->
+    CalcComplexColor(textReset->mTextDecorationColor);
   mLine = textReset->mTextDecorationLine &
     (NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE |
      NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH);

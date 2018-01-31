@@ -65,13 +65,11 @@ IDBCursor::IDBCursor(Type aType,
   }
 }
 
-#ifdef ENABLE_INTL_API
 bool
 IDBCursor::IsLocaleAware() const
 {
   return mSourceIndex && !mSourceIndex->Locale().IsEmpty();
 }
-#endif
 
 IDBCursor::~IDBCursor()
 {
@@ -343,7 +341,6 @@ IDBCursor::GetKey(JSContext* aCx, JS::MutableHandle<JS::Value> aResult,
     mHaveCachedKey = true;
   }
 
-  JS::ExposeValueToActiveJS(mCachedKey);
   aResult.set(mCachedKey);
 }
 
@@ -379,7 +376,6 @@ IDBCursor::GetPrimaryKey(JSContext* aCx, JS::MutableHandle<JS::Value> aResult,
     mHaveCachedPrimaryKey = true;
   }
 
-  JS::ExposeValueToActiveJS(mCachedPrimaryKey);
   aResult.set(mCachedPrimaryKey);
 }
 
@@ -413,7 +409,6 @@ IDBCursor::GetValue(JSContext* aCx, JS::MutableHandle<JS::Value> aResult,
     mHaveCachedValue = true;
   }
 
-  JS::ExposeValueToActiveJS(mCachedValue);
   aResult.set(mCachedValue);
 }
 
@@ -440,7 +435,6 @@ IDBCursor::Continue(JSContext* aCx,
     return;
   }
 
-#ifdef ENABLE_INTL_API
   if (IsLocaleAware() && !key.IsUnset()) {
     Key tmp;
     aRv = key.ToLocaleBasedKey(tmp, mSourceIndex->Locale());
@@ -451,9 +445,6 @@ IDBCursor::Continue(JSContext* aCx,
   }
 
   const Key& sortKey = IsLocaleAware() ? mSortKey : mKey;
-#else
-  const Key& sortKey = mKey;
-#endif
 
   if (!key.IsUnset()) {
     switch (mDirection) {
@@ -550,7 +541,6 @@ IDBCursor::ContinuePrimaryKey(JSContext* aCx,
     return;
   }
 
-#ifdef ENABLE_INTL_API
   if (IsLocaleAware() && !key.IsUnset()) {
     Key tmp;
     aRv = key.ToLocaleBasedKey(tmp, mSourceIndex->Locale());
@@ -561,9 +551,6 @@ IDBCursor::ContinuePrimaryKey(JSContext* aCx,
   }
 
   const Key& sortKey = IsLocaleAware() ? mSortKey : mKey;
-#else
-  const Key& sortKey = mKey;
-#endif
 
   if (key.IsUnset()) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_DATA_ERR);
@@ -961,7 +948,6 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTION_CLASS(IDBCursor)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(IDBCursor)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRequest)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSourceObjectStore)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSourceIndex)

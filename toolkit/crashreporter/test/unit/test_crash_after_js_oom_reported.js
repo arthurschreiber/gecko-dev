@@ -1,5 +1,4 @@
-function run_test()
-{
+function run_test() {
   if (!("@mozilla.org/toolkit/crash-reporter;1" in Components.classes)) {
     dump("INFO | test_crash_after_js_oom_reported.js | Can't test crashreporter in a non-libxul build.\n");
     return;
@@ -17,7 +16,7 @@ function run_test()
       Components.utils.getJSTestingFunctions().reportOutOfMemory();
     },
     function(mdump, extra) {
-      do_check_eq(extra.TestingOOMCrash, "Yes");
+      Assert.equal(extra.TestingOOMCrash, "Yes");
 
       // The JSOutOfMemory field is absent if the JS engine never reported OOM,
       // "Reported" if it did, and "Recovered" if it reported OOM but
@@ -28,7 +27,7 @@ function run_test()
       // this property could be "Recovered" even if the implementation is
       // correct. More likely, though, that indicates a bug, so only accept
       // "Reported".
-      do_check_eq(extra.JSOutOfMemory, "Reported");
+      Assert.equal(extra.JSOutOfMemory, "Reported");
     },
     true);
 }

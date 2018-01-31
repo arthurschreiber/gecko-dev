@@ -29,7 +29,8 @@ public:
     // used to walk the existing tree of the given node
     eWalkCache = 1,
     // used to walk the context tree starting from given node
-    eWalkContextTree = 2 | eWalkCache
+    eWalkContextTree = 2 | eWalkCache,
+    eScoped = 4
   };
 
   /**
@@ -46,6 +47,11 @@ public:
    * @param aFlags   [in] flags (see enum above)
    */
   TreeWalker(Accessible* aContext, nsIContent* aAnchorNode, uint32_t aFlags = eWalkCache);
+
+  /**
+   * Navigates the accessible children within the anchor node subtree.
+   */
+  TreeWalker(DocAccessible* aDocument, nsIContent* aAnchorNode);
 
   ~TreeWalker();
 

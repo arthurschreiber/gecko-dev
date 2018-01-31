@@ -16,6 +16,7 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/WindowsVersion.h"
 
 #ifndef IME_PROP_ACCEPT_WIDE_VKEY
 #define IME_PROP_ACCEPT_WIDE_VKEY 0x20
@@ -54,7 +55,7 @@ HandleSeparator(nsACString& aDesc)
 class GetIMEGeneralPropertyName : public nsAutoCString
 {
 public:
-  GetIMEGeneralPropertyName(DWORD aFlags)
+  explicit GetIMEGeneralPropertyName(DWORD aFlags)
   {
     if (!aFlags) {
       AppendLiteral("no flags");
@@ -90,7 +91,7 @@ public:
 class GetIMEUIPropertyName : public nsAutoCString
 {
 public:
-  GetIMEUIPropertyName(DWORD aFlags)
+  explicit GetIMEUIPropertyName(DWORD aFlags)
   {
     if (!aFlags) {
       AppendLiteral("no flags");
@@ -114,17 +115,17 @@ public:
 class GetWritingModeName : public nsAutoCString
 {
 public:
-  GetWritingModeName(const WritingMode& aWritingMode)
+  explicit GetWritingModeName(const WritingMode& aWritingMode)
   {
     if (!aWritingMode.IsVertical()) {
-      Assign("Horizontal");
+      AssignLiteral("Horizontal");
       return;
     }
     if (aWritingMode.IsVerticalLR()) {
-      Assign("Vertical (LR)");
+      AssignLiteral("Vertical (LR)");
       return;
     }
-    Assign("Vertical (RL)");
+    AssignLiteral("Vertical (RL)");
   }
   virtual ~GetWritingModeName() {}
 };
@@ -132,7 +133,7 @@ public:
 class GetReconvertStringLog : public nsAutoCString
 {
 public:
-  GetReconvertStringLog(RECONVERTSTRING* aReconv)
+  explicit GetReconvertStringLog(RECONVERTSTRING* aReconv)
   {
     AssignLiteral("{ dwSize=");
     AppendInt(static_cast<uint32_t>(aReconv->dwSize));
@@ -180,9 +181,9 @@ IMEContext::IMEContext(HWND aWnd)
 {
 }
 
-IMEContext::IMEContext(nsWindow* aWindow)
-  : mWnd(aWindow->GetWindowHandle())
-  , mIMC(::ImmGetContext(aWindow->GetWindowHandle()))
+IMEContext::IMEContext(nsWindowBase* aWindowBase)
+  : mWnd(aWindowBase->GetWindowHandle())
+  , mIMC(::ImmGetContext(aWindowBase->GetWindowHandle()))
 {
 }
 
@@ -195,9 +196,9 @@ IMEContext::Init(HWND aWnd)
 }
 
 void
-IMEContext::Init(nsWindow* aWindow)
+IMEContext::Init(nsWindowBase* aWindowBase)
 {
-  Init(aWindow->GetWindowHandle());
+  Init(aWindowBase->GetWindowHandle());
 }
 
 void
@@ -224,6 +225,54 @@ DWORD IMMHandler::sIMEUIProperty = 0;
 bool IMMHandler::sAssumeVerticalWritingModeNotSupported = false;
 bool IMMHandler::sHasFocus = false;
 bool IMMHandler::sNativeCaretIsCreatedForPlugin = false;
+
+#define IMPL_IS_IME_ACTIVE(aReadableName, aActualName)                         \
+bool                                                                           \
+IMMHandler::Is ## aReadableName ## Active()                                    \
+{                                                                              \
+  return sIMEName.Equals(aActualName);                                         \
+}                                                                              \
+
+IMPL_IS_IME_ACTIVE(ATOK2006, u"ATOK 2006")
+IMPL_IS_IME_ACTIVE(ATOK2007, u"ATOK 2007")
+IMPL_IS_IME_ACTIVE(ATOK2008, u"ATOK 2008")
+IMPL_IS_IME_ACTIVE(ATOK2009, u"ATOK 2009")
+IMPL_IS_IME_ACTIVE(ATOK2010, u"ATOK 2010")
+// NOTE: Even on Windows for en-US, the name of Google Japanese Input is
+//       written in Japanese.
+IMPL_IS_IME_ACTIVE(GoogleJapaneseInput,
+                   u"Google \x65E5\x672C\x8A9E\x5165\x529B "
+                   u"IMM32 \x30E2\x30B8\x30E5\x30FC\x30EB")
+IMPL_IS_IME_ACTIVE(Japanist2003, u"Japanist 2003")
+
+#undef IMPL_IS_IME_ACTIVE
+
+// static
+bool
+IMMHandler::IsActiveIMEInBlockList()
+{
+  if (sIMEName.IsEmpty()) {
+    return false;
+  }
+#ifdef _WIN64
+  // ATOK started to be TIP of TSF since 2011.  Older than it, i.e., ATOK 2010
+  // and earlier have a lot of problems even for daily use.  Perhaps, the
+  // reason is Win 8 has a lot of changes around IMM-IME support and TSF,
+  // and ATOK 2010 is released earlier than Win 8.
+  // ATOK 2006 crashes while converting a word with candidate window.
+  // ATOK 2007 doesn't paint and resize suggest window and candidate window
+  // correctly (showing white window or too big window).
+  // ATOK 2008 and ATOK 2009 crash when user just opens their open state.
+  // ATOK 2010 isn't installable newly on Win 7 or later, but we have a lot of
+  // crash reports.
+  if (IsWin8OrLater() &&
+      (IsATOK2006Active() || IsATOK2007Active() || IsATOK2008Active() ||
+       IsATOK2009Active() || IsATOK2010Active())) {
+    return true;
+  }
+#endif // #ifdef _WIN64
+  return false;
+}
 
 // static
 void
@@ -291,23 +340,6 @@ IMMHandler::IsTopLevelWindowOfComposition(nsWindow* aWindow)
 
 // static
 bool
-IMMHandler::IsJapanist2003Active()
-{
-  return sIMEName.EqualsLiteral("Japanist 2003");
-}
-
-// static
-bool
-IMMHandler::IsGoogleJapaneseInputActive()
-{
-  // NOTE: Even on Windows for en-US, the name of Google Japanese Input is
-  //       written in Japanese.
-  return sIMEName.Equals(L"Google \x65E5\x672C\x8A9E\x5165\x529B "
-                         L"IMM32 \x30E2\x30B8\x30E5\x30FC\x30EB");
-}
-
-// static
-bool
 IMMHandler::ShouldDrawCompositionStringOurselves()
 {
   // If current IME has special UI or its composition window should not
@@ -344,7 +376,7 @@ IMMHandler::InitKeyboardLayout(nsWindow* aWindow,
     // Add room for the terminating null character
     sIMEName.SetLength(++IMENameLength);
     IMENameLength =
-      ::ImmGetDescriptionW(aKeyboardLayout, wwc(sIMEName.BeginWriting()),
+      ::ImmGetDescriptionW(aKeyboardLayout, sIMEName.get(),
                            IMENameLength);
     // Adjust the length to ignore the terminating null character
     sIMEName.SetLength(IMENameLength);
@@ -363,8 +395,8 @@ IMMHandler::InitKeyboardLayout(nsWindow* aWindow,
   // For hacking some bugs of some TIP, we should set an IME name from the
   // pref.
   if (sCodePage == 932 && sIMEName.IsEmpty()) {
-    sIMEName =
-      Preferences::GetString("intl.imm.japanese.assume_active_tip_name_as");
+    Preferences::GetString("intl.imm.japanese.assume_active_tip_name_as",
+                           sIMEName);
   }
 
   // Whether the IME supports vertical writing mode might be changed or
@@ -390,12 +422,12 @@ IMMHandler::GetKeyboardCodePage()
 }
 
 // static
-nsIMEUpdatePreference
-IMMHandler::GetIMEUpdatePreference()
+IMENotificationRequests
+IMMHandler::GetIMENotificationRequests()
 {
-  return nsIMEUpdatePreference(
-    nsIMEUpdatePreference::NOTIFY_POSITION_CHANGE |
-    nsIMEUpdatePreference::NOTIFY_MOUSE_BUTTON_EVENT_ON_CHAR);
+  return IMENotificationRequests(
+    IMENotificationRequests::NOTIFY_POSITION_CHANGE |
+    IMENotificationRequests::NOTIFY_MOUSE_BUTTON_EVENT_ON_CHAR);
 }
 
 // used for checking the lParam of WM_IME_COMPOSITION
@@ -1470,13 +1502,14 @@ IMMHandler::HandleComposition(nsWindow* aWindow,
         clauseArrayLength = clauseArrayLength2;
     }
 
-    if (useA_API) {
+    if (useA_API && clauseArrayLength > 0) {
       // Convert each values of sIMECompClauseArray. The values mean offset of
       // the clauses in ANSI string. But we need the values in Unicode string.
       nsAutoCString compANSIStr;
       if (ConvertToANSIString(mCompositionString, GetKeyboardCodePage(),
                               compANSIStr)) {
         uint32_t maxlen = compANSIStr.Length();
+        mClauseArray.SetLength(clauseArrayLength);
         mClauseArray[0] = 0; // first value must be 0
         for (int32_t i = 1; i < clauseArrayLength; i++) {
           uint32_t len = std::min(mClauseArray[i], maxlen);
@@ -1703,10 +1736,10 @@ IMMHandler::HandleQueryCharPosition(nsWindow* aWindow,
   //     documented) and its horizontal width.  So, it might be better to set
   //     top-right corner of the character and horizontal width, but we're not
   //     sure if it doesn't cause any problems with a lot of IMEs...
-  pCharPosition->pt.x = screenRect.x;
-  pCharPosition->pt.y = screenRect.y;
+  pCharPosition->pt.x = screenRect.X();
+  pCharPosition->pt.y = screenRect.Y();
 
-  pCharPosition->cLineHeight = r.height;
+  pCharPosition->cLineHeight = r.Height();
 
   WidgetQueryContentEvent editorRect(true, eQueryEditorRect, aWindow);
   aWindow->InitEvent(editorRect);
@@ -1722,7 +1755,7 @@ IMMHandler::HandleQueryCharPosition(nsWindow* aWindow,
     LayoutDeviceIntRect editorRectInScreen;
     ResolveIMECaretPos(window, editorRectInWindow, nullptr, editorRectInScreen);
     ::SetRect(&pCharPosition->rcDocument,
-              editorRectInScreen.x, editorRectInScreen.y,
+              editorRectInScreen.X(), editorRectInScreen.Y(),
               editorRectInScreen.XMost(), editorRectInScreen.YMost());
   }
 
@@ -1994,6 +2027,12 @@ IMMHandler::DispatchCompositionChangeEvent(nsWindow* aWindow,
       }
 
       uint32_t length = current - lastOffset;
+      if (NS_WARN_IF(lastOffset >= mAttributeArray.Length())) {
+        MOZ_LOG(gIMMLog, LogLevel::Error,
+          ("DispatchCompositionChangeEvent, FAILED due to invalid data of "
+            "mClauseArray or mAttributeArray"));
+        return;
+      }
       TextRangeType textRangeType =
         PlatformToNSAttr(mAttributeArray[lastOffset]);
       rv = dispatcher->AppendClauseToPendingComposition(length, textRangeType);
@@ -2136,7 +2175,7 @@ IMMHandler::GetTargetClauseRange(uint32_t* aOffset,
 }
 
 bool
-IMMHandler::ConvertToANSIString(const nsAFlatString& aStr,
+IMMHandler::ConvertToANSIString(const nsString& aStr,
                                 UINT aCodePage,
                                 nsACString& aANSIStr)
 {
@@ -2225,7 +2264,7 @@ IMMHandler::GetCharacterRectOfSelectedTextAt(nsWindow* aWindow,
         ("GetCharacterRectOfSelectedTextAt, Succeeded, aOffset=%u, "
          "aCharRect={ x: %ld, y: %ld, width: %ld, height: %ld }, "
          "charRect.GetWritingMode()=%s",
-         aOffset, aCharRect.x, aCharRect.y, aCharRect.width, aCharRect.height,
+         aOffset, aCharRect.X(), aCharRect.Y(), aCharRect.Width(), aCharRect.Height(),
          GetWritingModeName(charRect.GetWritingMode()).get()));
       return true;
     }
@@ -2260,7 +2299,7 @@ IMMHandler::GetCaretRect(nsWindow* aWindow,
     ("GetCaretRect, SUCCEEDED, "
      "aCaretRect={ x: %ld, y: %ld, width: %ld, height: %ld }, "
      "caretRect.GetWritingMode()=%s",
-     aCaretRect.x, aCaretRect.y, aCaretRect.width, aCaretRect.height,
+     aCaretRect.X(), aCaretRect.Y(), aCaretRect.Width(), aCaretRect.Height(),
      GetWritingModeName(caretRect.GetWritingMode()).get()));
   return true;
 }
@@ -2287,17 +2326,17 @@ IMMHandler::SetIMERelatedWindowsPos(nsWindow* aWindow,
     ResolveIMECaretPos(toplevelWindow, r, aWindow, caretRect);
   } else {
     NS_WARNING("failed to get caret rect");
-    caretRect.width = 1;
+    caretRect.SetWidth(1);
   }
   if (!mNativeCaretIsCreated) {
     mNativeCaretIsCreated = ::CreateCaret(aWindow->GetWindowHandle(), nullptr,
-                                          caretRect.width, caretRect.height);
+                                          caretRect.Width(), caretRect.Height());
     MOZ_LOG(gIMMLog, LogLevel::Info,
       ("SetIMERelatedWindowsPos, mNativeCaretIsCreated=%s, "
        "width=%ld, height=%ld",
-       GetBoolName(mNativeCaretIsCreated), caretRect.width, caretRect.height));
+       GetBoolName(mNativeCaretIsCreated), caretRect.Width(), caretRect.Height()));
   }
-  ::SetCaretPos(caretRect.x, caretRect.y);
+  ::SetCaretPos(caretRect.X(), caretRect.Y());
 
   if (ShouldDrawCompositionStringOurselves()) {
     MOZ_LOG(gIMMLog, LogLevel::Info,
@@ -2349,22 +2388,22 @@ IMMHandler::SetIMERelatedWindowsPos(nsWindow* aWindow,
       candForm.dwStyle = CFS_EXCLUDE;
       // Candidate window shouldn't overlap the target clause in any writing
       // mode.
-      candForm.rcArea.left = targetClauseRect.x;
+      candForm.rcArea.left = targetClauseRect.X();
       candForm.rcArea.right = targetClauseRect.XMost();
-      candForm.rcArea.top = targetClauseRect.y;
+      candForm.rcArea.top = targetClauseRect.Y();
       candForm.rcArea.bottom = targetClauseRect.YMost();
       if (!writingMode.IsVertical()) {
         // In horizontal layout, current point of interest should be top-left
         // of the first character.
-        candForm.ptCurrentPos.x = firstTargetCharRect.x;
-        candForm.ptCurrentPos.y = firstTargetCharRect.y;
+        candForm.ptCurrentPos.x = firstTargetCharRect.X();
+        candForm.ptCurrentPos.y = firstTargetCharRect.Y();
       } else if (writingMode.IsVerticalRL()) {
         // In vertical layout (RL), candidate window should be positioned right
         // side of target clause.  However, we don't set vertical writing font
         // to the IME.  Therefore, the candidate window may be positioned
         // bottom-left of target clause rect with these information.
-        candForm.ptCurrentPos.x = targetClauseRect.x;
-        candForm.ptCurrentPos.y = targetClauseRect.y;
+        candForm.ptCurrentPos.x = targetClauseRect.X();
+        candForm.ptCurrentPos.y = targetClauseRect.Y();
       } else {
         MOZ_ASSERT(writingMode.IsVerticalLR(), "Did we miss some causes?");
         // In vertical layout (LR), candidate window should be poisitioned left
@@ -2372,7 +2411,7 @@ IMMHandler::SetIMERelatedWindowsPos(nsWindow* aWindow,
         // to the IME, the candidate window may be positioned bottom-right of
         // the target clause rect with these information.
         candForm.ptCurrentPos.x = targetClauseRect.XMost();
-        candForm.ptCurrentPos.y = targetClauseRect.y;
+        candForm.ptCurrentPos.y = targetClauseRect.Y();
       }
     } else {
       // If vertical writing is not supported by IME, let's set candidate
@@ -2380,7 +2419,7 @@ IMMHandler::SetIMERelatedWindowsPos(nsWindow* aWindow,
       // the position must be the safest position to prevent the candidate
       // window to overlap with the target clause.
       candForm.dwStyle = CFS_CANDIDATEPOS;
-      candForm.ptCurrentPos.x = targetClauseRect.x;
+      candForm.ptCurrentPos.x = targetClauseRect.X();
       candForm.ptCurrentPos.y = targetClauseRect.YMost();
     }
     MOZ_LOG(gIMMLog, LogLevel::Info,
@@ -2404,9 +2443,9 @@ IMMHandler::SetIMERelatedWindowsPos(nsWindow* aWindow,
     COMPOSITIONFORM compForm;
     compForm.dwStyle = CFS_POINT;
     compForm.ptCurrentPos.x =
-      !writingMode.IsVerticalLR() ? firstSelectedCharRect.x :
+      !writingMode.IsVerticalLR() ? firstSelectedCharRect.X() :
                                     firstSelectedCharRect.XMost();
-    compForm.ptCurrentPos.y = firstSelectedCharRect.y;
+    compForm.ptCurrentPos.y = firstSelectedCharRect.Y();
     ::ImmSetCompositionWindow(aContext.get(), &compForm);
   }
 
@@ -2434,19 +2473,18 @@ IMMHandler::SetIMERelatedWindowsPosOnPlugin(nsWindow* aWindow,
     editorRectEvent.mReply.mRect + toplevelWindow->WidgetToScreenOffset();
   LayoutDeviceIntRect winRectInScreen = aWindow->GetClientBounds();
   // composition window cannot be positioned on the edge of client area.
-  winRectInScreen.width--;
-  winRectInScreen.height--;
+  winRectInScreen.SizeTo(winRectInScreen.Width() - 1,
+                         winRectInScreen.Height() - 1);
   LayoutDeviceIntRect clippedPluginRect;
-  clippedPluginRect.x =
-    std::min(std::max(pluginRectInScreen.x, winRectInScreen.x),
-             winRectInScreen.XMost());
-  clippedPluginRect.y =
-    std::min(std::max(pluginRectInScreen.y, winRectInScreen.y),
-             winRectInScreen.YMost());
+  clippedPluginRect.MoveTo(
+    std::min(std::max(pluginRectInScreen.X(), winRectInScreen.X()),
+             winRectInScreen.XMost()),
+    std::min(std::max(pluginRectInScreen.Y(), winRectInScreen.Y()),
+             winRectInScreen.YMost()));
   int32_t xMost = std::min(pluginRectInScreen.XMost(), winRectInScreen.XMost());
   int32_t yMost = std::min(pluginRectInScreen.YMost(), winRectInScreen.YMost());
-  clippedPluginRect.width = std::max(0, xMost - clippedPluginRect.x);
-  clippedPluginRect.height = std::max(0, yMost - clippedPluginRect.y);
+  clippedPluginRect.SizeTo(std::max(0, xMost - clippedPluginRect.X()),
+                           std::max(0, yMost - clippedPluginRect.Y()));
   clippedPluginRect -= aWindow->WidgetToScreenOffset();
 
   // Cover the plugin with native caret.  This prevents IME's window and plugin
@@ -2456,8 +2494,8 @@ IMMHandler::SetIMERelatedWindowsPosOnPlugin(nsWindow* aWindow,
   }
   mNativeCaretIsCreated =
     ::CreateCaret(aWindow->GetWindowHandle(), nullptr,
-                  clippedPluginRect.width, clippedPluginRect.height);
-  ::SetCaretPos(clippedPluginRect.x, clippedPluginRect.y);
+                  clippedPluginRect.Width(), clippedPluginRect.Height());
+  ::SetCaretPos(clippedPluginRect.X(), clippedPluginRect.Y());
 
   // Set the composition window to bottom-left of the clipped plugin.
   // As far as we know, there is no IME for RTL language.  Therefore, this code
@@ -2531,8 +2569,12 @@ IMMHandler::AdjustCompositionFont(nsWindow* aWindow,
   // Therefore, we need to store the information which are set to the IM
   // context to static variables since IM context is never recreated.
   static bool sCompositionFontsInitialized = false;
-  static nsString sCompositionFont =
-    Preferences::GetString("intl.imm.composition_font");
+  static nsString sCompositionFont;
+  static bool sCompositionFontPrefDone = false;
+  if (!sCompositionFontPrefDone) {
+    sCompositionFontPrefDone = true;
+    Preferences::GetString("intl.imm.composition_font", sCompositionFont);
+  }
 
   // If composition font is customized by pref, we need to modify the
   // composition font of the IME context at first time even if the writing mode
@@ -2581,8 +2623,8 @@ IMMHandler::AdjustCompositionFont(nsWindow* aWindow,
   if (IsJapanist2003Active() && sCompositionFontForJapanist2003.IsEmpty()) {
     const char* kCompositionFontForJapanist2003 =
       "intl.imm.composition_font.japanist_2003";
-    sCompositionFontForJapanist2003 =
-      Preferences::GetString(kCompositionFontForJapanist2003);
+    Preferences::GetString(kCompositionFontForJapanist2003,
+                           sCompositionFontForJapanist2003);
     // If the font name is not specified properly, let's use
     // "MS PGothic" instead.
     if (sCompositionFontForJapanist2003.IsEmpty() ||
@@ -2678,7 +2720,7 @@ IMMHandler::OnMouseButtonEvent(nsWindow* aWindow,
     aIMENotification.mMouseButtonEventData.mCursorPos.AsIntPoint();
   nsIntRect charRect =
     aIMENotification.mMouseButtonEventData.mCharRect.AsIntRect();
-  int32_t cursorXInChar = cursorPos.x - charRect.x;
+  int32_t cursorXInChar = cursorPos.x - charRect.X();
   // The event might hit to zero-width character, see bug 694913.
   // The reason might be:
   // * There are some zero-width characters are actually.
@@ -2687,8 +2729,8 @@ IMMHandler::OnMouseButtonEvent(nsWindow* aWindow,
   // We should assume that user clicked on right most of the zero-width
   // character in such case.
   int positioning = 1;
-  if (charRect.width > 0) {
-    positioning = cursorXInChar * 4 / charRect.width;
+  if (charRect.Width() > 0) {
+    positioning = cursorXInChar * 4 / charRect.Width();
     positioning = (positioning + 2) % 4;
   }
 

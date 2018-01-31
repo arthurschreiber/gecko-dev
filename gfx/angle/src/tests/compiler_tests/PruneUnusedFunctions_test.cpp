@@ -12,6 +12,8 @@
 #include "GLSLANG/ShaderLang.h"
 #include "tests/test_utils/compiler_test.h"
 
+using namespace sh;
+
 namespace
 {
 
@@ -67,7 +69,7 @@ TEST_F(PruneUnusedFunctionsTest, UnimplementedPrototype)
     EXPECT_TRUE(foundInCode("main(", 1));
 }
 
-// Check that used functions are not prunued (duh)
+// Check that used functions are not pruned (duh)
 TEST_F(PruneUnusedFunctionsTest, UsedFunction)
 {
     const std::string &shaderString =

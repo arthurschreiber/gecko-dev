@@ -5,8 +5,8 @@
 
 // Test that NetworkHelper.parseSecurityInfo correctly detects static hpkp pins
 
-const { require } = Components.utils.import("resource://devtools/shared/Loader.jsm", {});
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 const Services = require("Services");
 
 Object.defineProperty(this, "NetworkHelper", {
@@ -28,7 +28,8 @@ const MockSecurityInfo = {
   errorCode: 0,
   SSLStatus: {
     cipherSuite: "TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256",
-    protocolVersion: 3, // TLS_VERSION_1_2
+    // TLS_VERSION_1_2
+    protocolVersion: 3,
     serverCert: {
       validity: {}
     },

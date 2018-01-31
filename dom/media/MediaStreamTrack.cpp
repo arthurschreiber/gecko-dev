@@ -6,13 +6,14 @@
 #include "MediaStreamTrack.h"
 
 #include "DOMMediaStream.h"
+#include "MediaStreamError.h"
 #include "MediaStreamGraph.h"
+#include "MediaStreamListener.h"
+#include "mozilla/dom/Promise.h"
+#include "nsContentUtils.h"
 #include "nsIUUIDGenerator.h"
 #include "nsServiceManagerUtils.h"
-#include "MediaStreamListener.h"
 #include "systemservices/MediaUtils.h"
-
-#include "mozilla/dom/Promise.h"
 
 #ifdef LOG
 #undef LOG
@@ -20,6 +21,8 @@
 
 static mozilla::LazyLogModule gMediaStreamTrackLog("MediaStreamTrack");
 #define LOG(type, msg) MOZ_LOG(gMediaStreamTrackLog, type, msg)
+
+using namespace mozilla::media;
 
 namespace mozilla {
 namespace dom {
@@ -44,7 +47,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 auto
 MediaStreamTrackSource::ApplyConstraints(
     nsPIDOMWindowInner* aWindow,
-    const dom::MediaTrackConstraints& aConstraints) -> already_AddRefed<PledgeVoid>
+    const dom::MediaTrackConstraints& aConstraints,
+    CallerType aCallerType) -> already_AddRefed<PledgeVoid>
 {
   RefPtr<PledgeVoid> p = new PledgeVoid();
   p->Reject(new MediaStreamError(aWindow,
@@ -75,7 +79,8 @@ class MediaStreamTrack::PrincipalHandleListener : public MediaStreamTrackListene
 {
 public:
   explicit PrincipalHandleListener(MediaStreamTrack* aTrack)
-    : mTrack(aTrack) {}
+    : mTrack(aTrack)
+    {}
 
   void Forget()
   {
@@ -97,10 +102,13 @@ public:
   void NotifyPrincipalHandleChanged(MediaStreamGraph* aGraph,
                                     const PrincipalHandle& aNewPrincipalHandle) override
   {
-    nsCOMPtr<nsIRunnable> runnable =
+    aGraph->DispatchToMainThreadAfterStreamStateUpdate(
       NewRunnableMethod<StoreCopyPassByConstLRef<PrincipalHandle>>(
-        this, &PrincipalHandleListener::DoNotifyPrincipalHandleChanged, aNewPrincipalHandle);
-    aGraph->DispatchToMainThreadAfterStreamStateUpdate(runnable.forget());
+        "dom::MediaStreamTrack::PrincipalHandleListener::"
+        "DoNotifyPrincipalHandleChanged",
+        this,
+        &PrincipalHandleListener::DoNotifyPrincipalHandleChanged,
+        aNewPrincipalHandle));
   }
 
 protected:
@@ -116,14 +124,14 @@ MediaStreamTrack::MediaStreamTrack(DOMMediaStream* aStream, TrackID aTrackID,
     mInputTrackID(aInputTrackID), mSource(aSource),
     mPrincipal(aSource->GetPrincipal()),
     mReadyState(MediaStreamTrackState::Live),
-    mEnabled(true), mRemote(aSource->IsRemote()),
-    mConstraints(aConstraints)
+    mEnabled(true), mMuted(false), mConstraints(aConstraints)
 {
-
   GetSource().RegisterSink(this);
 
-  mPrincipalHandleListener = new PrincipalHandleListener(this);
-  AddListener(mPrincipalHandleListener);
+  if (GetOwnedStream()) {
+    mPrincipalHandleListener = new PrincipalHandleListener(this);
+    AddListener(mPrincipalHandleListener);
+  }
 
   nsresult rv;
   nsCOMPtr<nsIUUIDGenerator> uuidgen =
@@ -189,7 +197,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_ADDREF_INHERITED(MediaStreamTrack, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(MediaStreamTrack, DOMEventTargetHelper)
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(MediaStreamTrack)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MediaStreamTrack)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 nsPIDOMWindowInner*
@@ -226,11 +234,6 @@ MediaStreamTrack::Stop()
     return;
   }
 
-  if (mRemote) {
-    LOG(LogLevel::Warning, ("MediaStreamTrack %p is remote. Can't be stopped.", this));
-    return;
-  }
-
   if (!mSource) {
     MOZ_ASSERT(false);
     return;
@@ -245,6 +248,8 @@ MediaStreamTrack::Stop()
   Unused << p;
 
   mReadyState = MediaStreamTrackState::Ended;
+
+  NotifyEnded();
 }
 
 void
@@ -254,13 +259,23 @@ MediaStreamTrack::GetConstraints(dom::MediaTrackConstraints& aResult)
 }
 
 void
-MediaStreamTrack::GetSettings(dom::MediaTrackSettings& aResult)
+MediaStreamTrack::GetSettings(dom::MediaTrackSettings& aResult, CallerType aCallerType)
 {
   GetSource().GetSettings(aResult);
+
+  // Spoof values when privacy.resistFingerprinting is true.
+  if (!nsContentUtils::ResistFingerprinting(aCallerType)) {
+    return;
+  }
+  if (aResult.mFacingMode.WasPassed()) {
+    aResult.mFacingMode.Value().Assign(NS_ConvertASCIItoUTF16(
+        VideoFacingModeEnumValues::strings[uint8_t(VideoFacingModeEnum::User)].value));
+  }
 }
 
 already_AddRefed<Promise>
 MediaStreamTrack::ApplyConstraints(const MediaTrackConstraints& aConstraints,
+                                   CallerType aCallerType,
                                    ErrorResult &aRv)
 {
   if (MOZ_LOG_TEST(gMediaStreamTrackLog, LogLevel::Info)) {
@@ -285,7 +300,8 @@ MediaStreamTrack::ApplyConstraints(const MediaTrackConstraints& aConstraints,
 
   // Keep a reference to this, to make sure it's still here when we get back.
   RefPtr<MediaStreamTrack> that = this;
-  RefPtr<PledgeVoid> p = GetSource().ApplyConstraints(window, aConstraints);
+  RefPtr<PledgeVoid> p = GetSource().ApplyConstraints(window, aConstraints,
+                                                      aCallerType);
   p->Then([this, that, promise, aConstraints](bool& aDummy) mutable {
     mConstraints = aConstraints;
     promise->MaybeResolve(false);
@@ -357,6 +373,41 @@ MediaStreamTrack::NotifyPrincipalHandleChanged(const PrincipalHandle& aNewPrinci
   }
 }
 
+void
+MediaStreamTrack::MutedChanged(bool aNewState)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (mMuted == aNewState) {
+    MOZ_ASSERT_UNREACHABLE("Muted state didn't actually change");
+    return;
+  }
+
+  LOG(LogLevel::Info, ("MediaStreamTrack %p became %s",
+                       this, aNewState ? "muted" : "unmuted"));
+
+  mMuted = aNewState;
+  nsString eventName =
+    aNewState ? NS_LITERAL_STRING("mute") : NS_LITERAL_STRING("unmute");
+  DispatchTrustedEvent(eventName);
+}
+
+void
+MediaStreamTrack::NotifyEnded()
+{
+  MOZ_ASSERT(mReadyState == MediaStreamTrackState::Ended);
+
+  auto consumers(mConsumers);
+  for (const auto& consumer : consumers) {
+    if (consumer) {
+      consumer->NotifyEnded(this);
+    } else {
+      MOZ_ASSERT_UNREACHABLE("A consumer was not explicitly removed");
+      mConsumers.RemoveElement(consumer);
+    }
+  }
+}
+
 bool
 MediaStreamTrack::AddPrincipalChangeObserver(
   PrincipalChangeObserver<MediaStreamTrack>* aObserver)
@@ -369,6 +420,29 @@ MediaStreamTrack::RemovePrincipalChangeObserver(
   PrincipalChangeObserver<MediaStreamTrack>* aObserver)
 {
   return mPrincipalChangeObservers.RemoveElement(aObserver);
+}
+
+void
+MediaStreamTrack::AddConsumer(MediaStreamTrackConsumer* aConsumer)
+{
+  MOZ_ASSERT(!mConsumers.Contains(aConsumer));
+  mConsumers.AppendElement(aConsumer);
+
+  // Remove destroyed consumers for cleanliness
+  while (mConsumers.RemoveElement(nullptr)) {
+    MOZ_ASSERT_UNREACHABLE("A consumer was not explicitly removed");
+  }
+}
+
+void
+MediaStreamTrack::RemoveConsumer(MediaStreamTrackConsumer* aConsumer)
+{
+  mConsumers.RemoveElement(aConsumer);
+
+  // Remove destroyed consumers for cleanliness
+  while (mConsumers.RemoveElement(nullptr)) {
+    MOZ_ASSERT_UNREACHABLE("A consumer was not explicitly removed");
+  }
 }
 
 already_AddRefed<MediaStreamTrack>
@@ -388,7 +462,23 @@ MediaStreamTrack::Clone()
 }
 
 void
-MediaStreamTrack::NotifyEnded()
+MediaStreamTrack::SetReadyState(MediaStreamTrackState aState)
+{
+  MOZ_ASSERT(!(mReadyState == MediaStreamTrackState::Ended &&
+               aState == MediaStreamTrackState::Live),
+             "We don't support overriding the ready state from ended to live");
+
+  if (mReadyState == MediaStreamTrackState::Live &&
+      aState == MediaStreamTrackState::Ended &&
+      mSource) {
+    mSource->UnregisterSink(this);
+  }
+
+  mReadyState = aState;
+}
+
+void
+MediaStreamTrack::OverrideEnded()
 {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -398,7 +488,16 @@ MediaStreamTrack::NotifyEnded()
 
   LOG(LogLevel::Info, ("MediaStreamTrack %p ended", this));
 
+  if (!mSource) {
+    MOZ_ASSERT(false);
+    return;
+  }
+
+  mSource->UnregisterSink(this);
+
   mReadyState = MediaStreamTrackState::Ended;
+
+  NotifyEnded();
 
   DispatchTrustedEvent(NS_LITERAL_STRING("ended"));
 }

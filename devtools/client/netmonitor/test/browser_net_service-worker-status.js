@@ -1,6 +1,6 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
 /**
@@ -13,11 +13,17 @@ const URL = EXAMPLE_URL.replace("http:", "https:");
 const TEST_URL = URL + "service-workers/status-codes.html";
 
 add_task(function* () {
-  let { tab, monitor } = yield initNetMonitor(TEST_URL, null, true);
+  let { tab, monitor } = yield initNetMonitor(TEST_URL, true);
   info("Starting test... ");
 
-  let { NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
+  let { document, store, windowRequire, connector } = monitor.panelWin;
+  let Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+  let {
+    getDisplayedRequests,
+    getSortedRequests,
+  } = windowRequire("devtools/client/netmonitor/src/selectors/index");
+
+  store.dispatch(Actions.batchEnable(false));
 
   const REQUEST_DATA = [
     {
@@ -46,14 +52,35 @@ add_task(function* () {
   });
   yield wait;
 
+  // Fetch stack-trace data from the backend and wait till
+  // all packets are received.
+  let requests = getSortedRequests(store.getState());
+  yield Promise.all(requests.map(requestItem =>
+    connector.requestData(requestItem.id, "stackTrace")));
+
+  let requestItems = document.querySelectorAll(".request-list-item");
+  for (let requestItem of requestItems) {
+    requestItem.scrollIntoView();
+    let requestsListStatus = requestItem.querySelector(".requests-list-status");
+    EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
+    yield waitUntil(() => requestsListStatus.title);
+  }
+
   let index = 0;
   for (let request of REQUEST_DATA) {
-    let item = RequestsMenu.getItemAtIndex(index);
+    let item = getSortedRequests(store.getState()).get(index);
 
     info(`Verifying request #${index}`);
-    yield verifyRequestItemTarget(item, request.method, request.uri, request.details);
+    yield verifyRequestItemTarget(
+      document,
+      getDisplayedRequests(store.getState()),
+      item,
+      request.method,
+      request.uri,
+      request.details
+    );
 
-    let { stacktrace } = item.attachment.cause;
+    let { stacktrace } = item;
     let stackLen = stacktrace ? stacktrace.length : 0;
 
     ok(stacktrace, `Request #${index} has a stacktrace`);

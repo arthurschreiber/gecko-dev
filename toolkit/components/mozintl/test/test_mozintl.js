@@ -1,32 +1,52 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-function run_test() {
-  const mozIntl = Components.classes["@mozilla.org/mozintl;1"]
-                            .getService(Components.interfaces.mozIMozIntl);
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-  test_this_global(mozIntl);
-  test_cross_global(mozIntl);
+function run_test() {
+  test_methods_presence();
+  test_methods_calling();
+  test_constructors();
 
   ok(true);
 }
 
-function test_this_global(mozIntl) {
-  let x = {};
-
-  mozIntl.addGetCalendarInfo(x);
-  equal(x.getCalendarInfo instanceof Function, true);
-  equal(x.getCalendarInfo() instanceof Object, true);
+function test_methods_presence() {
+  equal(Services.intl.getCalendarInfo instanceof Function, true);
+  equal(Services.intl.getDisplayNames instanceof Function, true);
+  equal(Services.intl.getLocaleInfo instanceof Function, true);
+  equal(Services.intl.getLocaleInfo instanceof Object, true);
 }
 
-function test_cross_global(mozIntl) {
-  var global = new Components.utils.Sandbox("https://example.com/");
-  var x = global.Object();
+function test_methods_calling() {
+  Services.intl.getCalendarInfo("pl");
+  Services.intl.getDisplayNames("ar");
+  Services.intl.getLocaleInfo("de");
+  new Services.intl.DateTimeFormat("fr");
+  ok(true);
+}
 
-  mozIntl.addGetCalendarInfo(x);
-  var waivedX = Components.utils.waiveXrays(x);
-  equal(waivedX.getCalendarInfo instanceof Function, false);
-  equal(waivedX.getCalendarInfo instanceof global.Function, true);
-  equal(waivedX.getCalendarInfo() instanceof Object, false);
-  equal(waivedX.getCalendarInfo() instanceof global.Object, true);
+function test_constructors() {
+  let constructors = ["DateTimeFormat", "NumberFormat", "PluralRules", "Collator"];
+
+  constructors.forEach(constructor => {
+    let obj = new Intl[constructor]();
+    let obj2 = new Services.intl[constructor]();
+
+    equal(typeof obj, typeof obj2);
+
+    Assert.throws(() => {
+      // This is an observable difference between Intl and mozIntl.
+      //
+      // Old ECMA402 APIs (edition 1 and 2) allowed for constructors to be called
+      // as functions.
+      // Starting from ed.3 all new constructors are throwing when called without |new|.
+      //
+      // All MozIntl APIs do not implement the legacy behavior and throw
+      // when called without |new|.
+      //
+      // For more information see https://github.com/tc39/ecma402/pull/84 .
+      Services.intl[constructor]();
+    }, /class constructors must be invoked with |new|/);
+  });
 }

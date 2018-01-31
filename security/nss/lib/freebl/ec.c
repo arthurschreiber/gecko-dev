@@ -15,7 +15,23 @@
 #include "ec.h"
 #include "ecl.h"
 
-#ifndef NSS_DISABLE_ECC
+static const ECMethod kMethods[] = {
+    { ECCurve25519,
+      ec_Curve25519_pt_mul,
+      ec_Curve25519_pt_validate }
+};
+
+static const ECMethod *
+ec_get_method_from_name(ECCurveName name)
+{
+    int i;
+    for (i = 0; i < sizeof(kMethods) / sizeof(kMethods[0]); ++i) {
+        if (kMethods[i].name == name) {
+            return &kMethods[i];
+        }
+    }
+    return NULL;
+}
 
 /*
  * Returns true if pointP is the point at infinity, false otherwise
@@ -165,7 +181,6 @@ cleanup:
 
     return rv;
 }
-#endif /* NSS_DISABLE_ECC */
 
 /* Generates a new EC key pair. The private key is a supplied
  * value and the public key is the result of performing a scalar
@@ -176,7 +191,6 @@ ec_NewKey(ECParams *ecParams, ECPrivateKey **privKey,
           const unsigned char *privKeyBytes, int privKeyLen)
 {
     SECStatus rv = SECFailure;
-#ifndef NSS_DISABLE_ECC
     PLArenaPool *arena;
     ECPrivateKey *key;
     mp_int k;
@@ -188,7 +202,8 @@ ec_NewKey(ECParams *ecParams, ECPrivateKey **privKey,
 #endif
     MP_DIGITS(&k) = 0;
 
-    if (!ecParams || !privKey || !privKeyBytes || (privKeyLen < 0)) {
+    if (!ecParams || !privKey || !privKeyBytes || (privKeyLen < 0) ||
+        !ecParams->name) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return SECFailure;
     }
@@ -214,7 +229,8 @@ ec_NewKey(ECParams *ecParams, ECPrivateKey **privKey,
     key->ecParams.type = ecParams->type;
     key->ecParams.fieldID.size = ecParams->fieldID.size;
     key->ecParams.fieldID.type = ecParams->fieldID.type;
-    if (ecParams->fieldID.type == ec_field_GFp) {
+    if (ecParams->fieldID.type == ec_field_GFp ||
+        ecParams->fieldID.type == ec_field_plain) {
         CHECK_SEC_OK(SECITEM_CopyItem(arena, &key->ecParams.fieldID.u.prime,
                                       &ecParams->fieldID.u.prime));
     } else {
@@ -241,8 +257,7 @@ ec_NewKey(ECParams *ecParams, ECPrivateKey **privKey,
     CHECK_SEC_OK(SECITEM_CopyItem(arena, &key->ecParams.curveOID,
                                   &ecParams->curveOID));
 
-    len = (ecParams->fieldID.size + 7) >> 3;
-    SECITEM_AllocItem(arena, &key->publicValue, 2 * len + 1);
+    SECITEM_AllocItem(arena, &key->publicValue, EC_GetPointSize(ecParams));
     len = ecParams->order.len;
     SECITEM_AllocItem(arena, &key->privateValue, len);
 
@@ -255,27 +270,41 @@ ec_NewKey(ECParams *ecParams, ECPrivateKey **privKey,
     }
 
     /* Compute corresponding public key */
+
+    /* Use curve specific code for point multiplication */
+    if (ecParams->fieldID.type == ec_field_plain) {
+        const ECMethod *method = ec_get_method_from_name(ecParams->name);
+        if (method == NULL || method->mul == NULL) {
+            /* unknown curve */
+            rv = SECFailure;
+            goto cleanup;
+        }
+        rv = method->mul(&key->publicValue, &key->privateValue, NULL);
+        goto done;
+    }
+
     CHECK_MPI_OK(mp_init(&k));
     CHECK_MPI_OK(mp_read_unsigned_octets(&k, key->privateValue.data,
                                          (mp_size)len));
 
     rv = ec_points_mul(ecParams, &k, NULL, NULL, &(key->publicValue));
-    if (rv != SECSuccess)
+    if (rv != SECSuccess) {
         goto cleanup;
+    }
+
+done:
     *privKey = key;
 
 cleanup:
     mp_clear(&k);
-    if (rv)
+    if (rv) {
         PORT_FreeArena(arena, PR_TRUE);
+    }
 
 #if EC_DEBUG
     printf("ec_NewKey returning %s\n",
            (rv == SECSuccess) ? "success" : "failure");
 #endif
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-#endif /* NSS_DISABLE_ECC */
 
     return rv;
 }
@@ -290,15 +319,10 @@ EC_NewKeyFromSeed(ECParams *ecParams, ECPrivateKey **privKey,
                   const unsigned char *seed, int seedlen)
 {
     SECStatus rv = SECFailure;
-#ifndef NSS_DISABLE_ECC
     rv = ec_NewKey(ecParams, privKey, seed, seedlen);
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-#endif /* NSS_DISABLE_ECC */
     return rv;
 }
 
-#ifndef NSS_DISABLE_ECC
 /* Generate a random private key using the algorithm A.4.1 of ANSI X9.62,
  * modified a la FIPS 186-2 Change Notice 1 to eliminate the bias in the
  * random number generator.
@@ -355,7 +379,6 @@ cleanup:
     }
     return privKeyBytes;
 }
-#endif /* NSS_DISABLE_ECC */
 
 /* Generates a new EC key pair. The private key is a random value and
  * the public key is the result of performing a scalar point multiplication
@@ -365,7 +388,6 @@ SECStatus
 EC_NewKey(ECParams *ecParams, ECPrivateKey **privKey)
 {
     SECStatus rv = SECFailure;
-#ifndef NSS_DISABLE_ECC
     int len;
     unsigned char *privKeyBytes = NULL;
 
@@ -389,9 +411,6 @@ cleanup:
     printf("EC_NewKey returning %s\n",
            (rv == SECSuccess) ? "success" : "failure");
 #endif
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-#endif /* NSS_DISABLE_ECC */
 
     return rv;
 }
@@ -405,16 +424,26 @@ cleanup:
 SECStatus
 EC_ValidatePublicKey(ECParams *ecParams, SECItem *publicValue)
 {
-#ifndef NSS_DISABLE_ECC
     mp_int Px, Py;
     ECGroup *group = NULL;
     SECStatus rv = SECFailure;
     mp_err err = MP_OKAY;
     int len;
 
-    if (!ecParams || !publicValue) {
+    if (!ecParams || !publicValue || !ecParams->name) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return SECFailure;
+    }
+
+    /* Uses curve specific code for point validation. */
+    if (ecParams->fieldID.type == ec_field_plain) {
+        const ECMethod *method = ec_get_method_from_name(ecParams->name);
+        if (method == NULL || method->validate == NULL) {
+            /* unknown curve */
+            PORT_SetError(SEC_ERROR_INVALID_ARGS);
+            return SECFailure;
+        }
+        return method->validate(publicValue);
     }
 
     /* NOTE: We only support uncompressed points for now */
@@ -478,10 +507,6 @@ cleanup:
         rv = SECFailure;
     }
     return rv;
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-    return SECFailure;
-#endif /* NSS_DISABLE_ECC */
 }
 
 /*
@@ -502,7 +527,6 @@ ECDH_Derive(SECItem *publicValue,
             SECItem *derivedSecret)
 {
     SECStatus rv = SECFailure;
-#ifndef NSS_DISABLE_ECC
     unsigned int len = 0;
     SECItem pointQ = { siBuffer, NULL, 0 };
     mp_int k; /* to hold the private value */
@@ -512,10 +536,41 @@ ECDH_Derive(SECItem *publicValue,
     int i;
 #endif
 
-    if (!publicValue || !ecParams || !privateValue ||
-        !derivedSecret) {
+    if (!publicValue || !ecParams || !privateValue || !derivedSecret ||
+        !ecParams->name) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return SECFailure;
+    }
+
+    /*
+     * Make sure the point is on the requested curve to avoid
+     * certain small subgroup attacks.
+     */
+    if (EC_ValidatePublicKey(ecParams, publicValue) != SECSuccess) {
+        PORT_SetError(SEC_ERROR_BAD_KEY);
+        return SECFailure;
+    }
+
+    /* Perform curve specific multiplication using ECMethod */
+    if (ecParams->fieldID.type == ec_field_plain) {
+        const ECMethod *method;
+        memset(derivedSecret, 0, sizeof(*derivedSecret));
+        derivedSecret = SECITEM_AllocItem(NULL, derivedSecret, EC_GetPointSize(ecParams));
+        if (derivedSecret == NULL) {
+            PORT_SetError(SEC_ERROR_NO_MEMORY);
+            return SECFailure;
+        }
+        method = ec_get_method_from_name(ecParams->name);
+        if (method == NULL || method->validate == NULL ||
+            method->mul == NULL) {
+            PORT_SetError(SEC_ERROR_UNSUPPORTED_ELLIPTIC_CURVE);
+            return SECFailure;
+        }
+        rv = method->mul(derivedSecret, privateValue, publicValue);
+        if (rv != SECSuccess) {
+            SECITEM_ZfreeItem(derivedSecret, PR_FALSE);
+        }
+        return rv;
     }
 
     /*
@@ -530,8 +585,8 @@ ECDH_Derive(SECItem *publicValue,
     MP_DIGITS(&k) = 0;
     memset(derivedSecret, 0, sizeof *derivedSecret);
     len = (ecParams->fieldID.size + 7) >> 3;
-    pointQ.len = 2 * len + 1;
-    if ((pointQ.data = PORT_Alloc(2 * len + 1)) == NULL)
+    pointQ.len = EC_GetPointSize(ecParams);
+    if ((pointQ.data = PORT_Alloc(pointQ.len)) == NULL)
         goto cleanup;
 
     CHECK_MPI_OK(mp_init(&k));
@@ -547,8 +602,9 @@ ECDH_Derive(SECItem *publicValue,
     }
 
     /* Multiply our private key and peer's public point */
-    if (ec_points_mul(ecParams, NULL, &k, publicValue, &pointQ) != SECSuccess)
+    if (ec_points_mul(ecParams, NULL, &k, publicValue, &pointQ) != SECSuccess) {
         goto cleanup;
+    }
     if (ec_point_at_infinity(&pointQ)) {
         PORT_SetError(SEC_ERROR_BAD_KEY); /* XXX better error code? */
         goto cleanup;
@@ -577,11 +633,8 @@ cleanup:
     }
 
     if (pointQ.data) {
-        PORT_ZFree(pointQ.data, 2 * len + 1);
+        PORT_ZFree(pointQ.data, pointQ.len);
     }
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-#endif /* NSS_DISABLE_ECC */
 
     return rv;
 }
@@ -595,7 +648,6 @@ ECDSA_SignDigestWithSeed(ECPrivateKey *key, SECItem *signature,
                          const SECItem *digest, const unsigned char *kb, const int kblen)
 {
     SECStatus rv = SECFailure;
-#ifndef NSS_DISABLE_ECC
     mp_int x1;
     mp_int d, k; /* private key, random integer */
     mp_int r, s; /* tuple (r, s) is the signature */
@@ -692,8 +744,8 @@ ECDSA_SignDigestWithSeed(ECPrivateKey *key, SECItem *signature,
     **
     ** Compute kG
     */
-    kGpoint.len = 2 * flen + 1;
-    kGpoint.data = PORT_Alloc(2 * flen + 1);
+    kGpoint.len = EC_GetPointSize(ecParams);
+    kGpoint.data = PORT_Alloc(kGpoint.len);
     if ((kGpoint.data == NULL) ||
         (ec_points_mul(ecParams, &k, NULL, NULL, &kGpoint) != SECSuccess))
         goto cleanup;
@@ -812,7 +864,7 @@ cleanup:
     }
 
     if (kGpoint.data) {
-        PORT_ZFree(kGpoint.data, 2 * flen + 1);
+        PORT_ZFree(kGpoint.data, kGpoint.len);
     }
 
     if (err) {
@@ -824,9 +876,6 @@ cleanup:
     printf("ECDSA signing with seed %s\n",
            (rv == SECSuccess) ? "succeeded" : "failed");
 #endif
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-#endif /* NSS_DISABLE_ECC */
 
     return rv;
 }
@@ -839,7 +888,6 @@ SECStatus
 ECDSA_SignDigest(ECPrivateKey *key, SECItem *signature, const SECItem *digest)
 {
     SECStatus rv = SECFailure;
-#ifndef NSS_DISABLE_ECC
     int len;
     unsigned char *kBytes = NULL;
 
@@ -866,9 +914,6 @@ cleanup:
     printf("ECDSA signing %s\n",
            (rv == SECSuccess) ? "succeeded" : "failed");
 #endif
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-#endif /* NSS_DISABLE_ECC */
 
     return rv;
 }
@@ -886,7 +931,6 @@ ECDSA_VerifyDigest(ECPublicKey *key, const SECItem *signature,
                    const SECItem *digest)
 {
     SECStatus rv = SECFailure;
-#ifndef NSS_DISABLE_ECC
     mp_int r_, s_;       /* tuple (r', s') is received signature) */
     mp_int c, u1, u2, v; /* intermediate values used in verification */
     mp_int x1;
@@ -931,9 +975,14 @@ ECDSA_VerifyDigest(ECPublicKey *key, const SECItem *signature,
     }
     slen = signature->len / 2;
 
-    SECITEM_AllocItem(NULL, &pointC, 2 * flen + 1);
-    if (pointC.data == NULL)
+    /*
+     * The incoming point has been verified in sftk_handlePublicKeyObject.
+     */
+
+    SECITEM_AllocItem(NULL, &pointC, EC_GetPointSize(ecParams));
+    if (pointC.data == NULL) {
         goto cleanup;
+    }
 
     CHECK_MPI_OK(mp_init(&r_));
     CHECK_MPI_OK(mp_init(&s_));
@@ -1081,9 +1130,6 @@ cleanup:
     printf("ECDSA verification %s\n",
            (rv == SECSuccess) ? "succeeded" : "failed");
 #endif
-#else
-    PORT_SetError(SEC_ERROR_UNSUPPORTED_KEYALG);
-#endif /* NSS_DISABLE_ECC */
 
     return rv;
 }

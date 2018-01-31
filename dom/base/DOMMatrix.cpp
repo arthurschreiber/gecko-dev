@@ -4,17 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/DOMMatrix.h"
+
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMMatrixBinding.h"
+#include "mozilla/dom/DOMPoint.h"
 #include "mozilla/dom/DOMPointBinding.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/ToJSValue.h"
-
-#include "mozilla/dom/DOMPoint.h"
-#include "mozilla/dom/DOMMatrix.h"
-
-#include "SVGTransformListParser.h"
-#include "SVGTransform.h"
+#include "mozilla/ServoCSSParser.h"
+#include "nsCSSParser.h"
+#include "nsStyleTransformMatrix.h"
 
 #include <math.h>
 
@@ -186,7 +186,7 @@ DOMMatrixReadOnly::Is2D() const
 }
 
 bool
-DOMMatrixReadOnly::Identity() const
+DOMMatrixReadOnly::IsIdentity() const
 {
   if (mMatrix3D) {
     return mMatrix3D->IsIdentity();
@@ -207,7 +207,7 @@ DOMMatrixReadOnly::TransformPoint(const DOMPointInit& point) const
     transformedPoint.z = point.mZ;
     transformedPoint.w = point.mW;
 
-    transformedPoint = *mMatrix3D * transformedPoint;
+    transformedPoint = mMatrix3D->TransformPoint(transformedPoint);
 
     retval->SetX(transformedPoint.x);
     retval->SetY(transformedPoint.y);
@@ -222,7 +222,7 @@ DOMMatrixReadOnly::TransformPoint(const DOMPointInit& point) const
     transformedPoint.z = point.mZ;
     transformedPoint.w = point.mW;
 
-    transformedPoint = tempMatrix * transformedPoint;
+    transformedPoint = tempMatrix.TransformPoint(transformedPoint);
 
     retval->SetX(transformedPoint.x);
     retval->SetY(transformedPoint.y);
@@ -233,7 +233,7 @@ DOMMatrixReadOnly::TransformPoint(const DOMPointInit& point) const
     transformedPoint.x = point.mX;
     transformedPoint.y = point.mY;
 
-    transformedPoint = *mMatrix2D * transformedPoint;
+    transformedPoint = mMatrix2D->TransformPoint(transformedPoint);
 
     retval->SetX(transformedPoint.x);
     retval->SetY(transformedPoint.y);
@@ -291,34 +291,78 @@ DOMMatrixReadOnly::ToFloat64Array(JSContext* aCx, JS::MutableHandle<JSObject*> a
   aResult.set(&value.toObject());
 }
 
+// Convenient way to append things as floats, not doubles.  We use this because
+// we only want to output about 6 digits of precision for our matrix()
+// functions, to preserve the behavior we used to have when we used
+// AppendPrintf.
+static void
+AppendFloat(nsAString& aStr, float f)
+{
+  aStr.AppendFloat(f);
+}
+
 void
 DOMMatrixReadOnly::Stringify(nsAString& aResult)
 {
   nsAutoString matrixStr;
   if (mMatrix3D) {
-    matrixStr.AppendPrintf("matrix3d(%g, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g, %g)",
-      M11(), M12(), M13(), M14(),
-      M21(), M22(), M23(), M24(),
-      M31(), M32(), M33(), M34(),
-      M41(), M42(), M43(), M44());
+    // We can't use AppendPrintf here, because it does locale-specific
+    // formatting of floating-point values.
+    matrixStr.AssignLiteral("matrix3d(");
+    AppendFloat(matrixStr, M11()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M12()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M13()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M14()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M21()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M22()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M23()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M24()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M31()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M32()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M33()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M34()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M41()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M42()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M43()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, M44());
+    matrixStr.AppendLiteral(")");
   } else {
-    matrixStr.AppendPrintf("matrix(%g, %g, %g, %g, %g, %g)", A(), B(), C(), D(), E(), F());
+    // We can't use AppendPrintf here, because it does locale-specific
+    // formatting of floating-point values.
+    matrixStr.AssignLiteral("matrix(");
+    AppendFloat(matrixStr, A()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, B()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, C()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, D()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, E()); matrixStr.AppendLiteral(", ");
+    AppendFloat(matrixStr, F());
+    matrixStr.AppendLiteral(")");
   }
 
   aResult = matrixStr;
 }
 
+static bool
+IsStyledByServo(JSContext* aContext)
+{
+  nsGlobalWindowInner* win = xpc::CurrentWindowOrNull(aContext);
+  nsIDocument* doc = win ? win->GetDoc() : nullptr;
+  return doc ? doc->IsStyledByServo() : false;
+}
+
 already_AddRefed<DOMMatrix>
 DOMMatrix::Constructor(const GlobalObject& aGlobal, ErrorResult& aRv)
 {
-  RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports());
+  RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports(),
+                                        IsStyledByServo(aGlobal.Context()));
   return obj.forget();
 }
 
 already_AddRefed<DOMMatrix>
 DOMMatrix::Constructor(const GlobalObject& aGlobal, const nsAString& aTransformList, ErrorResult& aRv)
 {
-  RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports());
+  RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports(),
+                                        IsStyledByServo(aGlobal.Context()));
 
   obj = obj->SetMatrixValue(aTransformList, aRv);
   return obj.forget();
@@ -365,7 +409,8 @@ template <typename T> void SetDataInMatrix(DOMMatrix* aMatrix, const T* aData, i
 already_AddRefed<DOMMatrix>
 DOMMatrix::Constructor(const GlobalObject& aGlobal, const Float32Array& aArray32, ErrorResult& aRv)
 {
-  RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports());
+  RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports(),
+                                        IsStyledByServo(aGlobal.Context()));
   aArray32.ComputeLengthAndData();
   SetDataInMatrix(obj, aArray32.Data(), aArray32.Length(), aRv);
 
@@ -375,7 +420,8 @@ DOMMatrix::Constructor(const GlobalObject& aGlobal, const Float32Array& aArray32
 already_AddRefed<DOMMatrix>
 DOMMatrix::Constructor(const GlobalObject& aGlobal, const Float64Array& aArray64, ErrorResult& aRv)
 {
-  RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports());
+  RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports(),
+                                        IsStyledByServo(aGlobal.Context()));
   aArray64.ComputeLengthAndData();
   SetDataInMatrix(obj, aArray64.Data(), aArray64.Length(), aRv);
 
@@ -385,7 +431,8 @@ DOMMatrix::Constructor(const GlobalObject& aGlobal, const Float64Array& aArray64
 already_AddRefed<DOMMatrix>
 DOMMatrix::Constructor(const GlobalObject& aGlobal, const Sequence<double>& aNumberSequence, ErrorResult& aRv)
 {
-  RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports());
+  RefPtr<DOMMatrix> obj = new DOMMatrix(aGlobal.GetAsSupports(),
+                                        IsStyledByServo(aGlobal.Context()));
   SetDataInMatrix(obj, aNumberSequence.Elements(), aNumberSequence.Length(), aRv);
 
   return obj.forget();
@@ -402,7 +449,7 @@ void DOMMatrix::Ensure3DMatrix()
 DOMMatrix*
 DOMMatrix::MultiplySelf(const DOMMatrix& aOther)
 {
-  if (aOther.Identity()) {
+  if (aOther.IsIdentity()) {
     return this;
   }
 
@@ -423,7 +470,7 @@ DOMMatrix::MultiplySelf(const DOMMatrix& aOther)
 DOMMatrix*
 DOMMatrix::PreMultiplySelf(const DOMMatrix& aOther)
 {
-  if (aOther.Identity()) {
+  if (aOther.IsIdentity()) {
     return this;
   }
 
@@ -621,25 +668,66 @@ DOMMatrix::InvertSelf()
 DOMMatrix*
 DOMMatrix::SetMatrixValue(const nsAString& aTransformList, ErrorResult& aRv)
 {
-  SVGTransformListParser parser(aTransformList);
-  if (!parser.Parse()) {
-    aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
-  } else {
-    mMatrix3D = nullptr;
-    mMatrix2D = new gfx::Matrix();
-    gfxMatrix result;
-    const nsTArray<nsSVGTransform>& mItems = parser.GetTransformList();
+  // An empty string is a no-op.
+  if (aTransformList.IsEmpty()) {
+    return this;
+  }
 
-    for (uint32_t i = 0; i < mItems.Length(); ++i) {
-      result.PreMultiply(mItems[i].GetMatrix());
+  gfx::Matrix4x4 transform;
+  bool contains3dTransform = false;
+  if (mIsServo) {
+    if (!ServoCSSParser::ParseTransformIntoMatrix(aTransformList,
+                                                  contains3dTransform,
+                                                  transform.components)) {
+      aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
+      return nullptr;
+    }
+  } else {
+    nsCSSValue value;
+    nsCSSParser parser;
+    bool parseSuccess = parser.ParseTransformProperty(aTransformList,
+                                                      true,
+                                                      value);
+    if (!parseSuccess) {
+      aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
+      return nullptr;
     }
 
-    SetA(result._11);
-    SetB(result._12);
-    SetC(result._21);
-    SetD(result._22);
-    SetE(result._31);
-    SetF(result._32);
+    // A value of "none" results in a 2D identity matrix.
+    if (value.GetUnit() == eCSSUnit_None) {
+      mMatrix3D = nullptr;
+      mMatrix2D = new gfx::Matrix();
+      return this;
+    }
+
+    // A value other than a transform-list is a syntax error.
+    if (value.GetUnit() != eCSSUnit_SharedList) {
+      aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
+      return nullptr;
+    }
+
+    RuleNodeCacheConditions dummy;
+    nsStyleTransformMatrix::TransformReferenceBox dummyBox;
+    transform = nsStyleTransformMatrix::ReadTransforms(
+                    value.GetSharedListValue()->mHead,
+                    nullptr, nullptr, dummy, dummyBox,
+                    nsPresContext::AppUnitsPerCSSPixel(),
+                    &contains3dTransform);
+  }
+
+  if (!contains3dTransform) {
+    mMatrix3D = nullptr;
+    mMatrix2D = new gfx::Matrix();
+
+    SetA(transform._11);
+    SetB(transform._12);
+    SetC(transform._21);
+    SetD(transform._22);
+    SetE(transform._41);
+    SetF(transform._42);
+  } else {
+    mMatrix3D = new gfx::Matrix4x4(transform);
+    mMatrix2D = nullptr;
   }
 
   return this;

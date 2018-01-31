@@ -7,12 +7,18 @@
 #if !defined(PlatformDecoderModule_h_)
 #define PlatformDecoderModule_h_
 
-#include "MediaDecoderReader.h"
+#include "DecoderDoctorLogger.h"
+#include "GMPCrashHelper.h"
+#include "MediaEventSource.h"
+#include "MediaInfo.h"
+#include "MediaResult.h"
+#include "mozilla/EnumSet.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/TaskQueue.h"
+#include "mozilla/layers/KnowsCompositor.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "nsTArray.h"
-#include "mozilla/RefPtr.h"
-#include "GMPService.h"
 #include <queue>
 
 namespace mozilla {
@@ -26,17 +32,40 @@ namespace layers {
 class ImageContainer;
 } // namespace layers
 
+namespace dom {
+class RemoteDecoderModule;
+}
+
 class MediaDataDecoder;
-class MediaDataDecoderCallback;
 class TaskQueue;
 class CDMProxy;
 
 static LazyLogModule sPDMLog("PlatformDecoderModule");
 
-struct CreateDecoderParams {
-  explicit CreateDecoderParams(const TrackInfo& aConfig)
-    : mConfig(aConfig)
-  {}
+struct MOZ_STACK_CLASS CreateDecoderParams final
+{
+  explicit CreateDecoderParams(const TrackInfo& aConfig) : mConfig(aConfig) { }
+
+  enum class Option
+  {
+    Default,
+    LowLatency,
+  };
+  using OptionSet = EnumSet<Option>;
+
+  struct UseNullDecoder
+  {
+    UseNullDecoder() = default;
+    explicit UseNullDecoder(bool aUseNullDecoder) : mUse(aUseNullDecoder) { }
+    bool mUse = false;
+  };
+
+  struct VideoFrameRate
+  {
+    VideoFrameRate() = default;
+    explicit VideoFrameRate(float aFramerate) : mValue(aFramerate) { }
+    float mValue = 0.0f;
+  };
 
   template <typename T1, typename... Ts>
   CreateDecoderParams(const TrackInfo& aConfig, T1&& a1, Ts&&... args)
@@ -57,23 +86,57 @@ struct CreateDecoderParams {
     return *mConfig.GetAsAudioInfo();
   }
 
+  layers::LayersBackend GetLayersBackend() const
+  {
+    if (mKnowsCompositor) {
+      return mKnowsCompositor->GetCompositorBackendType();
+    }
+    return layers::LayersBackend::LAYERS_NONE;
+  }
+
   const TrackInfo& mConfig;
   TaskQueue* mTaskQueue = nullptr;
-  MediaDataDecoderCallback* mCallback = nullptr;
   DecoderDoctorDiagnostics* mDiagnostics = nullptr;
   layers::ImageContainer* mImageContainer = nullptr;
-  layers::LayersBackend mLayersBackend = layers::LayersBackend::LAYERS_NONE;
+  MediaResult* mError = nullptr;
+  RefPtr<layers::KnowsCompositor> mKnowsCompositor;
   RefPtr<GMPCrashHelper> mCrashHelper;
-  bool mUseBlankDecoder = false;
+  UseNullDecoder mUseNullDecoder;
+  TrackInfo::TrackType mType = TrackInfo::kUndefinedTrack;
+  MediaEventProducer<TrackInfo::TrackType>* mOnWaitingForKeyEvent = nullptr;
+  OptionSet mOptions = OptionSet(Option::Default);
+  VideoFrameRate mRate;
 
 private:
   void Set(TaskQueue* aTaskQueue) { mTaskQueue = aTaskQueue; }
-  void Set(MediaDataDecoderCallback* aCallback) { mCallback = aCallback; }
-  void Set(DecoderDoctorDiagnostics* aDiagnostics) { mDiagnostics = aDiagnostics; }
-  void Set(layers::ImageContainer* aImageContainer) { mImageContainer = aImageContainer; }
-  void Set(layers::LayersBackend aLayersBackend) { mLayersBackend = aLayersBackend; }
+  void Set(DecoderDoctorDiagnostics* aDiagnostics)
+  {
+    mDiagnostics = aDiagnostics;
+  }
+  void Set(layers::ImageContainer* aImageContainer)
+  {
+    mImageContainer = aImageContainer;
+  }
+  void Set(MediaResult* aError) { mError = aError; }
   void Set(GMPCrashHelper* aCrashHelper) { mCrashHelper = aCrashHelper; }
-  void Set(bool aUseBlankDecoder) { mUseBlankDecoder = aUseBlankDecoder; }
+  void Set(UseNullDecoder aUseNullDecoder) { mUseNullDecoder = aUseNullDecoder; }
+  void Set(OptionSet aOptions) { mOptions = aOptions; }
+  void Set(VideoFrameRate aRate) { mRate = aRate; }
+  void Set(layers::KnowsCompositor* aKnowsCompositor)
+  {
+    if (aKnowsCompositor) {
+      mKnowsCompositor = aKnowsCompositor;
+      MOZ_ASSERT(aKnowsCompositor->IsThreadSafe());
+    }
+  }
+  void Set(TrackInfo::TrackType aType)
+  {
+    mType = aType;
+  }
+  void Set(MediaEventProducer<TrackInfo::TrackType>* aOnWaitingForKey)
+  {
+    mOnWaitingForKeyEvent = aOnWaitingForKey;
+  }
   template <typename T1, typename T2, typename... Ts>
   void Set(T1&& a1, T2&& a2, Ts&&... args)
   {
@@ -96,42 +159,53 @@ private:
 // output samples exists for testing, and is created when the pref
 // "media.use-blank-decoder" is true.
 
-class PlatformDecoderModule {
+class PlatformDecoderModule
+{
 public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(PlatformDecoderModule)
 
   // Perform any per-instance initialization.
   // This is called on the decode task queue.
-  virtual nsresult Startup() { return NS_OK; };
+  virtual nsresult Startup() { return NS_OK; }
 
   // Indicates if the PlatformDecoderModule supports decoding of aMimeType.
-  virtual bool SupportsMimeType(const nsACString& aMimeType,
-                                DecoderDoctorDiagnostics* aDiagnostics) const = 0;
+  virtual bool
+  SupportsMimeType(const nsACString& aMimeType,
+                   DecoderDoctorDiagnostics* aDiagnostics) const = 0;
 
-  enum class ConversionRequired : uint8_t {
-    kNeedNone,
-    kNeedAVCC,
-    kNeedAnnexB,
-  };
-
-  // Indicates that the decoder requires a specific format.
-  // The PlatformDecoderModule will convert the demuxed data accordingly before
-  // feeding it to MediaDataDecoder::Input.
-  virtual ConversionRequired DecoderNeedsConversion(const TrackInfo& aConfig) const = 0;
+  virtual bool
+  Supports(const TrackInfo& aTrackInfo,
+           DecoderDoctorDiagnostics* aDiagnostics) const
+  {
+    if (!SupportsMimeType(aTrackInfo.mMimeType, aDiagnostics)) {
+      return false;
+    }
+    const auto videoInfo = aTrackInfo.GetAsVideoInfo();
+    return !videoInfo || SupportsBitDepth(videoInfo->mBitDepth, aDiagnostics);
+  }
 
 protected:
-  PlatformDecoderModule() {}
-  virtual ~PlatformDecoderModule() {}
+  PlatformDecoderModule() { }
+  virtual ~PlatformDecoderModule() { }
 
   friend class H264Converter;
   friend class PDMFactory;
+  friend class dom::RemoteDecoderModule;
+  friend class EMEDecoderModule;
+
+  // Indicates if the PlatformDecoderModule supports decoding of aBitDepth.
+  // Should override this method when the platform can support bitDepth != 8.
+  virtual bool SupportsBitDepth(const uint8_t aBitDepth,
+                                DecoderDoctorDiagnostics* aDiagnostics) const
+  {
+    return aBitDepth == 8;
+  }
 
   // Creates a Video decoder. The layers backend is passed in so that
   // decoders can determine whether hardware accelerated decoding can be used.
   // Asynchronous decoding of video should be done in runnables dispatched
   // to aVideoTaskQueue. If the task queue isn't needed, the decoder should
   // not hold a reference to it.
-  // Output and errors should be returned to the reader via aCallback.
   // On Windows the task queue's threads in have MSCOM initialized with
   // COINIT_MULTITHREADED.
   // Returns nullptr if the decoder can't be created.
@@ -144,7 +218,6 @@ protected:
   // Asynchronous decoding of audio should be done in runnables dispatched to
   // aAudioTaskQueue. If the task queue isn't needed, the decoder should
   // not hold a reference to it.
-  // Output and errors should be returned to the reader via aCallback.
   // Returns nullptr if the decoder can't be created.
   // On Windows the task queue's threads in have MSCOM initialized with
   // COINIT_MULTITHREADED.
@@ -154,44 +227,7 @@ protected:
   CreateAudioDecoder(const CreateDecoderParams& aParams) = 0;
 };
 
-enum class MediaDataDecoderError : uint8_t{
-  FATAL_ERROR,
-  DECODE_ERROR
-};
-
-// A callback used by MediaDataDecoder to return output/errors to the
-// MediaFormatReader.
-// Implementation is threadsafe, and can be called on any thread.
-class MediaDataDecoderCallback {
-public:
-  virtual ~MediaDataDecoderCallback() {}
-
-  // Called by MediaDataDecoder when a sample has been decoded.
-  virtual void Output(MediaData* aData) = 0;
-
-  // Denotes an error in the decoding process. The reader will stop calling
-  // the decoder.
-  virtual void Error(MediaDataDecoderError aError) = 0;
-
-  // Denotes that the last input sample has been inserted into the decoder,
-  // and no more output can be produced unless more input is sent.
-  // A frame decoding session is completed once InputExhausted has been called.
-  // MediaDataDecoder::Input will not be called again until InputExhausted has
-  // been called.
-  virtual void InputExhausted() = 0;
-
-  virtual void DrainComplete() = 0;
-
-  virtual void ReleaseMediaResources() {}
-
-  virtual bool OnReaderTaskQueue() = 0;
-
-  // Denotes that a pending encryption key is preventing more input being fed
-  // into the decoder. This only needs to be overridden for callbacks that
-  // handle encryption. E.g. benchmarking does not use eme, so this need
-  // not be overridden in that case.
-  virtual void WaitingForKey() {}
-};
+DDLoggedTypeDeclName(MediaDataDecoder);
 
 // MediaDataDecoder is the interface exposed by decoders created by the
 // PlatformDecoderModule's Create*Decoder() functions. The type of
@@ -210,18 +246,19 @@ public:
 // TaskQueue passed into the PlatformDecoderModules's Create*Decoder()
 // function. This may not be necessary for platforms with async APIs
 // for decoding.
-class MediaDataDecoder {
+class MediaDataDecoder : public DecoderDoctorLifeLogger<MediaDataDecoder>
+{
 protected:
-  virtual ~MediaDataDecoder() {};
+  virtual ~MediaDataDecoder() { }
 
 public:
-  enum class DecoderFailureReason : uint8_t {
-    INIT_ERROR,
-    CANCELED
-  };
-
   typedef TrackInfo::TrackType TrackType;
-  typedef MozPromise<TrackType, DecoderFailureReason, /* IsExclusive = */ true> InitPromise;
+  typedef nsTArray<RefPtr<MediaData>> DecodedData;
+  typedef MozPromise<TrackType, MediaResult, /* IsExclusive = */ true>
+    InitPromise;
+  typedef MozPromise<DecodedData, MediaResult, /* IsExclusive = */ true>
+    DecodePromise;
+  typedef MozPromise<bool, MediaResult, /* IsExclusive = */ true> FlushPromise;
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaDataDecoder)
 
@@ -234,58 +271,50 @@ public:
   // be done here so that it can be canceled by calling Shutdown()!
   virtual RefPtr<InitPromise> Init() = 0;
 
-  // Inserts a sample into the decoder's decode pipeline.
-  virtual nsresult Input(MediaRawData* aSample) = 0;
-
-  // Causes all samples in the decoding pipeline to be discarded. When
-  // this function returns, the decoder must be ready to accept new input
-  // for decoding. This function is called when the demuxer seeks, before
-  // decoding resumes after the seek.
-  // While the reader calls Flush(), it ignores all output sent to it;
-  // it is safe (but pointless) to send output while Flush is called.
-  // The MediaFormatReader will not call Input() while it's calling Flush().
-  virtual nsresult Flush() = 0;
+  // Inserts a sample into the decoder's decode pipeline. The DecodePromise will
+  // be resolved with the decoded MediaData. In case the decoder needs more
+  // input, the DecodePromise may be resolved with an empty array of samples to
+  // indicate that Decode should be called again before a MediaData is returned.
+  virtual RefPtr<DecodePromise> Decode(MediaRawData* aSample) = 0;
 
   // Causes all complete samples in the pipeline that can be decoded to be
   // output. If the decoder can't produce samples from the current output,
   // it drops the input samples. The decoder may be holding onto samples
   // that are required to decode samples that it expects to get in future.
   // This is called when the demuxer reaches end of stream.
-  // The MediaFormatReader will not call Input() while it's calling Drain().
-  // This function is asynchronous. The MediaDataDecoder must call
-  // MediaDataDecoderCallback::DrainComplete() once all remaining
-  // samples have been output.
-  virtual nsresult Drain() = 0;
+  // This function is asynchronous.
+  // The MediaDataDecoder shall resolve the pending DecodePromise with drained
+  // samples. Drain will be called multiple times until the resolved
+  // DecodePromise is empty which indicates that there are no more samples to
+  // drain.
+  virtual RefPtr<DecodePromise> Drain() = 0;
 
-  // Cancels all init/input/drain operations, and shuts down the
-  // decoder. The platform decoder should clean up any resources it's using
-  // and release memory etc. Shutdown() must block until the decoder has
-  // completed shutdown. The reader calls Flush() before calling Shutdown().
-  // The reader will delete the decoder once Shutdown() returns.
-  // The MediaDataDecoderCallback *must* not be called after Shutdown() has
-  // returned.
-  virtual nsresult Shutdown() = 0;
+  // Causes all samples in the decoding pipeline to be discarded. When this
+  // promise resolves, the decoder must be ready to accept new data for
+  // decoding. This function is called when the demuxer seeks, before decoding
+  // resumes after the seek. The current DecodePromise if any shall be rejected
+  // with NS_ERROR_DOM_MEDIA_CANCELED
+  virtual RefPtr<FlushPromise> Flush() = 0;
 
-  // Called from the state machine task queue or main thread.
-  // Decoder needs to decide whether or not hardware accelearation is supported
-  // after creating. It doesn't need to call Init() before calling this function.
-  virtual bool IsHardwareAccelerated(nsACString& aFailureReason) const { return false; }
+  // Cancels all init/decode/drain operations, and shuts down the decoder. The
+  // platform decoder should clean up any resources it's using and release
+  // memory etc. The shutdown promise will be resolved once the decoder has
+  // completed shutdown. The reader calls Flush() before calling Shutdown(). The
+  // reader will delete the decoder once the promise is resolved.
+  // The ShutdownPromise must only ever be resolved.
+  virtual RefPtr<ShutdownPromise> Shutdown() = 0;
 
-  // ConfigurationChanged will be called to inform the video or audio decoder
-  // that the format of the next input sample is about to change.
-  // If video decoder, aConfig will be a VideoInfo object.
-  // If audio decoder, aConfig will be a AudioInfo object.
-  // It is not safe to store a reference to this object and the decoder must
-  // make a copy.
-  virtual nsresult ConfigurationChanged(const TrackInfo& aConfig)
+  // Called from the state machine task queue or main thread. Decoder needs to
+  // decide whether or not hardware acceleration is supported after creating.
+  // It doesn't need to call Init() before calling this function.
+  virtual bool IsHardwareAccelerated(nsACString& aFailureReason) const
   {
-    return NS_OK;
+    return false;
   }
 
   // Return the name of the MediaDataDecoder, only used for decoding.
-  // Only return a static const string, as the information may be accessed
-  // in a non thread-safe fashion.
-  virtual const char* GetDescriptionName() const = 0;
+  // May be accessed in a non thread-safe fashion.
+  virtual nsCString GetDescriptionName() const = 0;
 
   // Set a hint of seek target time to decoder. Decoder will drop any decoded
   // data which pts is smaller than this value. This threshold needs to be clear
@@ -293,7 +322,28 @@ public:
   // Decoder may not honor this value. However, it'd be better that
   // video decoder implements this API to improve seek performance.
   // Note: it should be called before Input() or after Flush().
-  virtual void SetSeekThreshold(const media::TimeUnit& aTime) {}
+  virtual void SetSeekThreshold(const media::TimeUnit& aTime) { }
+
+  // When playing adaptive playback, recreating an Android video decoder will
+  // cause the transition not smooth during resolution change.
+  // Reuse the decoder if the decoder support recycling.
+  // Currently, only Android video decoder will return true.
+  virtual bool SupportDecoderRecycling() const { return false; }
+
+  enum class ConversionRequired
+  {
+    kNeedNone = 0,
+    kNeedAVCC = 1,
+    kNeedAnnexB = 2,
+  };
+
+  // Indicates that the decoder requires a specific format.
+  // The demuxed data will be converted accordingly before feeding it to
+  // Decode().
+  virtual ConversionRequired NeedsConversion() const
+  {
+    return ConversionRequired::kNeedNone;
+  }
 };
 
 } // namespace mozilla

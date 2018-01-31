@@ -6,7 +6,7 @@
 
 /*
  * Base class for DOM Core's nsIDOMComment, nsIDOMDocumentType, nsIDOMText,
- * nsIDOMCDATASection, and nsIDOMProcessingInstruction nodes.
+ * CDATASection, and nsIDOMProcessingInstruction nodes.
  */
 
 #ifndef nsGenericDOMDataNode_h___
@@ -25,6 +25,12 @@
 
 class nsIDocument;
 class nsIDOMText;
+
+namespace mozilla {
+namespace dom {
+class HTMLSlotElement;
+} // namespace dom
+} // namespace mozilla
 
 #define DATA_NODE_FLAG_BIT(n_) NODE_FLAG_BIT(NODE_TYPE_SPECIFIC_BITS_OFFSET + (n_))
 
@@ -47,10 +53,22 @@ enum {
   // bit is set, and if so it indicates whether we're only whitespace or
   // not.
   NS_TEXT_IS_ONLY_WHITESPACE =            DATA_NODE_FLAG_BIT(3),
+
+  // This bit is set if there is a NewlineProperty attached to the node
+  // (used by nsTextFrame).
+  NS_HAS_NEWLINE_PROPERTY =               DATA_NODE_FLAG_BIT(4),
+
+  // This bit is set if there is a FlowLengthProperty attached to the node
+  // (used by nsTextFrame).
+  NS_HAS_FLOWLENGTH_PROPERTY =            DATA_NODE_FLAG_BIT(5),
+
+  // This bit is set if the node may be modified frequently.  This is typically
+  // specified if the instance is in <input> or <textarea>.
+  NS_MAYBE_MODIFIED_FREQUENTLY =          DATA_NODE_FLAG_BIT(6),
 };
 
 // Make sure we have enough space for those bits
-ASSERT_NODE_FLAGS_SPACE(NODE_TYPE_SPECIFIC_BITS_OFFSET + 4);
+ASSERT_NODE_FLAGS_SPACE(NODE_TYPE_SPECIFIC_BITS_OFFSET + 7);
 
 #undef DATA_NODE_FLAG_BIT
 
@@ -59,10 +77,15 @@ class nsGenericDOMDataNode : public nsIContent
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
-  NS_DECL_SIZEOF_EXCLUDING_THIS
+  NS_DECL_ADDSIZEOFEXCLUDINGTHIS
 
   explicit nsGenericDOMDataNode(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo);
   explicit nsGenericDOMDataNode(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+
+  void MarkAsMaybeModifiedFrequently()
+  {
+    SetFlags(NS_MAYBE_MODIFIED_FREQUENTLY);
+  }
 
   virtual void GetNodeValueInternal(nsAString& aNodeValue) override;
   virtual void SetNodeValueInternal(const nsAString& aNodeValue,
@@ -79,22 +102,24 @@ public:
   nsresult DeleteData(uint32_t aOffset, uint32_t aCount);
   nsresult ReplaceData(uint32_t aOffset, uint32_t aCount,
                        const nsAString& aArg);
-  NS_IMETHOD MozRemove();
 
   // nsINode methods
   virtual uint32_t GetChildCount() const override;
-  virtual nsIContent *GetChildAt(uint32_t aIndex) const override;
-  virtual nsIContent * const * GetChildArray(uint32_t* aChildCount) const override;
-  virtual int32_t IndexOf(const nsINode* aPossibleChild) const override;
-  virtual nsresult InsertChildAt(nsIContent* aKid, uint32_t aIndex,
-                                 bool aNotify) override;
-  virtual void RemoveChildAt(uint32_t aIndex, bool aNotify) override;
+  virtual nsIContent *GetChildAt_Deprecated(uint32_t aIndex) const override;
+  virtual int32_t ComputeIndexOf(const nsINode* aPossibleChild) const override;
+  virtual nsresult InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
+                                     bool aNotify) override;
+  virtual nsresult InsertChildAt_Deprecated(nsIContent* aKid, uint32_t aIndex,
+                                            bool aNotify) override;
+  virtual void RemoveChildAt_Deprecated(uint32_t aIndex, bool aNotify) override;
+  virtual void RemoveChildNode(nsIContent* aKid, bool aNotify) override;
   virtual void GetTextContentInternal(nsAString& aTextContent,
-                                      mozilla::ErrorResult& aError) override
+                                      mozilla::OOMReporter& aError) override
   {
     GetNodeValue(aTextContent);
   }
   virtual void SetTextContentInternal(const nsAString& aTextContent,
+                                      nsIPrincipal* aSubjectPrincipal,
                                       mozilla::ErrorResult& aError) override
   {
     // Batch possible DOMSubtreeModified events.
@@ -111,20 +136,6 @@ public:
 
   virtual already_AddRefed<nsINodeList> GetChildren(uint32_t aFilter) override;
 
-
-  nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
-                   const nsAString& aValue, bool aNotify)
-  {
-    return SetAttr(aNameSpaceID, aName, nullptr, aValue, aNotify);
-  }
-  virtual nsresult SetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
-                           nsIAtom* aPrefix, const nsAString& aValue,
-                           bool aNotify) override;
-  virtual nsresult UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
-                             bool aNotify) override;
-  virtual const nsAttrName* GetAttrNameAt(uint32_t aIndex) const override;
-  virtual mozilla::dom::BorrowedAttrInfo GetAttrInfoAt(uint32_t aIndex) const override;
-  virtual uint32_t GetAttrCount() const override;
   virtual const nsTextFragment *GetText() override;
   virtual uint32_t TextLength() const override;
   virtual nsresult SetText(const char16_t* aBuffer, uint32_t aLength,
@@ -137,6 +148,7 @@ public:
   virtual nsresult AppendText(const char16_t* aBuffer, uint32_t aLength,
                               bool aNotify) override;
   virtual bool TextIsOnlyWhitespace() override;
+  virtual bool ThreadSafeTextIsOnlyWhitespace() const final override;
   virtual bool HasTextForTranslation() override;
   virtual void AppendTextTo(nsAString& aResult) override;
   MOZ_MUST_USE
@@ -149,28 +161,12 @@ public:
   virtual void DumpContent(FILE* out, int32_t aIndent, bool aDumpAll) const override;
 #endif
 
-  virtual nsIContent *GetBindingParent() const override;
-  virtual nsXBLBinding *GetXBLBinding() const override;
-  virtual void SetXBLBinding(nsXBLBinding* aBinding,
-                             nsBindingManager* aOldBindingManager = nullptr) override;
-  virtual mozilla::dom::ShadowRoot *GetContainingShadow() const override;
-  virtual nsTArray<nsIContent*> &DestInsertionPoints() override;
-  virtual nsTArray<nsIContent*> *GetExistingDestInsertionPoints() const override;
-  virtual void SetShadowRoot(mozilla::dom::ShadowRoot* aShadowRoot) override;
-  virtual nsIContent *GetXBLInsertionParent() const override;
-  virtual void SetXBLInsertionParent(nsIContent* aContent) override;
+  virtual nsXBLBinding* DoGetXBLBinding() const override;
   virtual bool IsNodeOfType(uint32_t aFlags) const override;
   virtual bool IsLink(nsIURI** aURI) const override;
 
-  virtual mozilla::dom::CustomElementData* GetCustomElementData() const override;
-  virtual void SetCustomElementData(mozilla::dom::CustomElementData* aData) override;
-
-  NS_IMETHOD WalkContentStyleRules(nsRuleWalker* aRuleWalker) override;
-  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
-  virtual nsChangeHint GetAttributeChangeHint(const nsIAtom* aAttribute,
-                                              int32_t aModType) const;
-
-  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override
+  virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
+                         bool aPreallocateChildren) const override
   {
     nsCOMPtr<nsINode> result = CloneDataNode(aNodeInfo, true);
     result.forget(aResult);
@@ -213,6 +209,11 @@ public:
     rv = ReplaceData(aOffset, aCount, aData);
   }
 
+  uint32_t TextDataLength() const
+  {
+    return mText.GetLength();
+  }
+
   //----------------------------------------
 
 #ifdef DEBUG
@@ -231,67 +232,9 @@ protected:
     return parent && parent->IsElement() ? parent->AsElement() : nullptr;
   }
 
-  /**
-   * There are a set of DOM- and scripting-specific instance variables
-   * that may only be instantiated when a content object is accessed
-   * through the DOM. Rather than burn actual slots in the content
-   * objects for each of these instance variables, we put them off
-   * in a side structure that's only allocated when the content is
-   * accessed through the DOM.
-   */
-  class nsDataSlots : public nsINode::nsSlots
-  {
-  public:
-    nsDataSlots();
-
-    void Traverse(nsCycleCollectionTraversalCallback &cb);
-    void Unlink();
-
-    /**
-     * The nearest enclosing content node with a binding that created us.
-     * @see nsIContent::GetBindingParent
-     */
-    nsIContent* mBindingParent;  // [Weak]
-
-    /**
-     * @see nsIContent::GetXBLInsertionParent
-     */
-    nsCOMPtr<nsIContent> mXBLInsertionParent;
-
-    /**
-     * @see nsIContent::GetContainingShadow
-     */
-    RefPtr<mozilla::dom::ShadowRoot> mContainingShadow;
-
-    /**
-     * @see nsIContent::GetDestInsertionPoints
-     */
-    nsTArray<nsIContent*> mDestInsertionPoints;
-  };
-
-  // Override from nsINode
-  virtual nsINode::nsSlots* CreateSlots() override;
-
-  nsDataSlots* DataSlots()
-  {
-    return static_cast<nsDataSlots*>(Slots());
-  }
-
-  nsDataSlots *GetExistingDataSlots() const
-  {
-    return static_cast<nsDataSlots*>(GetExistingSlots());
-  }
-
   nsresult SplitText(uint32_t aOffset, nsIDOMText** aReturn);
 
   nsresult GetWholeText(nsAString& aWholeText);
-
-  static int32_t FirstLogicallyAdjacentTextNode(nsIContent* aParent,
-                                                int32_t aIndex);
-
-  static int32_t LastLogicallyAdjacentTextNode(nsIContent* aParent,
-                                               int32_t aIndex,
-                                               uint32_t aCount);
 
   nsresult SetTextInternal(uint32_t aOffset, uint32_t aCount,
                            const char16_t* aBuffer, uint32_t aLength,
@@ -327,7 +270,7 @@ public:
   }
 
 private:
-  already_AddRefed<nsIAtom> GetCurrentValueAtom();
+  already_AddRefed<nsAtom> GetCurrentValueAtom();
 };
 
 #endif /* nsGenericDOMDataNode_h___ */

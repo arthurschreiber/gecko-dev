@@ -13,7 +13,7 @@ function WorkersView() {
   this._onWorkerSelect = this._onWorkerSelect.bind(this);
 }
 
-WorkersView.prototype = Heritage.extend(WidgetMethods, {
+WorkersView.prototype = extend(WidgetMethods, {
   initialize: function () {
     if (!Prefs.workersEnabled) {
       return;
@@ -26,7 +26,7 @@ WorkersView.prototype = Heritage.extend(WidgetMethods, {
       showArrows: true,
     });
     this.emptyText = L10N.getStr("noWorkersText");
-    this.widget.addEventListener("select", this._onWorkerSelect, false);
+    this.widget.addEventListener("select", this._onWorkerSelect);
   },
 
   addWorker: function (workerForm) {

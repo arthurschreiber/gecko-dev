@@ -1,6 +1,6 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://testing-common/MockRegistrar.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/MockRegistrar.jsm");
 
 var httpserv = null;
 
@@ -23,8 +23,8 @@ XPCOMUtils.defineLazyGetter(this, "systemSettings", function() {
 });
 
 function checkValue(request, data, ctx) {
-  do_check_true(called);
-  do_check_eq("ok", data);
+  Assert.ok(called);
+  Assert.equal("ok", data);
   httpserv.stop(do_test_finished);
 }
 

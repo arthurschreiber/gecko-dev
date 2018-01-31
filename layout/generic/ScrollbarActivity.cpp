@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,13 +9,13 @@
 #include "nsIContent.h"
 #include "nsICSSDeclaration.h"
 #include "nsIDOMEvent.h"
-#include "nsIDOMCSSStyleDeclaration.h"
 #include "nsIFrame.h"
 #include "nsContentUtils.h"
 #include "nsAString.h"
 #include "nsQueryFrame.h"
 #include "nsComponentManagerUtils.h"
 #include "nsStyledElement.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Preferences.h"
 
@@ -158,7 +159,7 @@ ScrollbarActivity::IsStillFading(TimeStamp aTime)
 void
 ScrollbarActivity::HandleEventForScrollbar(const nsAString& aType,
                                            nsIContent* aTarget,
-                                           nsIContent* aScrollbar,
+                                           Element* aScrollbar,
                                            bool* aStoredHoverState)
 {
   if (!aTarget || !aScrollbar ||
@@ -308,7 +309,7 @@ ScrollbarActivity::RegisterWithRefreshDriver()
 {
   nsRefreshDriver* refreshDriver = GetRefreshDriver();
   if (refreshDriver) {
-    refreshDriver->AddRefreshObserver(this, Flush_Style);
+    refreshDriver->AddRefreshObserver(this, FlushType::Style);
   }
 }
 
@@ -317,19 +318,19 @@ ScrollbarActivity::UnregisterFromRefreshDriver()
 {
   nsRefreshDriver* refreshDriver = GetRefreshDriver();
   if (refreshDriver) {
-    refreshDriver->RemoveRefreshObserver(this, Flush_Style);
+    refreshDriver->RemoveRefreshObserver(this, FlushType::Style);
   }
 }
 
 static void
-SetBooleanAttribute(nsIContent* aContent, nsIAtom* aAttribute, bool aValue)
+SetBooleanAttribute(Element* aElement, nsAtom* aAttribute, bool aValue)
 {
-  if (aContent) {
+  if (aElement) {
     if (aValue) {
-      aContent->SetAttr(kNameSpaceID_None, aAttribute,
+      aElement->SetAttr(kNameSpaceID_None, aAttribute,
                         NS_LITERAL_STRING("true"), true);
     } else {
-      aContent->UnsetAttr(kNameSpaceID_None, aAttribute, true);
+      aElement->UnsetAttr(kNameSpaceID_None, aAttribute, true);
     }
   }
 }
@@ -374,7 +375,7 @@ ScrollbarActivity::UpdateOpacity(TimeStamp aTime)
   double opacity = 1.0 - std::max(0.0, std::min(1.0, progress));
 
   // 'this' may be getting destroyed during SetOpacityOnElement calls.
-  nsWeakFrame weakFrame((do_QueryFrame(mScrollableFrame)));
+  AutoWeakFrame weakFrame((do_QueryFrame(mScrollableFrame)));
   SetOpacityOnElement(GetHorizontalScrollbar(), opacity);
   if (!weakFrame.IsAlive()) {
     return false;
@@ -408,7 +409,7 @@ ScrollbarActivity::SetIsFading(bool aNewFading)
   if (!mIsFading) {
     mFadeBeginTime = TimeStamp();
     // 'this' may be getting destroyed during UnsetOpacityOnElement calls.
-    nsWeakFrame weakFrame((do_QueryFrame(mScrollableFrame)));
+    AutoWeakFrame weakFrame((do_QueryFrame(mScrollableFrame)));
     UnsetOpacityOnElement(GetHorizontalScrollbar());
     if (!weakFrame.IsAlive()) {
       return false;
@@ -428,7 +429,7 @@ ScrollbarActivity::StartFadeBeginTimer()
     return;
   }
   if (!mFadeBeginTimer) {
-    mFadeBeginTimer = do_CreateInstance("@mozilla.org/timer;1");
+    mFadeBeginTimer = NS_NewTimer();
   }
   mFadeBeginTimer->InitWithNamedFuncCallback(
     FadeBeginTimerFired, this, mScrollbarFadeBeginDelay,
@@ -444,7 +445,7 @@ ScrollbarActivity::CancelFadeBeginTimer()
 }
 
 void
-ScrollbarActivity::HoveredScrollbar(nsIContent* aScrollbar)
+ScrollbarActivity::HoveredScrollbar(Element* aScrollbar)
 {
   SetBooleanAttribute(GetHorizontalScrollbar(), nsGkAtoms::hover, false);
   SetBooleanAttribute(GetVerticalScrollbar(), nsGkAtoms::hover, false);
@@ -458,11 +459,11 @@ ScrollbarActivity::GetRefreshDriver()
   return scrollableFrame->PresContext()->RefreshDriver();
 }
 
-nsIContent*
+Element*
 ScrollbarActivity::GetScrollbarContent(bool aVertical)
 {
   nsIFrame* box = mScrollableFrame->GetScrollbarBox(aVertical);
-  return box ? box->GetContent() : nullptr;
+  return box ? box->GetContent()->AsElement() : nullptr;
 }
 
 } // namespace layout

@@ -159,12 +159,16 @@ class ScopedRunnableMethodFactory : public RevocableStore {
   template <class Method, class Params>
   class RunnableMethod : public mozilla::Runnable {
    public:
-    RunnableMethod() { }
+     RunnableMethod()
+       : mozilla::Runnable("ScopedRunnableMethodFactory::RunnableMethod")
+     {
+     }
 
-    void Init(T* obj, Method meth, Params&& params) {
-      obj_ = obj;
-      meth_ = meth;
-      params_ = mozilla::Forward<Params>(params);
+     void Init(T* obj, Method meth, Params&& params)
+     {
+       obj_ = obj;
+       meth_ = meth;
+       params_ = mozilla::Forward<Params>(params);
     }
 
     NS_IMETHOD Run() override {
@@ -193,7 +197,10 @@ class ScopedRunnableMethodFactory : public RevocableStore {
 template<class T>
 class DeleteTask : public mozilla::CancelableRunnable {
  public:
-  explicit DeleteTask(T* obj) : obj_(obj) {
+   explicit DeleteTask(T* obj)
+     : mozilla::CancelableRunnable("DeleteTask")
+     , obj_(obj)
+   {
   }
   NS_IMETHOD Run() override {
     delete obj_;
@@ -270,9 +277,13 @@ template <class T, class Method, class Params>
 class RunnableMethod : public mozilla::CancelableRunnable,
                        public RunnableMethodTraits<T> {
  public:
-  RunnableMethod(T* obj, Method meth, Params&& params)
-      : obj_(obj), meth_(meth), params_(mozilla::Forward<Params>(params)) {
-    this->RetainCallee(obj_);
+   RunnableMethod(T* obj, Method meth, Params&& params)
+     : mozilla::CancelableRunnable("RunnableMethod")
+     , obj_(obj)
+     , meth_(meth)
+     , params_(mozilla::Forward<Params>(params))
+   {
+     this->RetainCallee(obj_);
   }
   ~RunnableMethod() {
     ReleaseCallee();
@@ -324,8 +335,11 @@ NewRunnableMethod(T* object, Method method, Args&&... args) {
 template <class Function, class Params>
 class RunnableFunction : public mozilla::CancelableRunnable {
  public:
-  RunnableFunction(Function function, Params&& params)
-      : function_(function), params_(mozilla::Forward<Params>(params)) {
+   RunnableFunction(const char* name, Function function, Params&& params)
+     : mozilla::CancelableRunnable(name)
+     , function_(function)
+     , params_(mozilla::Forward<Params>(params))
+   {
   }
 
   ~RunnableFunction() {
@@ -348,20 +362,20 @@ class RunnableFunction : public mozilla::CancelableRunnable {
 
 template <class Function, typename... Args>
 inline already_AddRefed<mozilla::CancelableRunnable>
-NewCancelableRunnableFunction(Function function, Args&&... args) {
+NewCancelableRunnableFunction(const char* name, Function function, Args&&... args) {
   typedef mozilla::Tuple<typename mozilla::Decay<Args>::Type...> ArgsTuple;
   RefPtr<mozilla::CancelableRunnable> t =
-    new RunnableFunction<Function, ArgsTuple>(function,
+    new RunnableFunction<Function, ArgsTuple>(name, function,
                                               mozilla::MakeTuple(mozilla::Forward<Args>(args)...));
   return t.forget();
 }
 
 template <class Function, typename... Args>
 inline already_AddRefed<mozilla::Runnable>
-NewRunnableFunction(Function function, Args&&... args) {
+NewRunnableFunction(const char* name, Function function, Args&&... args) {
   typedef mozilla::Tuple<typename mozilla::Decay<Args>::Type...> ArgsTuple;
   RefPtr<mozilla::Runnable> t =
-    new RunnableFunction<Function, ArgsTuple>(function,
+    new RunnableFunction<Function, ArgsTuple>(name, function,
                                               mozilla::MakeTuple(mozilla::Forward<Args>(args)...));
   return t.forget();
 }

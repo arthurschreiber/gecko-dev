@@ -7,8 +7,8 @@ const URI_EXTENSION_BLOCKLIST_DIALOG = "chrome://mozapps/content/extensions/bloc
 var Ci = Components.interfaces;
 var Cu = Components.utils;
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://testing-common/MockRegistrar.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://testing-common/MockRegistrar.jsm");
 
 var ADDONS = [{
   id: "test_bug449027_1@tests.mozilla.org",
@@ -187,8 +187,7 @@ var ADDONS = [{
   toolkitBlocks: true
 }];
 
-function MockPluginTag(name, version, start, appBlocks, toolkitBlocks)
-{
+function MockPluginTag(name, version, start, appBlocks, toolkitBlocks) {
   this.name = name;
   this.version = version;
   this.start = start;
@@ -197,8 +196,7 @@ function MockPluginTag(name, version, start, appBlocks, toolkitBlocks)
 }
 Object.defineProperty(MockPluginTag.prototype, "blocklisted", {
   get: function MockPluginTag_getBlocklisted() {
-    let bls = AM_Cc["@mozilla.org/extensions/blocklist;1"].getService(Ci.nsIBlocklistService);
-    return bls.getPluginBlocklistState(this) == bls.STATE_BLOCKED;
+    return Services.blocklist.getPluginBlocklistState(this) == Services.blocklist.STATE_BLOCKED;
   }
 });
 
@@ -236,27 +234,27 @@ var gNewBlocks = [];
 
 // A fake plugin host for the blocklist service to use
 var PluginHost = {
-  getPluginTags: function(countRef) {
+  getPluginTags(countRef) {
     countRef.value = PLUGINS.length;
     return PLUGINS;
   },
 
-  QueryInterface: function(iid) {
+  QueryInterface(iid) {
     if (iid.equals(Ci.nsIPluginHost)
      || iid.equals(Ci.nsISupports))
       return this;
 
     throw Components.results.NS_ERROR_NO_INTERFACE;
   }
-}
+};
 
 // Don't need the full interface, attempts to call other methods will just
 // throw which is just fine
 var WindowWatcher = {
-  openWindow: function(parent, url, name, features, args) {
+  openWindow(parent, url, name, features, args) {
     // Should be called to list the newly blocklisted items
-    do_check_eq(url, URI_EXTENSION_BLOCKLIST_DIALOG);
-    do_check_neq(gCallback, null);
+    Assert.equal(url, URI_EXTENSION_BLOCKLIST_DIALOG);
+    Assert.notEqual(gCallback, null);
 
     args = args.wrappedJSObject;
 
@@ -269,14 +267,14 @@ var WindowWatcher = {
     do_timeout(0, gCallback);
   },
 
-  QueryInterface: function(iid) {
+  QueryInterface(iid) {
     if (iid.equals(Ci.nsIWindowWatcher)
      || iid.equals(Ci.nsISupports))
       return this;
 
     throw Components.results.NS_ERROR_NO_INTERFACE;
   }
-}
+};
 
 MockRegistrar.register("@mozilla.org/plugin/host;1", PluginHost);
 MockRegistrar.register("@mozilla.org/embedcomp/window-watcher;1", WindowWatcher);
@@ -347,9 +345,9 @@ function check_state(test, lastTest, callback) {
         }
       }
 
-      do_check_eq(expected, gNewBlocks.length);
+      Assert.equal(expected, gNewBlocks.length);
     }
-    do_execute_soon(callback);
+    executeSoon(callback);
   });
 }
 
@@ -392,7 +390,7 @@ function check_test_pt1() {
         do_throw("Addon " + (i + 1) + " did not get installed correctly");
     }
 
-    do_execute_soon(function checkstate1() { check_state("start", null, run_test_pt2); });
+    executeSoon(function checkstate1() { check_state("start", null, run_test_pt2); });
   });
 }
 

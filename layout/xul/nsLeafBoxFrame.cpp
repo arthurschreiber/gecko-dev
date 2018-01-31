@@ -1,4 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,11 +41,6 @@ NS_NewLeafBoxFrame (nsIPresShell* aPresShell, nsStyleContext* aContext)
 
 NS_IMPL_FRAMEARENA_HELPERS(nsLeafBoxFrame)
 
-nsLeafBoxFrame::nsLeafBoxFrame(nsStyleContext* aContext)
-    : nsLeafFrame(aContext)
-{
-}
-
 #ifdef DEBUG_LAYOUT
 void
 nsLeafBoxFrame::GetBoxName(nsAutoString& aName)
@@ -73,13 +69,13 @@ nsLeafBoxFrame::Init(nsIContent*       aContent,
 
 nsresult
 nsLeafBoxFrame::AttributeChanged(int32_t aNameSpaceID,
-                                 nsIAtom* aAttribute,
+                                 nsAtom* aAttribute,
                                  int32_t aModType)
 {
   nsresult rv = nsLeafFrame::AttributeChanged(aNameSpaceID, aAttribute,
                                               aModType);
 
-  if (aAttribute == nsGkAtoms::mousethrough) 
+  if (aAttribute == nsGkAtoms::mousethrough)
     UpdateMouseThrough();
 
   return rv;
@@ -87,26 +83,23 @@ nsLeafBoxFrame::AttributeChanged(int32_t aNameSpaceID,
 
 void nsLeafBoxFrame::UpdateMouseThrough()
 {
-  if (mContent) {
-    static nsIContent::AttrValuesArray strings[] =
-      {&nsGkAtoms::never, &nsGkAtoms::always, nullptr};
-    switch (mContent->FindAttrValueIn(kNameSpaceID_None,
-                                      nsGkAtoms::mousethrough,
-                                      strings, eCaseMatters)) {
-      case 0: AddStateBits(NS_FRAME_MOUSE_THROUGH_NEVER); break;
-      case 1: AddStateBits(NS_FRAME_MOUSE_THROUGH_ALWAYS); break;
-      case 2: {
-          RemoveStateBits(NS_FRAME_MOUSE_THROUGH_ALWAYS);
-          RemoveStateBits(NS_FRAME_MOUSE_THROUGH_NEVER);
-          break;
-      }
+  static Element::AttrValuesArray strings[] =
+    {&nsGkAtoms::never, &nsGkAtoms::always, nullptr};
+  switch (mContent->AsElement()->FindAttrValueIn(kNameSpaceID_None,
+                                                 nsGkAtoms::mousethrough,
+                                                 strings, eCaseMatters)) {
+    case 0: AddStateBits(NS_FRAME_MOUSE_THROUGH_NEVER); break;
+    case 1: AddStateBits(NS_FRAME_MOUSE_THROUGH_ALWAYS); break;
+    case 2: {
+        RemoveStateBits(NS_FRAME_MOUSE_THROUGH_ALWAYS);
+        RemoveStateBits(NS_FRAME_MOUSE_THROUGH_NEVER);
+        break;
     }
   }
 }
 
 void
 nsLeafBoxFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
-                                 const nsRect&           aDirtyRect,
                                  const nsDisplayListSet& aLists)
 {
   // REVIEW: GetFrameForPoint used to not report events for the background
@@ -119,12 +112,12 @@ nsLeafBoxFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
   if (!aBuilder->IsForEventDelivery() || !IsVisibleForPainting(aBuilder))
     return;
 
-  aLists.Content()->AppendNewToTop(new (aBuilder)
+  aLists.Content()->AppendToTop(new (aBuilder)
     nsDisplayEventReceiver(aBuilder, this));
 }
 
 /* virtual */ nscoord
-nsLeafBoxFrame::GetMinISize(nsRenderingContext *aRenderingContext)
+nsLeafBoxFrame::GetMinISize(gfxContext *aRenderingContext)
 {
   nscoord result;
   DISPLAY_MIN_WIDTH(this, result);
@@ -146,7 +139,7 @@ nsLeafBoxFrame::GetMinISize(nsRenderingContext *aRenderingContext)
 }
 
 /* virtual */ nscoord
-nsLeafBoxFrame::GetPrefISize(nsRenderingContext *aRenderingContext)
+nsLeafBoxFrame::GetPrefISize(gfxContext *aRenderingContext)
 {
   nscoord result;
   DISPLAY_PREF_WIDTH(this, result);
@@ -175,19 +168,19 @@ nsLeafBoxFrame::GetIntrinsicISize()
 }
 
 LogicalSize
-nsLeafBoxFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
-                                WritingMode aWM,
-                                const LogicalSize& aCBSize,
-                                nscoord aAvailableISize,
-                                const LogicalSize& aMargin,
-                                const LogicalSize& aBorder,
-                                const LogicalSize& aPadding,
-                                bool aShrinkWrap)
+nsLeafBoxFrame::ComputeAutoSize(gfxContext*         aRenderingContext,
+                                WritingMode         aWM,
+                                const LogicalSize&  aCBSize,
+                                nscoord             aAvailableISize,
+                                const LogicalSize&  aMargin,
+                                const LogicalSize&  aBorder,
+                                const LogicalSize&  aPadding,
+                                ComputeSizeFlags    aFlags)
 {
   // Important: NOT calling our direct superclass here!
   return nsFrame::ComputeAutoSize(aRenderingContext, aWM,
                                   aCBSize, aAvailableISize,
-                                  aMargin, aBorder, aPadding, aShrinkWrap);
+                                  aMargin, aBorder, aPadding, aFlags);
 }
 
 void
@@ -204,6 +197,7 @@ nsLeafBoxFrame::Reflow(nsPresContext*   aPresContext,
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsLeafBoxFrame");
   DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
+  MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
   NS_ASSERTION(aReflowInput.ComputedWidth() >=0 &&
                aReflowInput.ComputedHeight() >= 0, "Computed Size < 0");
@@ -225,7 +219,7 @@ nsLeafBoxFrame::Reflow(nsPresContext*   aPresContext,
       break;
     default:printf("<unknown>%d", aReflowInput.reason);break;
   }
-  
+
   printSize("AW", aReflowInput.AvailableWidth());
   printSize("AH", aReflowInput.AvailableHeight());
   printSize("CW", aReflowInput.ComputedWidth());
@@ -234,8 +228,6 @@ nsLeafBoxFrame::Reflow(nsPresContext*   aPresContext,
   printf(" *\n");
 
 #endif
-
-  aStatus = NS_FRAME_COMPLETE;
 
   // create the layout state
   nsBoxLayoutState state(aPresContext, aReflowInput.mRenderingContext);
@@ -299,10 +291,10 @@ nsLeafBoxFrame::Reflow(nsPresContext*   aPresContext,
   nsRect r(mRect.x, mRect.y, computedSize.width, computedSize.height);
 
   SetXULBounds(state, r);
- 
+
   // layout our children
   XULLayout(state);
-  
+
   // ok our child could have gotten bigger. So lets get its bounds
   aDesiredSize.Width() = mRect.width;
   aDesiredSize.Height() = mRect.height;
@@ -316,9 +308,9 @@ nsLeafBoxFrame::Reflow(nsPresContext*   aPresContext,
     printf("%p ** nsLBF(done) W:%d H:%d  ", this, aDesiredSize.Width(), aDesiredSize.Height());
 
     if (maxElementWidth) {
-      printf("MW:%d\n", *maxElementWidth); 
+      printf("MW:%d\n", *maxElementWidth);
     } else {
-      printf("MW:?\n"); 
+      printf("MW:?\n");
     }
 
   }
@@ -332,12 +324,6 @@ nsLeafBoxFrame::GetFrameName(nsAString& aResult) const
   return MakeFrameName(NS_LITERAL_STRING("LeafBox"), aResult);
 }
 #endif
-
-nsIAtom*
-nsLeafBoxFrame::GetType() const
-{
-  return nsGkAtoms::leafBoxFrame;
-}
 
 nsresult
 nsLeafBoxFrame::CharacterDataChanged(CharacterDataChangeInfo* aInfo)

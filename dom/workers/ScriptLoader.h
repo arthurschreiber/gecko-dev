@@ -7,14 +7,14 @@
 #ifndef mozilla_dom_workers_scriptloader_h__
 #define mozilla_dom_workers_scriptloader_h__
 
-#include "Workers.h"
-#include "nsIContentPolicyBase.h"
+#include "WorkerCommon.h"
+#include "nsIContentPolicy.h"
+#include "nsStringFwd.h"
 
 class nsIPrincipal;
 class nsIURI;
 class nsIDocument;
 class nsILoadGroup;
-class nsString;
 class nsIChannel;
 
 namespace mozilla {
@@ -24,6 +24,8 @@ class ErrorResult;
 } // namespace mozilla
 
 BEGIN_WORKERS_NAMESPACE
+
+struct WorkerLoadInfo;
 
 enum WorkerScriptType {
   WorkerScript,
@@ -38,6 +40,7 @@ ChannelFromScriptURLMainThread(nsIPrincipal* aPrincipal,
                                nsIDocument* aParentDoc,
                                nsILoadGroup* aLoadGroup,
                                const nsAString& aScriptURL,
+                               const Maybe<ClientInfo>& aClientInfo,
                                nsContentPolicyType aContentPolicyType,
                                bool aDefaultURIEncoding,
                                nsIChannel** aChannel);
@@ -46,7 +49,7 @@ nsresult
 ChannelFromScriptURLWorkerThread(JSContext* aCx,
                                  WorkerPrivate* aParent,
                                  const nsAString& aScriptURL,
-                                 nsIChannel** aChannel);
+                                 WorkerLoadInfo& aLoadInfo);
 
 void ReportLoadError(ErrorResult& aRv, nsresult aLoadResult,
                      const nsAString& aScriptURL);

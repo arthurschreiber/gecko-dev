@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-// vim:cindent:ts=2:et:sw=2:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,20 +13,13 @@
 void
 nsGenConList::Clear()
 {
-  //Delete entire list
-  if (!mFirstNode)
-    return;
-
+  // Delete entire list.
   mNodes.Clear();
-  for (nsGenConNode *node = Next(mFirstNode); node != mFirstNode;
-       node = Next(mFirstNode))
-  {
-    Destroy(node);
+  while (nsGenConNode* node = mList.popFirst()) {
+    delete node;
   }
-  delete mFirstNode;
-
-  mFirstNode = nullptr;
   mSize = 0;
+  mLastInserted = nullptr;
 }
 
 bool
@@ -42,22 +35,16 @@ nsGenConList::DestroyNodesFor(nsIFrame* aFrame)
     return false;
   }
   MOZ_ASSERT(node->mPseudoFrame == aFrame);
-  // Clear following nodes first as they must not be mFirstNode.
-  // If mFirstNode refers to a node of this frame, it should be the
-  // one retrieved from mNodes.
-  for (nsGenConNode* curNode = Next(node);
-       curNode->mPseudoFrame == aFrame && curNode != node;
-       /* curNode updated in loop body */) {
-    MOZ_ASSERT(curNode != mFirstNode);
-    nsGenConNode* nextNode = Next(curNode);
-    Destroy(curNode);
-    curNode = nextNode;
+
+  while (node && node->mPseudoFrame == aFrame) {
+    nsGenConNode* nextNode = Next(node);
+    Destroy(node);
+    node = nextNode;
   }
-  if (node == mFirstNode) {
-    nsGenConNode* nextNode = Next(mFirstNode);
-    mFirstNode = nextNode == mFirstNode ? nullptr : nextNode;
-  }
-  Destroy(node);
+
+  // Modification of the list invalidates the cached pointer.
+  mLastInserted = nullptr;
+
   return true;
 }
 
@@ -71,7 +58,7 @@ nsGenConList::DestroyNodesFor(nsIFrame* aFrame)
  */
 inline int32_t PseudoCompareType(nsIFrame* aFrame, nsIContent** aContent)
 {
-  nsIAtom *pseudo = aFrame->StyleContext()->GetPseudo();
+  nsAtom *pseudo = aFrame->StyleContext()->GetPseudo();
   if (pseudo == nsCSSPseudoElements::before) {
     *aContent = aFrame->GetContent()->GetParent();
     return -1;
@@ -122,58 +109,54 @@ nsGenConList::NodeAfter(const nsGenConNode* aNode1, const nsGenConNode* aNode2)
 void
 nsGenConList::Insert(nsGenConNode* aNode)
 {
-  if (mFirstNode) {
-    // Check for append.
-    if (NodeAfter(aNode, Prev(mFirstNode))) {
-      PR_INSERT_BEFORE(aNode, mFirstNode);
-    }
-    else {
-      // Binary search.
+  // Check for append.
+  if (mList.isEmpty() || NodeAfter(aNode, mList.getLast())) {
+    mList.insertBack(aNode);
+  } else if (mLastInserted && mLastInserted != mList.getLast() &&
+             NodeAfter(aNode, mLastInserted) &&
+             NodeAfter(Next(mLastInserted), aNode)) {
+    // Fast path for inserting many consecutive nodes in one place
+    mLastInserted->setNext(aNode);
+  } else {
+    // Binary search.
 
-      // the range of indices at which |aNode| could end up.
-      // (We already know it can't be at index mSize.)
-      uint32_t first = 0, last = mSize - 1;
+    // the range of indices at which |aNode| could end up.
+    // (We already know it can't be at index mSize.)
+    uint32_t first = 0, last = mSize - 1;
 
-      // A cursor to avoid walking more than the length of the list.
-      nsGenConNode *curNode = Prev(mFirstNode);
-      uint32_t curIndex = mSize - 1;
+    // A cursor to avoid walking more than the length of the list.
+    nsGenConNode* curNode = mList.getLast();
+    uint32_t curIndex = mSize - 1;
 
-      while (first != last) {
-        uint32_t test = (first + last) / 2;
-        if (last == curIndex) {
-          for ( ; curIndex != test; --curIndex)
-            curNode = Prev(curNode);
-        } else {
-          for ( ; curIndex != test; ++curIndex)
-            curNode = Next(curNode);
-        }
-
-        if (NodeAfter(aNode, curNode)) {
-          first = test + 1;
-          // if we exit the loop, we need curNode to be right
-          ++curIndex;
+    while (first != last) {
+      uint32_t test = (first + last) / 2;
+      if (last == curIndex) {
+        for ( ; curIndex != test; --curIndex)
+          curNode = Prev(curNode);
+      } else {
+        for ( ; curIndex != test; ++curIndex)
           curNode = Next(curNode);
-        } else {
-          last = test;
-        }
       }
-      PR_INSERT_BEFORE(aNode, curNode);
-      if (curNode == mFirstNode) {
-        mFirstNode = aNode;
+
+      if (NodeAfter(aNode, curNode)) {
+        first = test + 1;
+        // if we exit the loop, we need curNode to be right
+        ++curIndex;
+        curNode = Next(curNode);
+      } else {
+        last = test;
       }
     }
-  }
-  else {
-    // initialize list with first node
-    PR_INIT_CLIST(aNode);
-    mFirstNode = aNode;
+    curNode->setPrevious(aNode);
   }
   ++mSize;
+
+  mLastInserted = aNode;
 
   // Set the mapping only if it is the first node of the frame.
   // The DEBUG blocks below are for ensuring the invariant required by
   // nsGenConList::DestroyNodesFor. See comment there.
-  if (aNode == mFirstNode ||
+  if (IsFirst(aNode) ||
       Prev(aNode)->mPseudoFrame != aNode->mPseudoFrame) {
 #ifdef DEBUG
     if (nsGenConNode* oldFrameFirstNode = mNodes.Get(aNode->mPseudoFrame)) {
@@ -182,12 +165,12 @@ nsGenConList::Insert(nsGenConNode* aNode)
                  "the newly-inserted one.");
     } else {
       // If the node is not the only node in the list.
-      nsGenConNode* nextNode = Next(aNode);
-      if (nextNode != aNode) {
-        MOZ_ASSERT(nextNode->mPseudoFrame != aNode->mPseudoFrame,
+      if (!IsFirst(aNode) || !IsLast(aNode)) {
+        nsGenConNode* nextNode = Next(aNode);
+        MOZ_ASSERT(!nextNode || nextNode->mPseudoFrame != aNode->mPseudoFrame,
                    "There shouldn't exist any node for this frame.");
         // If the node is neither the first nor the last node
-        if (aNode != mFirstNode && nextNode != mFirstNode) {
+        if (!IsFirst(aNode) && !IsLast(aNode)) {
           MOZ_ASSERT(Prev(aNode)->mPseudoFrame != nextNode->mPseudoFrame,
                      "New node should not break contiguity of nodes of "
                      "the same frame.");
@@ -205,14 +188,15 @@ nsGenConList::Insert(nsGenConNode* aNode)
       MOZ_ASSERT(curNode->mPseudoFrame == aNode->mPseudoFrame,
                  "Every node between frameFirstNode and the new node inserted "
                  "should refer to the same frame.");
-      MOZ_ASSERT(curNode != mFirstNode, "The newly-inserted node should be in "
-                 "a contiguous run after frameFirstNode, thus frameFirstNode "
-                 "should be reached before mFirstNode.");
+      MOZ_ASSERT(!IsFirst(curNode),
+                 "The newly-inserted node should be in a contiguous run after "
+                 "frameFirstNode, thus frameFirstNode should be reached before "
+                 "the first node of mList.");
     }
 #endif
   }
 
-  NS_ASSERTION(aNode == mFirstNode || NodeAfter(aNode, Prev(aNode)),
+  NS_ASSERTION(IsFirst(aNode) || NodeAfter(aNode, Prev(aNode)),
                "sorting error");
   NS_ASSERTION(IsLast(aNode) || NodeAfter(Next(aNode), aNode),
                "sorting error");

@@ -7,17 +7,16 @@
 
 // Tests the advanceValidate function from rule-view.js.
 
-var Cu = Components.utils;
-var Ci = Components.interfaces;
-var {require} = Cu.import("resource://devtools/shared/Loader.jsm", {});
-var {advanceValidate} = require("devtools/client/inspector/shared/utils");
+const {utils: Cu, interfaces: Ci} = Components;
+const {require} = Cu.import("resource://devtools/shared/Loader.jsm", {});
+const {advanceValidate} = require("devtools/client/inspector/shared/utils");
 
 //                            1         2         3
 //                  0123456789012345678901234567890
-var sampleInput = '\\symbol "string" url(somewhere)';
+const sampleInput = '\\symbol "string" url(somewhere)';
 
 function testInsertion(where, result, testName) {
-  do_print(testName);
+  info(testName);
   equal(advanceValidate(Ci.nsIDOMKeyEvent.DOM_VK_SEMICOLON, sampleInput, where),
         result, "testing advanceValidate at " + where);
 }

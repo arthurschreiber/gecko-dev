@@ -8,7 +8,6 @@
 #define mozilla_dom_HTMLDataElement_h
 
 #include "mozilla/Attributes.h"
-#include "nsIDOMHTMLElement.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 
@@ -31,7 +30,8 @@ public:
     SetHTMLAttr(nsGkAtoms::value, aValue, aError);
   }
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult) const override;
+  virtual nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult,
+                         bool aPreallocateChildren) const override;
 
 protected:
   virtual ~HTMLDataElement();

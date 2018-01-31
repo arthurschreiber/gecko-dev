@@ -3,8 +3,8 @@
 
 "use strict";
 
-Components.utils.import("resource://gre/modules/MatchPattern.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/MatchURLFilters.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function createTestFilter({url, filters}) {
   let m = new MatchURLFilters(filters);
@@ -33,7 +33,7 @@ function expectThrow({url, filters, exceptionMessageContains}) {
   );
 }
 
-add_task(function* test_match_url_filters() {
+add_task(async function test_match_url_filters() {
   const shouldPass = true;
   const shouldFail = true;
   const shouldThrow = true;
@@ -381,13 +381,13 @@ add_task(function* test_match_url_filters() {
   // Run all the the testCases defined above.
   for (let currentTest of testCases) {
     let {
-      shouldThrow, exceptionMessageContains,
-      shouldFail, url, filters,
+      exceptionMessageContains,
+      url, filters,
     } = currentTest;
 
-    if (shouldThrow) {
-      expectThrow({url, filters, exceptionMessageContains})
-    } else if (shouldFail) {
+    if (currentTest.shouldThrow) {
+      expectThrow({url, filters, exceptionMessageContains});
+    } else if (currentTest.shouldFail) {
       expectFail({url, filters});
     } else {
       expectPass({url, filters});

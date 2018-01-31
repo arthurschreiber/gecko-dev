@@ -22,7 +22,7 @@ NS_NewXMLProcessingInstruction(nsNodeInfoManager *aNodeInfoManager,
 
   NS_PRECONDITION(aNodeInfoManager, "Missing nodeinfo manager");
 
-  nsCOMPtr<nsIAtom> target = NS_Atomize(aTarget);
+  RefPtr<nsAtom> target = NS_Atomize(aTarget);
   MOZ_ASSERT(target);
 
   if (target == nsGkAtoms::xml_stylesheet) {
@@ -34,7 +34,7 @@ NS_NewXMLProcessingInstruction(nsNodeInfoManager *aNodeInfoManager,
   RefPtr<mozilla::dom::NodeInfo> ni;
   ni = aNodeInfoManager->GetNodeInfo(nsGkAtoms::processingInstructionTagName,
                                      nullptr, kNameSpaceID_None,
-                                     nsIDOMNode::PROCESSING_INSTRUCTION_NODE,
+                                     nsINode::PROCESSING_INSTRUCTION_NODE,
                                      target);
 
   RefPtr<ProcessingInstruction> instance =
@@ -50,7 +50,7 @@ ProcessingInstruction::ProcessingInstruction(already_AddRefed<mozilla::dom::Node
                                              const nsAString& aData)
   : nsGenericDOMDataNode(Move(aNodeInfo))
 {
-  MOZ_ASSERT(mNodeInfo->NodeType() == nsIDOMNode::PROCESSING_INSTRUCTION_NODE,
+  MOZ_ASSERT(mNodeInfo->NodeType() == nsINode::PROCESSING_INSTRUCTION_NODE,
              "Bad NodeType in aNodeInfo");
 
   SetTextInternal(0, mText.GetLength(),
@@ -81,7 +81,7 @@ ProcessingInstruction::GetTarget(nsAString& aTarget)
 }
 
 bool
-ProcessingInstruction::GetAttrValue(nsIAtom *aName, nsAString& aValue)
+ProcessingInstruction::GetAttrValue(nsAtom *aName, nsAString& aValue)
 {
   nsAutoString data;
 
@@ -92,7 +92,7 @@ ProcessingInstruction::GetAttrValue(nsIAtom *aName, nsAString& aValue)
 bool
 ProcessingInstruction::IsNodeOfType(uint32_t aFlags) const
 {
-  return !(aFlags & ~(eCONTENT | ePROCESSING_INSTRUCTION | eDATA_NODE));
+  return !(aFlags & ~(ePROCESSING_INSTRUCTION | eDATA_NODE));
 }
 
 nsGenericDOMDataNode*

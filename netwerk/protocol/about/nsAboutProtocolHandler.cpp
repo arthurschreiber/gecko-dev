@@ -67,7 +67,7 @@ nsAboutProtocolHandler::GetDefaultPort(int32_t *result)
 NS_IMETHODIMP
 nsAboutProtocolHandler::GetProtocolFlags(uint32_t *result)
 {
-    *result = URI_NORELATIVE | URI_NOAUTH | URI_DANGEROUS_TO_LOAD;
+    *result = URI_NORELATIVE | URI_NOAUTH | URI_DANGEROUS_TO_LOAD | URI_SCHEME_NOT_SELF_LINKABLE;
     return NS_OK;
 }
 
@@ -113,11 +113,13 @@ nsAboutProtocolHandler::NewURI(const nsACString &aSpec,
     *result = nullptr;
     nsresult rv;
 
-    // Use a simple URI to parse out some stuff first
-    nsCOMPtr<nsIURI> url = do_CreateInstance(kSimpleURICID, &rv);
-    if (NS_FAILED(rv)) return rv;
 
-    rv = url->SetSpec(aSpec);
+    // Use a simple URI to parse out some stuff first
+    nsCOMPtr<nsIURI> url;
+    rv = NS_MutateURI(new nsSimpleURI::Mutator())
+           .SetSpec(aSpec)
+           .Finalize(url);
+
     if (NS_FAILED(rv)) {
         return rv;
     }
@@ -126,7 +128,7 @@ nsAboutProtocolHandler::NewURI(const nsACString &aSpec,
     // about: modules...  Since those URIs will never open a channel, might as
     // well consider them unsafe for better perf, and just in case.
     bool isSafe = false;
-    
+
     nsCOMPtr<nsIAboutModule> aboutMod;
     rv = NS_GetAboutModule(url, getter_AddRefs(aboutMod));
     if (NS_SUCCEEDED(rv)) {
@@ -139,22 +141,19 @@ nsAboutProtocolHandler::NewURI(const nsACString &aSpec,
         // path, in case someone decides to hardcode checks for particular
         // about: URIs somewhere.
         nsAutoCString spec;
-        rv = url->GetPath(spec);
+        rv = url->GetPathQueryRef(spec);
         NS_ENSURE_SUCCESS(rv, rv);
-        
-        spec.Insert("moz-safe-about:", 0);
+
+        spec.InsertLiteral("moz-safe-about:", 0);
 
         nsCOMPtr<nsIURI> inner;
         rv = NS_NewURI(getter_AddRefs(inner), spec);
         NS_ENSURE_SUCCESS(rv, rv);
 
-        nsSimpleNestedURI* outer = new nsNestedAboutURI(inner, aBaseURI);
-        NS_ENSURE_TRUE(outer, NS_ERROR_OUT_OF_MEMORY);
-
-        // Take a ref to it in the COMPtr we plan to return
-        url = outer;
-
-        rv = outer->SetSpec(aSpec);
+        RefPtr<nsSimpleNestedURI> outer = new nsNestedAboutURI(inner, aBaseURI);
+        rv = NS_MutateURI(outer)
+               .SetSpec(aSpec)
+               .Finalize(url);
         NS_ENSURE_SUCCESS(rv, rv);
     }
 
@@ -179,7 +178,7 @@ nsAboutProtocolHandler::NewChannel2(nsIURI* uri,
     nsAutoCString path;
     nsresult rv2 = NS_GetAboutModuleName(uri, path);
     if (NS_SUCCEEDED(rv2) && path.EqualsLiteral("srcdoc")) {
-        // about:srcdoc is meant to be unresolvable, yet is included in the 
+        // about:srcdoc is meant to be unresolvable, yet is included in the
         // about lookup tables so that it can pass security checks when used in
         // a srcdoc iframe.  To ensure that it stays unresolvable, we pretend
         // that it doesn't exist.
@@ -256,10 +255,10 @@ nsAboutProtocolHandler::NewChannel(nsIURI* uri, nsIChannel* *result)
     return NewChannel2(uri, nullptr, result);
 }
 
-NS_IMETHODIMP 
+NS_IMETHODIMP
 nsAboutProtocolHandler::AllowPort(int32_t port, const char *scheme, bool *_retval)
 {
-    // don't override anything.  
+    // don't override anything.
     *_retval = false;
     return NS_OK;
 }
@@ -298,21 +297,15 @@ nsSafeAboutProtocolHandler::NewURI(const nsACString &aSpec,
                                    nsIURI *aBaseURI,
                                    nsIURI **result)
 {
-    nsresult rv;
-
-    nsCOMPtr<nsIURI> url = do_CreateInstance(kSimpleURICID, &rv);
-    if (NS_FAILED(rv)) return rv;
-
-    rv = url->SetSpec(aSpec);
+    nsresult rv = NS_MutateURI(new nsSimpleURI::Mutator())
+                    .SetSpec(aSpec)
+                    .Finalize(result);
     if (NS_FAILED(rv)) {
         return rv;
     }
 
-    NS_TryToSetImmutable(url);
-    
-    *result = nullptr;
-    url.swap(*result);
-    return rv;
+    NS_TryToSetImmutable(*result);
+    return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -331,10 +324,10 @@ nsSafeAboutProtocolHandler::NewChannel(nsIURI* uri, nsIChannel* *result)
     return NS_ERROR_NOT_AVAILABLE;
 }
 
-NS_IMETHODIMP 
+NS_IMETHODIMP
 nsSafeAboutProtocolHandler::AllowPort(int32_t port, const char *scheme, bool *_retval)
 {
-    // don't override anything.  
+    // don't override anything.
     *_retval = false;
     return NS_OK;
 }
@@ -425,6 +418,23 @@ nsNestedAboutURI::StartClone(nsSimpleURI::RefHandlingEnum aRefHandlingMode,
     url->SetMutable(false);
 
     return url;
+}
+
+NS_IMPL_ISUPPORTS(nsNestedAboutURI::Mutator, nsIURISetters, nsIURIMutator)
+
+NS_IMETHODIMP
+nsNestedAboutURI::Mutate(nsIURIMutator** aMutator)
+{
+    RefPtr<nsNestedAboutURI::Mutator> mutator = new nsNestedAboutURI::Mutator();
+    nsresult rv = mutator->InitFromURI(this);
+    if (NS_FAILED(rv)) {
+        return rv;
+    }
+    // StartClone calls SetMutable(false) but we need the mutator clone
+    // to be mutable
+    mutator->ResetMutable();
+    mutator.forget(aMutator);
+    return NS_OK;
 }
 
 // nsIClassInfo

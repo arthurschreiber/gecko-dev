@@ -9,14 +9,45 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/MediaManager.h"
 #include "MediaTrackConstraints.h"
+#include "nsContentUtils.h"
 #include "nsIEventTarget.h"
+#include "nsINamed.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIPermissionManager.h"
 #include "nsPIDOMWindow.h"
 #include "nsQueryObject.h"
 
+#define DEVICECHANGE_HOLD_TIME_IN_MS 1000
+
 namespace mozilla {
 namespace dom {
+
+class FuzzTimerCallBack final : public nsITimerCallback, public nsINamed
+{
+  ~FuzzTimerCallBack() {}
+
+public:
+  explicit FuzzTimerCallBack(MediaDevices* aMediaDevices) : mMediaDevices(aMediaDevices) {}
+
+  NS_DECL_ISUPPORTS
+
+  NS_IMETHOD Notify(nsITimer* aTimer) final override
+  {
+    mMediaDevices->DispatchTrustedEvent(NS_LITERAL_STRING("devicechange"));
+    return NS_OK;
+  }
+
+  NS_IMETHOD GetName(nsACString& aName) override
+  {
+    aName.AssignLiteral("FuzzTimerCallBack");
+    return NS_OK;
+  }
+
+private:
+  nsCOMPtr<MediaDevices> mMediaDevices;
+};
+
+NS_IMPL_ISUPPORTS(FuzzTimerCallBack, nsITimerCallback, nsINamed)
 
 class MediaDevices::GumResolver : public nsIDOMGetUserMediaSuccessCallback
 {
@@ -52,8 +83,6 @@ public:
   NS_IMETHOD
   OnSuccess(nsIVariant* aDevices) override
   {
-    // Cribbed from MediaPermissionGonk.cpp
-
     // Create array for nsIMediaDevice
     nsTArray<nsCOMPtr<nsIMediaDevice>> devices;
     // Contain the fumes
@@ -137,12 +166,21 @@ private:
   RefPtr<Promise> mPromise;
 };
 
+MediaDevices::~MediaDevices()
+{
+  MediaManager* mediamanager = MediaManager::GetIfExists();
+  if (mediamanager) {
+    mediamanager->RemoveDeviceChangeCallback(this);
+  }
+}
+
 NS_IMPL_ISUPPORTS(MediaDevices::GumResolver, nsIDOMGetUserMediaSuccessCallback)
 NS_IMPL_ISUPPORTS(MediaDevices::EnumDevResolver, nsIGetUserMediaDevicesSuccessCallback)
 NS_IMPL_ISUPPORTS(MediaDevices::GumRejecter, nsIDOMGetUserMediaErrorCallback)
 
 already_AddRefed<Promise>
 MediaDevices::GetUserMedia(const MediaStreamConstraints& aConstraints,
+			   CallerType aCallerType,
                            ErrorResult &aRv)
 {
   nsPIDOMWindowInner* window = GetOwner();
@@ -154,12 +192,13 @@ MediaDevices::GetUserMedia(const MediaStreamConstraints& aConstraints,
   RefPtr<GumRejecter> rejecter = new GumRejecter(p);
 
   aRv = MediaManager::Get()->GetUserMedia(window, aConstraints,
-                                          resolver, rejecter);
+                                          resolver, rejecter,
+					  aCallerType);
   return p.forget();
 }
 
 already_AddRefed<Promise>
-MediaDevices::EnumerateDevices(ErrorResult &aRv)
+MediaDevices::EnumerateDevices(CallerType aCallerType, ErrorResult &aRv)
 {
   nsPIDOMWindowInner* window = GetOwner();
   nsCOMPtr<nsIGlobalObject> go = do_QueryInterface(window);
@@ -169,7 +208,7 @@ MediaDevices::EnumerateDevices(ErrorResult &aRv)
   RefPtr<EnumDevResolver> resolver = new EnumDevResolver(p, window->WindowID());
   RefPtr<GumRejecter> rejecter = new GumRejecter(p);
 
-  aRv = MediaManager::Get()->EnumerateDevices(window, resolver, rejecter);
+  aRv = MediaManager::Get()->EnumerateDevices(window, resolver, rejecter, aCallerType);
   return p.forget();
 }
 
@@ -184,15 +223,35 @@ MediaDevices::OnDeviceChange()
 {
   MOZ_ASSERT(NS_IsMainThread());
   nsresult rv = CheckInnerWindowCorrectness();
-  if (NS_FAILED(rv))
+  if (NS_FAILED(rv)) {
+    MOZ_ASSERT(false);
     return;
+  }
 
   if (!(MediaManager::Get()->IsActivelyCapturingOrHasAPermission(GetOwner()->WindowID()) ||
     Preferences::GetBool("media.navigator.permission.disabled", false))) {
     return;
   }
 
-  DispatchTrustedEvent(NS_LITERAL_STRING("devicechange"));
+  // Do not fire event to content script when
+  // privacy.resistFingerprinting is true.
+  if (nsContentUtils::ShouldResistFingerprinting()) {
+    return;
+  }
+
+  if (!mFuzzTimer)
+  {
+    mFuzzTimer = NS_NewTimer();
+  }
+
+  if (!mFuzzTimer) {
+    MOZ_ASSERT(false);
+    return;
+  }
+
+  mFuzzTimer->Cancel();
+  RefPtr<FuzzTimerCallBack> cb = new FuzzTimerCallBack(this);
+  mFuzzTimer->InitWithCallback(cb, DEVICECHANGE_HOLD_TIME_IN_MS, nsITimer::TYPE_ONE_SHOT);
 }
 
 mozilla::dom::EventHandlerNonNull*

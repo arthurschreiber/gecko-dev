@@ -7,7 +7,7 @@
 
 var { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
-const DBG_STRINGS_URI = "devtools/locale/debugger.properties";
+const DBG_STRINGS_URI = "devtools/client/locales/debugger.properties";
 const NEW_SOURCE_IGNORED_URLS = ["debugger eval code", "XStringBundle"];
 const NEW_SOURCE_DISPLAY_DELAY = 200; // ms
 const FETCH_SOURCE_RESPONSE_DELAY = 200; // ms
@@ -108,10 +108,15 @@ const { BreadcrumbsWidget } = require("resource://devtools/client/shared/widgets
 const { SideMenuWidget } = require("resource://devtools/client/shared/widgets/SideMenuWidget.jsm");
 const { VariablesView } = require("resource://devtools/client/shared/widgets/VariablesView.jsm");
 const { VariablesViewController, StackFrameUtils } = require("resource://devtools/client/shared/widgets/VariablesViewController.jsm");
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("devtools/shared/old-event-emitter");
+const { extend } = require("devtools/shared/extend");
 const { gDevTools } = require("devtools/client/framework/devtools");
-const { ViewHelpers, Heritage, WidgetMethods, setNamedTimeout,
+const { ViewHelpers, WidgetMethods, setNamedTimeout,
         clearNamedTimeout } = require("devtools/client/shared/widgets/view-helpers");
+
+// Use privileged promise in panel documents to prevent having them to freeze
+// during toolbox destruction. See bug 1402779.
+const Promise = require("Promise");
 
 // React
 const React = require("devtools/client/shared/vendor/react");
@@ -144,7 +149,7 @@ var DevToolsUtils = require("devtools/shared/DevToolsUtils");
 var promise = require("devtools/shared/deprecated-sync-thenables");
 var Editor = require("devtools/client/sourceeditor/editor");
 var DebuggerEditor = require("devtools/client/sourceeditor/debugger");
-var {Tooltip} = require("devtools/client/shared/widgets/Tooltip");
+var Tooltip = require("devtools/client/shared/widgets/tooltip/Tooltip");
 var FastListWidget = require("devtools/client/shared/widgets/FastListWidget");
 var {LocalizationHelper, ELLIPSIS} = require("devtools/shared/l10n");
 var {PrefsHelper} = require("devtools/client/shared/prefs");
@@ -152,10 +157,10 @@ var {Task} = require("devtools/shared/task");
 
 XPCOMUtils.defineConstant(this, "EVENTS", EVENTS);
 
-XPCOMUtils.defineLazyModuleGetter(this, "Parser",
+ChromeUtils.defineModuleGetter(this, "Parser",
   "resource://devtools/shared/Parser.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "ShortcutUtils",
+ChromeUtils.defineModuleGetter(this, "ShortcutUtils",
   "resource://gre/modules/ShortcutUtils.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(this, "clipboardHelper",
@@ -275,9 +280,12 @@ var DebuggerController = {
     this.client = client;
     this.activeThread = this._toolbox.threadClient;
 
+    let wasmBinarySource = !!this.client.mainRoot.traits.wasmBinarySource;
+
     // Disable asm.js so that we can set breakpoints and other things
-    // on asm.js scripts
-    yield this.reconfigureThread({ observeAsmJS: true });
+    // on asm.js scripts. For WebAssembly modules allow using of binary
+    // source if supported.
+    yield this.reconfigureThread({ observeAsmJS: true, wasmBinarySource, });
     yield this.connectThread();
 
     // We need to call this to sync the state of the resume
@@ -959,9 +967,9 @@ StackFrames.prototype = {
   /**
    * Evaluate an expression in the context of the selected frame.
    *
-   * @param string aExpression
+   * @param string expression
    *        The expression to evaluate.
-   * @param object aOptions [optional]
+   * @param object options [optional]
    *        Additional options for this client evaluation:
    *          - depth: the frame depth used for evaluation, 0 being the topmost.
    *          - meta: some meta-description for what this evaluation represents.
@@ -970,29 +978,31 @@ StackFrames.prototype = {
    *         or rejected if there was no stack frame available or some
    *         other error occurred.
    */
-  evaluate: function (aExpression, aOptions = {}) {
-    let depth = "depth" in aOptions ? aOptions.depth : this.currentFrameDepth;
+  evaluate: async function (expression, options = {}) {
+    let depth = "depth" in options
+      ? options.depth
+      : this.currentFrameDepth;
     let frame = this.activeThread.cachedFrames[depth];
     if (frame == null) {
-      return promise.reject(new Error("No stack frame available."));
+      throw new Error("No stack frame available.");
     }
 
-    let deferred = promise.defer();
+    const onThreadPaused = this.activeThread.addOneTimeListener("paused");
 
-    this.activeThread.addOneTimeListener("paused", (aEvent, aPacket) => {
-      let { type, frameFinished } = aPacket.why;
-      if (type == "clientEvaluated") {
-        deferred.resolve(frameFinished);
-      } else {
-        deferred.reject(new Error("Active thread paused unexpectedly."));
-      }
-    });
-
-    let meta = "meta" in aOptions ? aOptions.meta : FRAME_TYPE.PUBLIC_CLIENT_EVAL;
+    let meta = "meta" in options
+      ? options.meta
+      : FRAME_TYPE.PUBLIC_CLIENT_EVAL;
     this._currentFrameDescription = meta;
-    this.activeThread.eval(frame.actor, aExpression);
+    this.activeThread.eval(frame.actor, expression);
 
-    return deferred.promise;
+    const packet = await onThreadPaused;
+
+    let { type, frameFinished } = packet.why;
+    if (type !== "clientEvaluated") {
+      throw new Error("Active thread paused unexpectedly.");
+    }
+
+    return frameFinished;
   },
 
   /**
@@ -1211,7 +1221,6 @@ var Prefs = new PrefsHelper("devtools", {
   workersEnabled: ["Bool", "debugger.workers"],
   editorTabSize: ["Int", "editor.tabsize"],
   autoBlackBox: ["Bool", "debugger.auto-black-box"],
-  promiseDebuggerEnabled: ["Bool", "debugger.promise"]
 });
 
 /**

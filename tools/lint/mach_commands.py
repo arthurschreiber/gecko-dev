@@ -37,15 +37,17 @@ class MachCommands(MachCommandBase):
     def lint(self, *runargs, **lintargs):
         """Run linters."""
         from mozlint import cli
+        lintargs.setdefault('root', self.topsrcdir)
         lintargs['exclude'] = ['obj*']
         cli.SEARCH_PATHS.append(here)
+        self._activate_virtualenv()
         return cli.run(*runargs, **lintargs)
 
     @Command('eslint', category='devenv',
              description='Run eslint or help configure eslint for optimal development.')
     @CommandArgument('paths', default=None, nargs='*',
                      help="Paths to file or directories to lint, like "
-                          "'browser/components/loop' Defaults to the "
+                          "'browser/' Defaults to the "
                           "current directory if not given.")
     @CommandArgument('-s', '--setup', default=False, action='store_true',
                      help='Configure eslint for optimal development.')
@@ -55,6 +57,7 @@ class MachCommands(MachCommandBase):
                      help='Request that eslint automatically fix errors, where possible.')
     @CommandArgument('extra_args', nargs=argparse.REMAINDER,
                      help='Extra args that will be forwarded to eslint.')
-    def eslint(self, paths, **kwargs):
+    def eslint(self, paths, extra_args=[], **kwargs):
         self._mach_context.commands.dispatch('lint', self._mach_context,
-                                             linters=['eslint'], paths=paths, **kwargs)
+                                             linters=['eslint'], paths=paths,
+                                             argv=extra_args, **kwargs)

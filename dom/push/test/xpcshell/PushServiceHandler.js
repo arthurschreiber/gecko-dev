@@ -4,8 +4,8 @@
 
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 let pushService = Cc["@mozilla.org/push/Service;1"].getService(Ci.nsIPushService);
 
@@ -14,9 +14,9 @@ function PushServiceHandler() {
   this.wrappedJSObject = this;
   // Register a push observer.
   this.observed = [];
-  Services.obs.addObserver(this, pushService.pushTopic, false);
-  Services.obs.addObserver(this, pushService.subscriptionChangeTopic, false);
-  Services.obs.addObserver(this, pushService.subscriptionModifiedTopic, false);
+  Services.obs.addObserver(this, pushService.pushTopic);
+  Services.obs.addObserver(this, pushService.subscriptionChangeTopic);
+  Services.obs.addObserver(this, pushService.subscriptionModifiedTopic);
 }
 
 PushServiceHandler.prototype = {

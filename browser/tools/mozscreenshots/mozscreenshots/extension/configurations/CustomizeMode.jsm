@@ -8,8 +8,8 @@ this.EXPORTED_SYMBOLS = ["CustomizeMode"];
 
 const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 this.CustomizeMode = {
 
@@ -17,6 +17,7 @@ this.CustomizeMode = {
 
   configurations: {
     notCustomizing: {
+      selectors: ["#navigator-toolbox"],
       applyConfig() {
         return new Promise((resolve) => {
           let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
@@ -38,6 +39,7 @@ this.CustomizeMode = {
     },
 
     customizing: {
+      selectors: ["#navigator-toolbox", "#customization-container"],
       applyConfig() {
         return new Promise((resolve) => {
           let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");

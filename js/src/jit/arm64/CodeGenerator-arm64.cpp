@@ -264,7 +264,7 @@ class js::jit::OutOfLineTableSwitch : public OutOfLineCodeBase<CodeGeneratorARM6
     MTableSwitch* mir_;
     Vector<CodeLabel, 8, JitAllocPolicy> codeLabels_;
 
-    void accept(CodeGeneratorARM64* codegen) {
+    void accept(CodeGeneratorARM64* codegen) override {
         codegen->visitOutOfLineTableSwitch(this);
     }
 
@@ -518,15 +518,15 @@ CodeGeneratorARM64::visitBitAndAndBranch(LBitAndAndBranch* baab)
 }
 
 void
-CodeGeneratorARM64::visitAsmJSUInt32ToDouble(LAsmJSUInt32ToDouble* lir)
+CodeGeneratorARM64::visitWasmUint32ToDouble(LWasmUint32ToDouble* lir)
 {
-    MOZ_CRASH("visitAsmJSUInt32ToDouble");
+    MOZ_CRASH("visitWasmUint32ToDouble");
 }
 
 void
-CodeGeneratorARM64::visitAsmJSUInt32ToFloat32(LAsmJSUInt32ToFloat32* lir)
+CodeGeneratorARM64::visitWasmUint32ToFloat32(LWasmUint32ToFloat32* lir)
 {
-    MOZ_CRASH("visitAsmJSUInt32ToFloat32");
+    MOZ_CRASH("visitWasmUint32ToFloat32");
 }
 
 void
@@ -620,7 +620,6 @@ getBase(U* mir)
 {
     switch (mir->base()) {
       case U::Heap: return HeapReg;
-      case U::Global: return GlobalReg;
     }
     return InvalidReg;
 }
@@ -638,18 +637,6 @@ CodeGeneratorARM64::visitStoreTypedArrayElementStatic(LStoreTypedArrayElementSta
 }
 
 void
-CodeGeneratorARM64::visitWasmCall(LWasmCall* ins)
-{
-    MOZ_CRASH("vistWasmCall");
-}
-
-void
-CodeGeneratorARM64::visitWasmCallI64(LWasmCallI64* ins)
-{
-    MOZ_CRASH("vistWasmCallI64");
-}
-
-void
 CodeGeneratorARM64::visitAsmJSLoadHeap(LAsmJSLoadHeap* ins)
 {
     MOZ_CRASH("visitAsmJSLoadHeap");
@@ -662,21 +649,21 @@ CodeGeneratorARM64::visitAsmJSStoreHeap(LAsmJSStoreHeap* ins)
 }
 
 void
-CodeGeneratorARM64::visitAsmJSCompareExchangeHeap(LAsmJSCompareExchangeHeap* ins)
+CodeGeneratorARM64::visitWasmCompareExchangeHeap(LWasmCompareExchangeHeap* ins)
 {
-    MOZ_CRASH("visitAsmJSCompareExchangeHeap");
+    MOZ_CRASH("visitWasmCompareExchangeHeap");
 }
 
 void
-CodeGeneratorARM64::visitAsmJSAtomicBinopHeap(LAsmJSAtomicBinopHeap* ins)
+CodeGeneratorARM64::visitWasmAtomicBinopHeap(LWasmAtomicBinopHeap* ins)
 {
-    MOZ_CRASH("visitAsmJSAtomicBinopHeap");
+    MOZ_CRASH("visitWasmAtomicBinopHeap");
 }
 
 void
-CodeGeneratorARM64::visitAsmJSPassStackArg(LAsmJSPassStackArg* ins)
+CodeGeneratorARM64::visitWasmStackArg(LWasmStackArg* ins)
 {
-    MOZ_CRASH("visitAsmJSPassStackArg");
+    MOZ_CRASH("visitWasmStackArg");
 }
 
 void
@@ -695,18 +682,6 @@ void
 CodeGeneratorARM64::visitEffectiveAddress(LEffectiveAddress* ins)
 {
     MOZ_CRASH("visitEffectiveAddress");
-}
-
-void
-CodeGeneratorARM64::visitWasmLoadGlobalVar(LWasmLoadGlobalVar* ins)
-{
-    MOZ_CRASH("visitWasmLoadGlobalVar");
-}
-
-void
-CodeGeneratorARM64::visitWasmStoreGlobalVar(LWasmStoreGlobalVar* ins)
-{
-    MOZ_CRASH("visitWasmStoreGlobalVar");
 }
 
 void
@@ -753,10 +728,10 @@ CodeGeneratorARM64::visitCompareExchangeTypedArrayElement(LCompareExchangeTypedA
 
     if (lir->index()->isConstant()) {
         Address dest(elements, ToInt32(lir->index()) * width);
-        masm.compareExchangeToTypedIntArray(arrayType, dest, oldval, newval, temp, output);
+        masm.compareExchangeJS(arrayType, Synchronization::Full(), dest, oldval, newval, temp, output);
     } else {
         BaseIndex dest(elements, ToRegister(lir->index()), ScaleFromElemWidth(width));
-        masm.compareExchangeToTypedIntArray(arrayType, dest, oldval, newval, temp, output);
+        masm.compareExchangeJS(arrayType, Synchronization::Full(), dest, oldval, newval, temp, output);
     }
 }
 
@@ -774,10 +749,9 @@ CodeGeneratorARM64::visitAtomicExchangeTypedArrayElement(LAtomicExchangeTypedArr
 
     if (lir->index()->isConstant()) {
         Address dest(elements, ToInt32(lir->index()) * width);
-        masm.atomicExchangeToTypedIntArray(arrayType, dest, value, temp, output);
+        masm.atomicExchangeJS(arrayType, Synchronization::Full(), dest, value, temp, output);
     } else {
         BaseIndex dest(elements, ToRegister(lir->index()), ScaleFromElemWidth(width));
-        masm.atomicExchangeToTypedIntArray(arrayType, dest, value, temp, output);
+        masm.atomicExchangeJS(arrayType, Synchronization::Full(), dest, value, temp, output);
     }
 }
-

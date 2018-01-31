@@ -24,9 +24,9 @@ public:
     NS_DECL_NSIPROTOCOLHANDLER
     NS_DECL_NSIPROXIEDPROTOCOLHANDLER
     NS_DECL_NSIOBSERVER
-    
+
     nsFtpProtocolHandler();
-    
+
     nsresult Init();
 
     // FTP Connection list access
@@ -45,9 +45,9 @@ private:
         nsCOMPtr<nsITimer> timer;
         RefPtr<nsFtpControlConnection> conn;
         char *key;
-        
+
         timerStruct() : key(nullptr) {}
-        
+
         ~timerStruct() {
             if (timer)
                 timer->Cancel();
@@ -65,6 +65,7 @@ private:
     nsTArray<timerStruct*> mRootConnectionList;
 
     int32_t mIdleTimeout;
+    bool mEnabled;
 
     // When "clear active logins" is performed, all idle connection are dropped
     // and mSessionId is incremented. When nsFtpState wants to insert idle

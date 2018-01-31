@@ -14,6 +14,7 @@
 #endif
 
 #include "mozilla/EndianUtils.h"
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/ScopeExit.h"
 
 #include "jsstr.h"
@@ -50,6 +51,7 @@ TraceLoggerGraphState* traceLoggerGraphState = nullptr;
 // are allowed, with %u standing for a full 32-bit number and %d standing for
 // an up to 3-digit number.
 static js::UniqueChars
+MOZ_FORMAT_PRINTF(1, 2)
 AllocTraceLogFilename(const char* pattern, ...) {
     js::UniqueChars filename;
 
@@ -177,6 +179,12 @@ TraceLoggerGraphState::nextLoggerId()
     return numLoggers++;
 }
 
+size_t
+TraceLoggerGraphState::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const
+{
+    return 0;
+}
+
 static bool
 EnsureTraceLoggerGraphState()
 {
@@ -193,6 +201,12 @@ EnsureTraceLoggerGraphState()
     }
 
     return true;
+}
+
+size_t
+js::SizeOfTraceLogGraphState(mozilla::MallocSizeOf mallocSizeOf)
+{
+    return traceLoggerGraphState ? traceLoggerGraphState->sizeOfIncludingThis(mallocSizeOf) : 0;
 }
 
 void
@@ -283,15 +297,15 @@ TraceLoggerGraph::~TraceLoggerGraph()
         // Make sure every start entry has a corresponding stop value.
         // We temporarily enable logging for this. Stop doesn't need any extra data,
         // so is safe to do even when we have encountered OOM.
-        enabled = 1;
+        enabled = true;
         while (stack.size() > 1)
             stopEvent(0);
-        enabled = 0;
+        enabled = false;
     }
 
     if (!failed && !flush()) {
         fprintf(stderr, "TraceLogging: Couldn't write the data to disk.\n");
-        enabled = 0;
+        enabled = false;
         failed = true;
     }
 
@@ -364,7 +378,7 @@ TraceLoggerGraph::startEvent(uint32_t id, uint64_t timestamp)
         if (tree.size() >= treeSizeFlushLimit() || !tree.ensureSpaceBeforeAdd()) {
             if (!flush()) {
                 fprintf(stderr, "TraceLogging: Couldn't write the data to disk.\n");
-                enabled = 0;
+                enabled = false;
                 failed = true;
                 return;
             }
@@ -373,7 +387,7 @@ TraceLoggerGraph::startEvent(uint32_t id, uint64_t timestamp)
 
     if (!startEventInternal(id, timestamp)) {
         fprintf(stderr, "TraceLogging: Failed to start an event.\n");
-        enabled = 0;
+        enabled = false;
         failed = true;
         return;
     }
@@ -462,7 +476,7 @@ TraceLoggerGraph::stopEvent(uint64_t timestamp)
     if (enabled && stack.lastEntry().active()) {
         if (!updateStop(stack.lastEntry().treeId(), timestamp)) {
             fprintf(stderr, "TraceLogging: Failed to stop an event.\n");
-            enabled = 0;
+            enabled = false;
             failed = true;
             return;
         }
@@ -628,10 +642,8 @@ TraceLoggerGraph::addTextId(uint32_t id, const char* text)
         return;
 
     // Assume ids are given in order. Which is currently true.
-#ifdef DEBUG
-    MOZ_ASSERT(id == nextTextId);
-    nextTextId++;
-#endif
+    MOZ_ASSERT(id == nextTextId_);
+    nextTextId_++;
 
     if (id > 0) {
         int written = fprintf(dictFile, ",\n");
@@ -643,6 +655,19 @@ TraceLoggerGraph::addTextId(uint32_t id, const char* text)
 
     if (!js::FileEscapedString(dictFile, text, strlen(text), '"'))
         failed = true;
+}
+
+size_t
+TraceLoggerGraph::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
+    size_t size = 0;
+    size += tree.sizeOfExcludingThis(mallocSizeOf);
+    size += stack.sizeOfExcludingThis(mallocSizeOf);
+    return size;
+}
+
+size_t
+TraceLoggerGraph::sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
+    return mallocSizeOf(this) + sizeOfExcludingThis(mallocSizeOf);
 }
 
 #undef getpid

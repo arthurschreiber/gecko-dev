@@ -12,9 +12,13 @@ apt-get install -y --no-install-recommends apt-utils
 apt_packages=()
 apt_packages+=('build-essential')
 apt_packages+=('ca-certificates')
+apt_packages+=('clang-5.0')
 apt_packages+=('curl')
 apt_packages+=('npm')
 apt_packages+=('git')
+apt_packages+=('golang-1.6')
+apt_packages+=('libxml2-utils')
+apt_packages+=('locales')
 apt_packages+=('ninja-build')
 apt_packages+=('pkg-config')
 apt_packages+=('zlib1g-dev')
@@ -23,6 +27,9 @@ apt_packages+=('zlib1g-dev')
 apt_packages+=('lib32z1-dev')
 apt_packages+=('gcc-multilib')
 apt_packages+=('g++-multilib')
+
+# ct-verif and sanitizers
+apt_packages+=('valgrind')
 
 # Latest Mercurial.
 apt_packages+=('mercurial')
@@ -41,21 +48,20 @@ echo "deb http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu xenial main" >
 apt-get -y update
 apt-get install -y --no-install-recommends ${apt_packages[@]}
 
-# 32-bit builds
-ln -s /usr/include/x86_64-linux-gnu/zconf.h /usr/include
+# Latest version of abigail-tools
+apt-get install -y libxml2-dev autoconf libelf-dev libdw-dev libtool
+git clone git://sourceware.org/git/libabigail.git
+cd ./libabigail
+autoreconf -fi
+./configure --prefix=/usr --disable-static --disable-apidoc --disable-manual
+make
+make install
+cd ..
+apt-get remove -y libxml2-dev autoconf libtool
+rm -rf libabigail
 
-# Install clang-3.8 into /usr/local/.
-curl http://llvm.org/releases/3.8.0/clang+llvm-3.8.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz | tar xJv -C /usr/local --strip-components=1
-
-# Compiler options.
-update-alternatives --install /usr/bin/gcc gcc /usr/local/bin/clang 5
-update-alternatives --install /usr/bin/g++ g++ /usr/local/bin/clang++ 5
-update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.8 10
-update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-4.8 10
-update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-6 20
-update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-6 20
-update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-5 30
-update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-5 30
+# Install latest Rust (stable).
+su worker -c "curl https://sh.rustup.rs -sSf | sh -s -- -y"
 
 locale-gen en_US.UTF-8
 dpkg-reconfigure locales

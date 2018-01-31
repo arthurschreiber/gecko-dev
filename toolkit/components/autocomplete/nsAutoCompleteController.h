@@ -12,6 +12,7 @@
 #include "nsIAutoCompletePopup.h"
 #include "nsIAutoCompleteResult.h"
 #include "nsIAutoCompleteSearch.h"
+#include "nsINamed.h"
 #include "nsString.h"
 #include "nsITreeView.h"
 #include "nsITreeSelection.h"
@@ -23,7 +24,8 @@
 class nsAutoCompleteController final : public nsIAutoCompleteController,
                                        public nsIAutoCompleteObserver,
                                        public nsITimerCallback,
-                                       public nsITreeView
+                                       public nsITreeView,
+                                       public nsINamed
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -33,11 +35,27 @@ public:
   NS_DECL_NSIAUTOCOMPLETEOBSERVER
   NS_DECL_NSITREEVIEW
   NS_DECL_NSITIMERCALLBACK
-   
+  NS_DECL_NSINAMED
+
   nsAutoCompleteController();
-  
+
 protected:
   virtual ~nsAutoCompleteController();
+
+  /**
+   * SetValueOfInputTo() sets value of mInput to aValue and notifies the input
+   * of setting reason.
+   */
+  void SetValueOfInputTo(const nsString& aValue, uint16_t aReason);
+
+  /**
+   * SetSearchStringInternal() sets both mSearchString and mSetValue to
+   * aSearchString.
+   */
+  void SetSearchStringInternal(const nsAString& aSearchString)
+  {
+    mSearchString = mSetValue = aSearchString;
+  }
 
   nsresult OpenPopup();
   nsresult ClosePopup();
@@ -114,13 +132,13 @@ protected:
    */
   nsresult GetFinalDefaultCompleteValue(nsAString &_retval);
 
-  nsresult ClearResults();
-  
+  nsresult ClearResults(bool aIsSearching = false);
+
   nsresult RowIndexToSearch(int32_t aRowIndex,
                             int32_t *aSearchIndex, int32_t *aItemIndex);
 
   // members //////////////////////////////////////////
-  
+
   nsCOMPtr<nsIAutoCompleteInput> mInput;
 
   nsCOMArray<nsIAutoCompleteSearch> mSearches;
@@ -135,8 +153,19 @@ protected:
   nsCOMPtr<nsITreeSelection> mSelection;
   nsCOMPtr<nsITreeBoxObject> mTree;
 
+  // mSearchString stores value which is the original value of the input or
+  // typed by the user.  When user is choosing an item from the popup, this
+  // is NOT modified by the item because this is used for reverting the input
+  // value when user cancels choosing an item from the popup.
+  // This should be set through only SetSearchStringInternal().
   nsString mSearchString;
   nsString mPlaceholderCompletionString;
+  // mSetValue stores value which is expected in the input.  So, if input's
+  // value and mSetValue are different, it means somebody has changed the
+  // value like JS of the web content.
+  // This is set only by SetValueOfInputTo() or when modifying mSearchString
+  // through SetSearchStringInternal().
+  nsString mSetValue;
   bool mDefaultIndexCompleted;
   bool mPopupClosedByCompositionStart;
 
@@ -161,7 +190,7 @@ protected:
   uint32_t mRowCount;
   uint32_t mSearchesOngoing;
   uint32_t mSearchesFailed;
-  bool mFirstSearchResult;
+  int32_t mDelayedRowCountDelta;
   uint32_t mImmediateSearchesCount;
   // The index of the match on the popup that was selected using the keyboard,
   // if the completeselectedindex attribute is set.

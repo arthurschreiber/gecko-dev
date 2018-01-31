@@ -2,7 +2,7 @@ const CLASS_ID = Components.ID("{12345678-1234-1234-1234-123456789abc}");
 const CONTRACT_ID = "@mozilla.org/test-parameter-source;1";
 
 // Get and create the HTTP server.
-Components.utils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://testing-common/httpd.js");
 var testserver = new HttpServer();
 testserver.start(-1);
 gPort = testserver.identity.primaryPort;
@@ -16,14 +16,14 @@ var gCategoryManager = AM_Cc["@mozilla.org/categorymanager;1"].getService(AM_Ci.
 
 // Factory for our parameter handler
 var paramHandlerFactory = {
-  QueryInterface: function(iid) {
+  QueryInterface(iid) {
     if (iid.equals(AM_Ci.nsIFactory) || iid.equals(AM_Ci.nsISupports))
       return this;
 
     throw Components.results.NS_ERROR_NO_INTERFACE;
   },
 
-  createInstance: function(outer, iid) {
+  createInstance(outer, iid) {
     var bag = AM_Cc["@mozilla.org/hash-property-bag;1"].
               createInstance(AM_Ci.nsIWritablePropertyBag);
     bag.setProperty("CUSTOM1", "custom_parameter_1");
@@ -32,8 +32,7 @@ var paramHandlerFactory = {
   }
 };
 
-function initTest()
-{
+function initTest() {
   do_test_pending();
   // Setup extension manager
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9");
@@ -67,8 +66,7 @@ function initTest()
   startupManager();
 }
 
-function shutdownTest()
-{
+function shutdownTest() {
   shutdownManager();
 
   gComponentRegistrar.unregisterFactory(CLASS_ID, paramHandlerFactory);
@@ -78,25 +76,24 @@ function shutdownTest()
   do_test_finished();
 }
 
-function run_test()
-{
+function run_test() {
   initTest();
 
   AddonManager.getAddonByID("test@mozilla.org", function(item) {
     // Initiate update
     item.findUpdates({
-      onCompatibilityUpdateAvailable: function(addon) {
+      onCompatibilityUpdateAvailable(addon) {
         do_throw("Should not have seen a compatibility update");
       },
 
-      onUpdateAvailable: function(addon, install) {
+      onUpdateAvailable(addon, install) {
         do_throw("Should not have seen an available update");
       },
 
-      onUpdateFinished: function(addon, error) {
-        do_check_eq(error, AddonManager.UPDATE_STATUS_DOWNLOAD_ERROR);
-        do_check_true(gSeenExpectedURL);
-        do_execute_soon(shutdownTest);
+      onUpdateFinished(addon, error) {
+        Assert.equal(error, AddonManager.UPDATE_STATUS_DOWNLOAD_ERROR);
+        Assert.ok(gSeenExpectedURL);
+        executeSoon(shutdownTest);
       }
     }, AddonManager.UPDATE_WHEN_USER_REQUESTED);
   });

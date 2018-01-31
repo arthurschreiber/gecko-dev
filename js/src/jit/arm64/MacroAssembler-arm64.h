@@ -306,9 +306,8 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
     void pushValue(const Value& val) {
         vixl::UseScratchRegisterScope temps(this);
         const Register scratch = temps.AcquireX().asUnsized();
-        jsval_layout jv = JSVAL_TO_IMPL(val);
-        if (val.isMarkable()) {
-            BufferOffset load = movePatchablePtr(ImmPtr((void*)jv.asBits), scratch);
+        if (val.isGCThing()) {
+            BufferOffset load = movePatchablePtr(ImmPtr(val.bitsAsPunboxPointer()), scratch);
             writeDataRelocation(val, load);
             push(scratch);
         } else {
@@ -331,12 +330,15 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
         push(scratch);
     }
     template <typename T>
-    void storeUnboxedPayload(ValueOperand value, T address, size_t nbytes) {
+    void storeUnboxedPayload(ValueOperand value, T address, size_t nbytes, JSValueType type) {
         switch (nbytes) {
           case 8: {
             vixl::UseScratchRegisterScope temps(this);
             const Register scratch = temps.AcquireX().asUnsized();
-            unboxNonDouble(value, scratch);
+            if (type == JSVAL_TYPE_OBJECT)
+                unboxObjectOrNull(value, scratch);
+            else
+                unboxNonDouble(value, scratch, type);
             storePtr(scratch, address);
             return;
           }
@@ -350,8 +352,8 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
         }
     }
     void moveValue(const Value& val, Register dest) {
-        if (val.isMarkable()) {
-            BufferOffset load = movePatchablePtr(ImmPtr((void*)val.asRawBits()), dest);
+        if (val.isGCThing()) {
+            BufferOffset load = movePatchablePtr(ImmPtr(val.bitsAsPunboxPointer()), dest);
             writeDataRelocation(val, load);
         } else {
             movePtr(ImmWord(val.asRawBits()), dest);
@@ -359,10 +361,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
     }
     void moveValue(const Value& src, const ValueOperand& dest) {
         moveValue(src, dest.valueReg());
-    }
-    void moveValue(const ValueOperand& src, const ValueOperand& dest) {
-        if (src.valueReg() != dest.valueReg())
-            movePtr(src.valueReg(), dest.valueReg());
     }
 
     CodeOffset pushWithPatch(ImmWord imm) {
@@ -406,6 +404,14 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
         unboxObject(value, scratch);
         return scratch;
     }
+    Register extractString(const ValueOperand& value, Register scratch) {
+        unboxString(value, scratch);
+        return scratch;
+    }
+    Register extractSymbol(const ValueOperand& value, Register scratch) {
+        unboxSymbol(value, scratch);
+        return scratch;
+    }
     Register extractInt32(const ValueOperand& value, Register scratch) {
         unboxInt32(value, scratch);
         return scratch;
@@ -419,18 +425,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
 
     void emitSet(Condition cond, Register dest) {
         Cset(ARMRegister(dest, 64), cond);
-    }
-
-    template <typename T1, typename T2>
-    void cmpPtrSet(Condition cond, T1 lhs, T2 rhs, Register dest) {
-        cmpPtr(lhs, rhs);
-        emitSet(cond, dest);
-    }
-
-    template <typename T1, typename T2>
-    void cmp32Set(Condition cond, T1 lhs, T2 rhs, Register dest) {
-        cmp32(lhs, rhs);
-        emitSet(cond, dest);
     }
 
     void testNullSet(Condition cond, const ValueOperand& value, Register dest) {
@@ -510,10 +504,10 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
     }
 
     using vixl::MacroAssembler::B;
-    void B(wasm::JumpTarget) {
+    void B(wasm::OldTrapDesc) {
         MOZ_CRASH("NYI");
     }
-    void B(wasm::JumpTarget, Condition cond) {
+    void B(wasm::OldTrapDesc, Condition cond) {
         MOZ_CRASH("NYI");
     }
 
@@ -675,6 +669,11 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
     void jump(JitCode* code) {
         branch(code);
     }
+    void jump(TrampolinePtr code) {
+        syncStackPtr();
+        BufferOffset loc = b(-1, LabelDoc()); // The jump target will be patched by executableCopy().
+        addPendingJump(loc, ImmPtr(code.value), Relocation::HARDCODED);
+    }
     void jump(RepatchLabel* label) {
         MOZ_CRASH("jump (repatchlabel)");
     }
@@ -685,7 +684,7 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
         loadPtr(addr, ip0);
         Br(vixl::ip0);
     }
-    void jump(wasm::JumpTarget target) {
+    void jump(wasm::OldTrapDesc target) {
         MOZ_CRASH("NYI");
     }
 
@@ -713,7 +712,7 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
     }
     void movePtr(wasm::SymbolicAddress imm, Register dest) {
         BufferOffset off = movePatchablePtr(ImmWord(0xffffffffffffffffULL), dest);
-        append(AsmJSAbsoluteAddress(CodeOffset(off.getOffset()), imm));
+        append(wasm::SymbolicAccess(CodeOffset(off.getOffset()), imm));
     }
     void movePtr(ImmGCPtr imm, Register dest) {
         BufferOffset load = movePatchablePtr(ImmPtr(imm.value), dest);
@@ -928,12 +927,14 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
     void loadInt32x2(const BaseIndex& addr, FloatRegister dest) { MOZ_CRASH("NYI"); }
     void loadInt32x3(const Address& src, FloatRegister dest) { MOZ_CRASH("NYI"); }
     void loadInt32x3(const BaseIndex& src, FloatRegister dest) { MOZ_CRASH("NYI"); }
+    void loadInt32x4(const Address& src, FloatRegister dest) { MOZ_CRASH("NYI"); }
     void storeInt32x1(FloatRegister src, const Address& dest) { MOZ_CRASH("NYI"); }
     void storeInt32x1(FloatRegister src, const BaseIndex& dest) { MOZ_CRASH("NYI"); }
     void storeInt32x2(FloatRegister src, const Address& dest) { MOZ_CRASH("NYI"); }
     void storeInt32x2(FloatRegister src, const BaseIndex& dest) { MOZ_CRASH("NYI"); }
     void storeInt32x3(FloatRegister src, const Address& dest) { MOZ_CRASH("NYI"); }
     void storeInt32x3(FloatRegister src, const BaseIndex& dest) { MOZ_CRASH("NYI"); }
+    void storeInt32x4(FloatRegister src, const Address& dest) { MOZ_CRASH("NYI"); }
     void loadAlignedSimd128Int(const Address& addr, FloatRegister dest) { MOZ_CRASH("NYI"); }
     void loadAlignedSimd128Int(const BaseIndex& addr, FloatRegister dest) { MOZ_CRASH("NYI"); }
     void storeAlignedSimd128Int(FloatRegister src, const Address& addr) { MOZ_CRASH("NYI"); }
@@ -945,6 +946,9 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
 
     void loadFloat32x3(const Address& src, FloatRegister dest) { MOZ_CRASH("NYI"); }
     void loadFloat32x3(const BaseIndex& src, FloatRegister dest) { MOZ_CRASH("NYI"); }
+    void loadFloat32x4(const Address& src, FloatRegister dest) { MOZ_CRASH("NYI"); }
+    void storeFloat32x4(FloatRegister src, const Address& addr) { MOZ_CRASH("NYI"); }
+
     void loadAlignedSimd128Float(const Address& addr, FloatRegister dest) { MOZ_CRASH("NYI"); }
     void loadAlignedSimd128Float(const BaseIndex& addr, FloatRegister dest) { MOZ_CRASH("NYI"); }
     void storeAlignedSimd128Float(FloatRegister src, const Address& addr) { MOZ_CRASH("NYI"); }
@@ -1262,13 +1266,17 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
     }
     void branch(JitCode* target) {
         syncStackPtr();
-        BufferOffset loc = b(-1); // The jump target will be patched by executableCopy().
+        BufferOffset loc = b(-1, LabelDoc()); // The jump target will be patched by executableCopy().
         addPendingJump(loc, ImmPtr(target->raw()), Relocation::JITCODE);
     }
 
-    CodeOffsetJump jumpWithPatch(RepatchLabel* label, Condition cond = Always,
-                                 Label* documentation = nullptr)
+    CodeOffsetJump jumpWithPatch(RepatchLabel* label, Condition cond = Always, Label* documentation = nullptr)
     {
+#ifdef JS_DISASM_ARM64
+        LabelDoc doc = spew_.refLabel(documentation);
+#else
+        LabelDoc doc;
+#endif
         ARMBuffer::PoolEntry pe;
         BufferOffset load_bo;
         BufferOffset branch_bo;
@@ -1284,16 +1292,16 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
         if (cond != Always) {
             Label notTaken;
             B(&notTaken, Assembler::InvertCondition(cond));
-            branch_bo = b(-1);
+            branch_bo = b(-1, doc);
             bind(&notTaken);
         } else {
             nop();
-            branch_bo = b(-1);
+            branch_bo = b(-1, doc);
         }
         label->use(branch_bo.getOffset());
         return CodeOffsetJump(load_bo.getOffset(), pe.index());
     }
-    CodeOffsetJump backedgeJump(RepatchLabel* label, Label* documentation = nullptr) {
+    CodeOffsetJump backedgeJump(RepatchLabel* label, Label* documentation) {
         return jumpWithPatch(label, Always, documentation);
     }
 
@@ -1312,7 +1320,7 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
         MOZ_CRASH("branchNegativeZeroFloat32");
     }
 
-    void boxDouble(FloatRegister src, const ValueOperand& dest) {
+    void boxDouble(FloatRegister src, const ValueOperand& dest, FloatRegister) {
         Fmov(ARMRegister(dest.valueReg(), 64), ARMFPRegister(src, 64));
     }
     void boxNonDouble(JSValueType type, Register src, const ValueOperand& dest) {
@@ -1350,18 +1358,28 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
     void unboxMagic(const ValueOperand& src, Register dest) {
         move32(src.valueReg(), dest);
     }
-    // Unbox any non-double value into dest. Prefer unboxInt32 or unboxBoolean
-    // instead if the source type is known.
-    void unboxNonDouble(const ValueOperand& src, Register dest) {
-        unboxNonDouble(src.valueReg(), dest);
-    }
-    void unboxNonDouble(Address src, Register dest) {
-        loadPtr(src, dest);
-        unboxNonDouble(dest, dest);
+    void unboxNonDouble(const ValueOperand& src, Register dest, JSValueType type) {
+        unboxNonDouble(src.valueReg(), dest, type);
     }
 
-    void unboxNonDouble(Register src, Register dest) {
-        And(ARMRegister(dest, 64), ARMRegister(src, 64), Operand((1ULL << JSVAL_TAG_SHIFT) - 1ULL));
+    template <typename T>
+    void unboxNonDouble(T src, Register dest, JSValueType type) {
+        MOZ_ASSERT(type != JSVAL_TYPE_DOUBLE);
+        if (type == JSVAL_TYPE_INT32 || type == JSVAL_TYPE_BOOLEAN) {
+            load32(src, dest);
+            return;
+        }
+        loadPtr(src, dest);
+        unboxNonDouble(dest, dest, type);
+    }
+
+    void unboxNonDouble(Register src, Register dest, JSValueType type) {
+        MOZ_ASSERT(type != JSVAL_TYPE_DOUBLE);
+        if (type == JSVAL_TYPE_INT32 || type == JSVAL_TYPE_BOOLEAN) {
+            move32(src, dest);
+            return;
+        }
+        Eor(ARMRegister(dest, 64), ARMRegister(src, 64), Operand(JSVAL_TYPE_TO_SHIFTED_TAG(type)));
     }
 
     void unboxPrivate(const ValueOperand& src, Register dest) {
@@ -1373,33 +1391,45 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
         eor(r, r, Operand(1));
     }
     void unboxObject(const ValueOperand& src, Register dest) {
-        unboxNonDouble(src.valueReg(), dest);
+        unboxNonDouble(src.valueReg(), dest, JSVAL_TYPE_OBJECT);
     }
     void unboxObject(Register src, Register dest) {
-        unboxNonDouble(src, dest);
+        unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
     }
     void unboxObject(const Address& src, Register dest) {
         loadPtr(src, dest);
-        unboxNonDouble(dest, dest);
+        unboxNonDouble(dest, dest, JSVAL_TYPE_OBJECT);
     }
     void unboxObject(const BaseIndex& src, Register dest) {
         doBaseIndex(ARMRegister(dest, 64), src, vixl::LDR_x);
-        unboxNonDouble(dest, dest);
+        unboxNonDouble(dest, dest, JSVAL_TYPE_OBJECT);
     }
 
-    inline void unboxValue(const ValueOperand& src, AnyRegister dest);
+    template <typename T>
+    void unboxObjectOrNull(const T& src, Register dest) {
+        unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
+        And(ARMRegister(dest, 64), ARMRegister(dest, 64), Operand(~JSVAL_OBJECT_OR_NULL_BIT));
+    }
+
+    // See comment in MacroAssembler-x64.h.
+    void unboxGCThingForPreBarrierTrampoline(const Address& src, Register dest) {
+        loadPtr(src, dest);
+        And(ARMRegister(dest, 64), ARMRegister(dest, 64), Operand(JSVAL_PAYLOAD_MASK_GCTHING));
+    }
+
+    inline void unboxValue(const ValueOperand& src, AnyRegister dest, JSValueType type);
 
     void unboxString(const ValueOperand& operand, Register dest) {
-        unboxNonDouble(operand, dest);
+        unboxNonDouble(operand, dest, JSVAL_TYPE_STRING);
     }
     void unboxString(const Address& src, Register dest) {
-        unboxNonDouble(src, dest);
+        unboxNonDouble(src, dest, JSVAL_TYPE_STRING);
     }
     void unboxSymbol(const ValueOperand& operand, Register dest) {
-        unboxNonDouble(operand, dest);
+        unboxNonDouble(operand, dest, JSVAL_TYPE_SYMBOL);
     }
     void unboxSymbol(const Address& src, Register dest) {
-        unboxNonDouble(src, dest);
+        unboxNonDouble(src, dest, JSVAL_TYPE_SYMBOL);
     }
     // These two functions use the low 32-bits of the full value register.
     void boolValueToDouble(const ValueOperand& operand, FloatRegister dest) {
@@ -1801,11 +1831,10 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
             MOZ_ASSERT(scratch64.asUnsized() != address.base);
             Ldr(scratch64, toMemOperand(address));
             int32OrDouble(scratch64.asUnsized(), ARMFPRegister(dest.fpu(), 64));
-        } else if (type == MIRType::Int32 || type == MIRType::Boolean) {
-            load32(address, dest.gpr());
+        } else if (type == MIRType::ObjectOrNull) {
+            unboxObjectOrNull(address, dest.gpr());
         } else {
-            loadPtr(address, dest.gpr());
-            unboxNonDouble(dest.gpr(), dest.gpr());
+            unboxNonDouble(address, dest.gpr(), ValueTypeFromMIRType(type));
         }
     }
 
@@ -1817,11 +1846,10 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
             MOZ_ASSERT(scratch64.asUnsized() != address.index);
             doBaseIndex(scratch64, address, vixl::LDR_x);
             int32OrDouble(scratch64.asUnsized(), ARMFPRegister(dest.fpu(), 64));
-        }  else if (type == MIRType::Int32 || type == MIRType::Boolean) {
-            load32(address, dest.gpr());
+        } else if (type == MIRType::ObjectOrNull) {
+            unboxObjectOrNull(address, dest.gpr());
         } else {
-            loadPtr(address, dest.gpr());
-            unboxNonDouble(dest.gpr(), dest.gpr());
+            unboxNonDouble(address, dest.gpr(), ValueTypeFromMIRType(type));
         }
     }
 
@@ -1842,16 +1870,12 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
             dataRelocations_.writeUnsigned(load.getOffset());
     }
     void writeDataRelocation(const Value& val, BufferOffset load) {
-        if (val.isMarkable()) {
-            gc::Cell* cell = reinterpret_cast<gc::Cell*>(val.toGCThing());
+        if (val.isGCThing()) {
+            gc::Cell* cell = val.toGCThing();
             if (cell && gc::IsInsideNursery(cell))
                 embedsNurseryPointers_ = true;
             dataRelocations_.writeUnsigned(load.getOffset());
         }
-    }
-
-    void writePrebarrierOffset(CodeOffset label) {
-        preBarriers_.writeUnsigned(label.offset());
     }
 
     void computeEffectiveAddress(const Address& address, Register dest) {
@@ -1872,16 +1896,11 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
         return CodeOffset(nextOffset().getOffset());
     }
 
-    void handleFailureWithHandlerTail(void* handler);
+    void handleFailureWithHandlerTail(void* handler, Label* profilerExitTail);
 
-    void profilerEnterFrame(Register framePtr, Register scratch) {
-        AbsoluteAddress activation(GetJitContext()->runtime->addressOfProfilingActivation());
-        loadPtr(activation, scratch);
-        storePtr(framePtr, Address(scratch, JitActivation::offsetOfLastProfilingFrame()));
-        storePtr(ImmPtr(nullptr), Address(scratch, JitActivation::offsetOfLastProfilingCallSite()));
-    }
+    void profilerEnterFrame(Register framePtr, Register scratch);
     void profilerExitFrame() {
-        branch(GetJitContext()->runtime->jitRuntime()->getProfilerExitFrameTail());
+        jump(GetJitContext()->runtime->jitRuntime()->getProfilerExitFrameTail());
     }
     Address ToPayload(Address value) {
         return value;
@@ -1889,267 +1908,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
     Address ToType(Address value) {
         return value;
     }
-
-  private:
-    template <typename T>
-    void compareExchange(int nbytes, bool signExtend, const T& address, Register oldval,
-                         Register newval, Register output)
-    {
-        MOZ_CRASH("compareExchange");
-    }
-
-    template <typename T>
-    void atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Imm32& value,
-                       const T& address, Register temp, Register output)
-    {
-        MOZ_CRASH("atomicFetchOp");
-    }
-
-    template <typename T>
-    void atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Register& value,
-                       const T& address, Register temp, Register output)
-    {
-        MOZ_CRASH("atomicFetchOp");
-    }
-
-    template <typename T>
-    void atomicEffectOp(int nbytes, AtomicOp op, const Register& value, const T& mem) {
-        MOZ_CRASH("atomicEffectOp");
-    }
-
-    template <typename T>
-    void atomicEffectOp(int nbytes, AtomicOp op, const Imm32& value, const T& mem) {
-        MOZ_CRASH("atomicEffectOp");
-    }
-
-  public:
-    // T in {Address,BaseIndex}
-    // S in {Imm32,Register}
-
-    template <typename T>
-    void compareExchange8SignExtend(const T& mem, Register oldval, Register newval, Register output)
-    {
-        compareExchange(1, true, mem, oldval, newval, output);
-    }
-    template <typename T>
-    void compareExchange8ZeroExtend(const T& mem, Register oldval, Register newval, Register output)
-    {
-        compareExchange(1, false, mem, oldval, newval, output);
-    }
-    template <typename T>
-    void compareExchange16SignExtend(const T& mem, Register oldval, Register newval, Register output)
-    {
-        compareExchange(2, true, mem, oldval, newval, output);
-    }
-    template <typename T>
-    void compareExchange16ZeroExtend(const T& mem, Register oldval, Register newval, Register output)
-    {
-        compareExchange(2, false, mem, oldval, newval, output);
-    }
-    template <typename T>
-    void compareExchange32(const T& mem, Register oldval, Register newval, Register output)  {
-        compareExchange(4, false, mem, oldval, newval, output);
-    }
-    template <typename T>
-    void atomicExchange32(const T& mem, Register value, Register output) {
-        MOZ_CRASH("atomicExchang32");
-    }
-
-    template <typename T>
-    void atomicExchange8ZeroExtend(const T& mem, Register value, Register output) {
-        MOZ_CRASH("atomicExchange8ZeroExtend");
-    }
-    template <typename T>
-    void atomicExchange8SignExtend(const T& mem, Register value, Register output) {
-        MOZ_CRASH("atomicExchange8SignExtend");
-    }
-
-    template <typename T, typename S>
-    void atomicFetchAdd8SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(1, true, AtomicFetchAddOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchAdd8ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(1, false, AtomicFetchAddOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchAdd16SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(2, true, AtomicFetchAddOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchAdd16ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(2, false, AtomicFetchAddOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchAdd32(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(4, false, AtomicFetchAddOp, value, mem, temp, output);
-    }
-
-    template <typename T, typename S>
-    void atomicAdd8(const S& value, const T& mem) {
-        atomicEffectOp(1, AtomicFetchAddOp, value, mem);
-    }
-    template <typename T, typename S>
-    void atomicAdd16(const S& value, const T& mem) {
-        atomicEffectOp(2, AtomicFetchAddOp, value, mem);
-    }
-    template <typename T, typename S>
-    void atomicAdd32(const S& value, const T& mem) {
-        atomicEffectOp(4, AtomicFetchAddOp, value, mem);
-    }
-
-    template <typename T>
-    void atomicExchange16ZeroExtend(const T& mem, Register value, Register output) {
-        MOZ_CRASH("atomicExchange16ZeroExtend");
-    }
-    template <typename T>
-    void atomicExchange16SignExtend(const T& mem, Register value, Register output) {
-        MOZ_CRASH("atomicExchange16SignExtend");
-    }
-
-    template <typename T, typename S>
-    void atomicFetchSub8SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(1, true, AtomicFetchSubOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchSub8ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(1, false, AtomicFetchSubOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchSub16SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(2, true, AtomicFetchSubOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchSub16ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(2, false, AtomicFetchSubOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchSub32(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(4, false, AtomicFetchSubOp, value, mem, temp, output);
-    }
-
-    template <typename T, typename S>
-    void atomicSub8(const S& value, const T& mem) {
-        atomicEffectOp(1, AtomicFetchSubOp, value, mem);
-    }
-    template <typename T, typename S>
-    void atomicSub16(const S& value, const T& mem) {
-        atomicEffectOp(2, AtomicFetchSubOp, value, mem);
-    }
-    template <typename T, typename S>
-    void atomicSub32(const S& value, const T& mem) {
-        atomicEffectOp(4, AtomicFetchSubOp, value, mem);
-    }
-
-    template <typename T, typename S>
-    void atomicFetchAnd8SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(1, true, AtomicFetchAndOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchAnd8ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(1, false, AtomicFetchAndOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchAnd16SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(2, true, AtomicFetchAndOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchAnd16ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(2, false, AtomicFetchAndOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchAnd32(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(4, false, AtomicFetchAndOp, value, mem, temp, output);
-    }
-
-    template <typename T, typename S>
-    void atomicAnd8(const S& value, const T& mem) {
-        atomicEffectOp(1, AtomicFetchAndOp, value, mem);
-    }
-    template <typename T, typename S>
-    void atomicAnd16(const S& value, const T& mem) {
-        atomicEffectOp(2, AtomicFetchAndOp, value, mem);
-    }
-    template <typename T, typename S>
-    void atomicAnd32(const S& value, const T& mem) {
-        atomicEffectOp(4, AtomicFetchAndOp, value, mem);
-    }
-
-    template <typename T, typename S>
-    void atomicFetchOr8SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(1, true, AtomicFetchOrOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchOr8ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(1, false, AtomicFetchOrOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchOr16SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(2, true, AtomicFetchOrOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchOr16ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(2, false, AtomicFetchOrOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchOr32(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(4, false, AtomicFetchOrOp, value, mem, temp, output);
-    }
-
-    template <typename T, typename S>
-    void atomicOr8(const S& value, const T& mem) {
-        atomicEffectOp(1, AtomicFetchOrOp, value, mem);
-    }
-    template <typename T, typename S>
-    void atomicOr16(const S& value, const T& mem) {
-        atomicEffectOp(2, AtomicFetchOrOp, value, mem);
-    }
-    template <typename T, typename S>
-    void atomicOr32(const S& value, const T& mem) {
-        atomicEffectOp(4, AtomicFetchOrOp, value, mem);
-    }
-
-    template <typename T, typename S>
-    void atomicFetchXor8SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(1, true, AtomicFetchXorOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchXor8ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(1, false, AtomicFetchXorOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchXor16SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(2, true, AtomicFetchXorOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchXor16ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(2, false, AtomicFetchXorOp, value, mem, temp, output);
-    }
-    template <typename T, typename S>
-    void atomicFetchXor32(const S& value, const T& mem, Register temp, Register output) {
-        atomicFetchOp(4, false, AtomicFetchXorOp, value, mem, temp, output);
-    }
-
-    template <typename T, typename S>
-    void atomicXor8(const S& value, const T& mem) {
-        atomicEffectOp(1, AtomicFetchXorOp, value, mem);
-    }
-    template <typename T, typename S>
-    void atomicXor16(const S& value, const T& mem) {
-        atomicEffectOp(2, AtomicFetchXorOp, value, mem);
-    }
-    template <typename T, typename S>
-    void atomicXor32(const S& value, const T& mem) {
-        atomicEffectOp(4, AtomicFetchXorOp, value, mem);
-    }
-
-    template<typename T>
-    void compareExchangeToTypedIntArray(Scalar::Type arrayType, const T& mem, Register oldval, Register newval,
-                                        Register temp, AnyRegister output);
-
-    template<typename T>
-    void atomicExchangeToTypedIntArray(Scalar::Type arrayType, const T& mem, Register value,
-                                       Register temp, AnyRegister output);
 
     // Emit a BLR or NOP instruction. ToggleCall can be used to patch
     // this instruction.
@@ -2232,10 +1990,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
         vixl::MacroAssembler::Ret(vixl::lr);
     }
 
-    void convertUInt64ToDouble(Register64 src, Register temp, FloatRegister dest) {
-        Ucvtf(ARMFPRegister(dest, 64), ARMRegister(src.reg, 64));
-    }
-
     void clampCheck(Register r, Label* handleNotAnInt) {
         MOZ_CRASH("clampCheck");
     }
@@ -2295,19 +2049,17 @@ class MacroAssemblerCompat : public vixl::MacroAssembler
     }
 
     void loadWasmGlobalPtr(uint32_t globalDataOffset, Register dest) {
-        loadPtr(Address(GlobalReg, globalDataOffset - AsmJSGlobalRegBias), dest);
+        loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, globalArea) + globalDataOffset), dest);
     }
     void loadWasmPinnedRegsFromTls() {
         loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, memoryBase)), HeapReg);
-        loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, globalData)), GlobalReg);
-        adds32(Imm32(AsmJSGlobalRegBias), GlobalReg);
     }
 
     // Overwrites the payload bits of a dest register containing a Value.
     void movePayload(Register src, Register dest) {
         // Bfxil cannot be used with the zero register as a source.
         if (src == rzr)
-            And(ARMRegister(dest, 64), ARMRegister(dest, 64), Operand(~int64_t(JSVAL_PAYLOAD_MASK)));
+            And(ARMRegister(dest, 64), ARMRegister(dest, 64), Operand(JSVAL_TAG_MASK));
         else
             Bfxil(ARMRegister(dest, 64), ARMRegister(src, 64), 0, JSVAL_TAG_SHIFT);
     }

@@ -6,19 +6,19 @@
 
 "use strict";
 
-var { utils: Cu } = Components;
+var Cu = Components.utils;
 
-const { XPCOMUtils } = Cu.import("resource://gre/modules/XPCOMUtils.jsm", {});
 const { BrowserLoader } = Cu.import("resource://devtools/client/shared/browser-loader.js", {});
 
-// Initialize module loader and load all modules of the new inline
-// preview feature. The entire code-base doesn't need any extra
-// privileges and runs entirely in content scope.
-const NewConsoleOutputWrapper = BrowserLoader({
-  baseURI: "resource://devtools/client/webconsole/new-console-output/",
-  window: this}).require("./new-console-output-wrapper");
+this.NewConsoleOutput = function (parentNode, jsterm, toolbox, owner, serviceContainer) {
+  // Initialize module loader and load all modules of the new inline
+  // preview feature. The entire code-base doesn't need any extra
+  // privileges and runs entirely in content scope.
+  let NewConsoleOutputWrapper = BrowserLoader({
+    baseURI: "resource://devtools/client/webconsole/new-console-output/",
+    window
+  }).require("./new-console-output-wrapper");
 
-this.NewConsoleOutput = function (parentNode, jsterm, toolbox) {
-  console.log("Creating NewConsoleOutput", parentNode, NewConsoleOutputWrapper);
-  return new NewConsoleOutputWrapper(parentNode, jsterm, toolbox);
+  return new NewConsoleOutputWrapper(
+    parentNode, jsterm, toolbox, owner, serviceContainer);
 };

@@ -20,13 +20,14 @@ NS_IMPL_CYCLE_COLLECTION_INHERITED(FileSystemDirectoryEntry, FileSystemEntry,
 NS_IMPL_ADDREF_INHERITED(FileSystemDirectoryEntry, FileSystemEntry)
 NS_IMPL_RELEASE_INHERITED(FileSystemDirectoryEntry, FileSystemEntry)
 
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(FileSystemDirectoryEntry)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(FileSystemDirectoryEntry)
 NS_INTERFACE_MAP_END_INHERITING(FileSystemEntry)
 
 FileSystemDirectoryEntry::FileSystemDirectoryEntry(nsIGlobalObject* aGlobal,
                                                    Directory* aDirectory,
+                                                   FileSystemDirectoryEntry* aParentEntry,
                                                    FileSystem* aFileSystem)
-  : FileSystemEntry(aGlobal, aFileSystem)
+  : FileSystemEntry(aGlobal, aParentEntry, aFileSystem)
   , mDirectory(aDirectory)
 {
   MOZ_ASSERT(aGlobal);
@@ -57,12 +58,12 @@ FileSystemDirectoryEntry::GetFullPath(nsAString& aPath, ErrorResult& aRv) const
 }
 
 already_AddRefed<FileSystemDirectoryReader>
-FileSystemDirectoryEntry::CreateReader() const
+FileSystemDirectoryEntry::CreateReader()
 {
   MOZ_ASSERT(mDirectory);
 
   RefPtr<FileSystemDirectoryReader> reader =
-    new FileSystemDirectoryReader(GetParentObject(), Filesystem(), mDirectory);
+    new FileSystemDirectoryReader(this, Filesystem(), mDirectory);
   return reader.forget();
 }
 
@@ -71,7 +72,7 @@ FileSystemDirectoryEntry::GetInternal(const nsAString& aPath,
                                       const FileSystemFlags& aFlag,
                                       const Optional<OwningNonNull<FileSystemEntryCallback>>& aSuccessCallback,
                                       const Optional<OwningNonNull<ErrorCallback>>& aErrorCallback,
-                                      GetInternalType aType) const
+                                      GetInternalType aType)
 {
   MOZ_ASSERT(mDirectory);
 
@@ -92,30 +93,14 @@ FileSystemDirectoryEntry::GetInternal(const nsAString& aPath,
     return;
   }
 
-  ErrorResult error;
-  RefPtr<Promise> promise = mDirectory->Get(aPath, error);
-  if (NS_WARN_IF(error.Failed())) {
-    ErrorCallbackHelper::Call(GetParentObject(), aErrorCallback,
-                              error.StealNSResult());
-    return;
-  }
-
-  RefPtr<GetEntryHelper> handler =
-    new GetEntryHelper(GetParentObject(), Filesystem(),
+  RefPtr<GetEntryHelper> helper =
+    new GetEntryHelper(this, mDirectory, parts, Filesystem(),
                        aSuccessCallback.WasPassed()
                          ? &aSuccessCallback.Value() : nullptr,
                        aErrorCallback.WasPassed()
                          ? &aErrorCallback.Value() : nullptr,
                        aType);
-  promise->AppendNativeHandler(handler);
-}
-
-void
-FileSystemDirectoryEntry::RemoveRecursively(VoidCallback& aSuccessCallback,
-                                            const Optional<OwningNonNull<ErrorCallback>>& aErrorCallback) const
-{
-  ErrorCallbackHelper::Call(GetParentObject(), aErrorCallback,
-                            NS_ERROR_DOM_SECURITY_ERR);
+  helper->Run();
 }
 
 } // dom namespace

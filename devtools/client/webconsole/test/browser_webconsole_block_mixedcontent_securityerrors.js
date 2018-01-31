@@ -56,11 +56,11 @@ add_task(function* () {
 });
 
 function pushPrefEnv() {
-  let deferred = promise.defer();
+  let deferred = defer();
   let options = {
     "set": [
       ["security.mixed_content.block_active_content", true],
-      ["security.mixed_content.block_display_content", true]
+      ["security.mixed_content.block_display_content", true],
     ]
   };
   SpecialPowers.pushPrefEnv(options, deferred.resolve);
@@ -68,7 +68,7 @@ function pushPrefEnv() {
 }
 
 function mixedContentOverrideTest2(hud, browser) {
-  let deferred = promise.defer();
+  let deferred = defer();
   let {gIdentityHandler} = browser.ownerGlobal;
   ok(gIdentityHandler._identityBox.classList.contains("mixedActiveBlocked"),
     "Mixed Active Content state appeared on identity box");
@@ -95,7 +95,7 @@ function mixedContentOverrideTest2(hud, browser) {
         objects: true,
       },
     ],
-  }).then(msgs => deferred.resolve(msgs), e => console.error(e));
+  }).then(msgs => deferred.resolve(msgs), console.error);
 
   return deferred.promise;
 }

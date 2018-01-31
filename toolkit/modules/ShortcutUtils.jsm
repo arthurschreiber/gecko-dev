@@ -7,8 +7,8 @@
 this.EXPORTED_SYMBOLS = ["ShortcutUtils"];
 
 const Cu = Components.utils;
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "PlatformKeys", function() {
   return Services.strings.createBundle(
@@ -31,7 +31,7 @@ var ShortcutUtils = {
     * @return string
     *         A prettified and properly separated modifier keys string.
     */
-  prettifyShortcut: function(aElemKey, aNoCloverLeaf) {
+  prettifyShortcut(aElemKey, aNoCloverLeaf) {
     let elemString = "";
     let elemMod = aElemKey.getAttribute("modifiers");
     let haveCloverLeaf = false;
@@ -88,12 +88,14 @@ var ShortcutUtils = {
     let key;
     let keyCode = aElemKey.getAttribute("keycode");
     if (keyCode) {
+      keyCode = keyCode.toUpperCase();
       try {
-        // Some keys might not exist in the locale file, which will throw:
-        key = Keys.GetStringFromName(keyCode.toUpperCase());
+        let bundle = keyCode == "VK_RETURN" ? PlatformKeys : Keys;
+        // Some keys might not exist in the locale file, which will throw.
+        key = bundle.GetStringFromName(keyCode);
       } catch (ex) {
         Cu.reportError("Error finding " + keyCode + ": " + ex);
-        key = keyCode.replace(/^VK_/, '');
+        key = keyCode.replace(/^VK_/, "");
       }
     } else {
       key = aElemKey.getAttribute("key");
@@ -102,7 +104,7 @@ var ShortcutUtils = {
     return elemString + key;
   },
 
-  findShortcut: function(aElemCommand) {
+  findShortcut(aElemCommand) {
     let document = aElemCommand.ownerDocument;
     return document.querySelector("key[command=\"" + aElemCommand.getAttribute("id") + "\"]");
   }

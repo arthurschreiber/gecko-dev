@@ -5,6 +5,8 @@
 
 "use strict";
 
+/* eslint-disable mozilla/use-chromeutils-import */
+
 var Cu = Components.utils;
 
 Cu.import("resource://gre/modules/Messaging.jsm");
@@ -37,14 +39,14 @@ function openTabWithUrl(url) {
 function findInPage(browser, text, nrOfMatches) {
   let repaintPromise = promiseBrowserEvent(browser, "MozAfterPaint");
   do_print("Send findInPageMessage: " + text + " nth: " + nrOfMatches);
-  Messaging.sendRequest({ type: "Test:FindInPage", text: text, nrOfMatches: nrOfMatches });
+  EventDispatcher.instance.sendRequest({ type: "Test:FindInPage", text: text, nrOfMatches: nrOfMatches });
   return repaintPromise;
 }
 
 function closeFindInPage(browser) {
   let repaintPromise = promiseBrowserEvent(browser, "MozAfterPaint");
   do_print("Send closeFindInPageMessage");
-  Messaging.sendRequest({ type: "Test:CloseFindInPage" });
+  EventDispatcher.instance.sendRequest({ type: "Test:CloseFindInPage" });
   return repaintPromise;
 }
 

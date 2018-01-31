@@ -9,14 +9,15 @@
 
 #include "jsatom.h"
 #include "jsbytecode.h"
+#include "jsmath.h"
 #include "jsobj.h"
 #include "jsscript.h"
 
-#include "ds/FixedSizeHash.h"
 #include "frontend/SourceNotes.h"
 #include "gc/Tracer.h"
 #include "js/RootingAPI.h"
 #include "js/UniquePtr.h"
+#include "vm/ArrayObject.h"
 #include "vm/NativeObject.h"
 
 namespace js {
@@ -30,7 +31,7 @@ namespace js {
 struct GSNCache {
     typedef HashMap<jsbytecode*,
                     jssrcnote*,
-                    PointerHasher<jsbytecode*, 0>,
+                    PointerHasher<jsbytecode*>,
                     SystemAllocPolicy> Map;
 
     jsbytecode*     code;
@@ -71,7 +72,6 @@ struct EvalCacheLookup
     explicit EvalCacheLookup(JSContext* cx) : str(cx), callerScript(cx) {}
     RootedLinearString str;
     RootedScript callerScript;
-    JSVersion version;
     jsbytecode* pc;
 };
 
@@ -84,64 +84,6 @@ struct EvalCacheHashPolicy
 };
 
 typedef HashSet<EvalCacheEntry, EvalCacheHashPolicy, SystemAllocPolicy> EvalCache;
-
-struct LazyScriptHashPolicy
-{
-    struct Lookup {
-        JSContext* cx;
-        LazyScript* lazy;
-
-        Lookup(JSContext* cx, LazyScript* lazy)
-          : cx(cx), lazy(lazy)
-        {}
-    };
-
-    static const size_t NumHashes = 3;
-
-    static void hash(const Lookup& lookup, HashNumber hashes[NumHashes]);
-    static bool match(JSScript* script, const Lookup& lookup);
-
-    // Alternate methods for use when removing scripts from the hash without an
-    // explicit LazyScript lookup.
-    static void hash(JSScript* script, HashNumber hashes[NumHashes]);
-    static bool match(JSScript* script, JSScript* lookup) { return script == lookup; }
-
-    static void clear(JSScript** pscript) { *pscript = nullptr; }
-    static bool isCleared(JSScript* script) { return !script; }
-};
-
-typedef FixedSizeHashSet<JSScript*, LazyScriptHashPolicy, 769> LazyScriptCache;
-
-class PropertyIteratorObject;
-
-class NativeIterCache
-{
-    static const size_t SIZE = size_t(1) << 8;
-
-    /* Cached native iterators. */
-    PropertyIteratorObject* data[SIZE];
-
-    static size_t getIndex(uint32_t key) {
-        return size_t(key) % SIZE;
-    }
-
-  public:
-    NativeIterCache() {
-        mozilla::PodArrayZero(data);
-    }
-
-    void purge() {
-        mozilla::PodArrayZero(data);
-    }
-
-    PropertyIteratorObject* get(uint32_t key) const {
-        return data[getIndex(key)];
-    }
-
-    void set(uint32_t key, PropertyIteratorObject* iterobj) {
-        data[getIndex(key)] = iterobj;
-    }
-};
 
 /*
  * Cache for speeding up repetitive creation of objects in the VM.
@@ -259,6 +201,9 @@ class NewObjectCache
         MOZ_ASSERT(entry_ == makeIndex(clasp, key, kind));
         Entry* entry = &entries[entry_];
 
+        MOZ_ASSERT(!obj->hasDynamicSlots());
+        MOZ_ASSERT(obj->hasEmptyElements() || obj->is<ArrayObject>());
+
         entry->clasp = clasp;
         entry->key = key;
         entry->kind = kind;
@@ -274,9 +219,7 @@ class NewObjectCache
     }
 };
 
-class MathCache;
-
-class ContextCaches
+class RuntimeCaches
 {
     UniquePtr<js::MathCache> mathCache_;
 
@@ -286,10 +229,8 @@ class ContextCaches
     js::GSNCache gsnCache;
     js::EnvironmentCoordinateNameCache envCoordinateNameCache;
     js::NewObjectCache newObjectCache;
-    js::NativeIterCache nativeIterCache;
     js::UncompressedSourceCache uncompressedSourceCache;
     js::EvalCache evalCache;
-    js::LazyScriptCache lazyScriptCache;
 
     bool init();
 

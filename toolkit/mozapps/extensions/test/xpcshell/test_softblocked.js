@@ -6,11 +6,11 @@ const { utils: Cu, interfaces: Ci, classes: Cc, results: Cr } = Components;
 
 const URI_EXTENSION_BLOCKLIST_DIALOG = "chrome://mozapps/content/extensions/blocklist.xul";
 
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://testing-common/MockRegistrar.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/MockRegistrar.jsm");
 
 // Allow insecure updates
-Services.prefs.setBoolPref("extensions.checkUpdateSecurity", false)
+Services.prefs.setBoolPref("extensions.checkUpdateSecurity", false);
 
 const testserver = createHttpServer();
 gPort = testserver.identity.primaryPort;
@@ -19,9 +19,9 @@ testserver.registerDirectory("/data/", do_get_file("data"));
 // Don't need the full interface, attempts to call other methods will just
 // throw which is just fine
 var WindowWatcher = {
-  openWindow: function(parent, url, name, features, openArgs) {
+  openWindow(parent, url, name, features, openArgs) {
     // Should be called to list the newly blocklisted items
-    do_check_eq(url, URI_EXTENSION_BLOCKLIST_DIALOG);
+    Assert.equal(url, URI_EXTENSION_BLOCKLIST_DIALOG);
 
     // Simulate auto-disabling any softblocks
     var list = openArgs.wrappedJSObject.list;
@@ -30,11 +30,11 @@ var WindowWatcher = {
         aItem.disable = true;
     });
 
-    //run the code after the blocklist is closed
-    Services.obs.notifyObservers(null, "addon-blocklist-closed", null);
+    // run the code after the blocklist is closed
+    Services.obs.notifyObservers(null, "addon-blocklist-closed");
   },
 
-  QueryInterface: function(iid) {
+  QueryInterface(iid) {
     if (iid.equals(Ci.nsIWindowWatcher)
      || iid.equals(Ci.nsISupports))
       return this;
@@ -50,11 +50,11 @@ profileDir.append("extensions");
 
 function load_blocklist(aFile) {
   return new Promise((resolve, reject) => {
-    Services.obs.addObserver(function() {
-      Services.obs.removeObserver(arguments.callee, "blocklist-updated");
+    Services.obs.addObserver(function observer() {
+      Services.obs.removeObserver(observer, "blocklist-updated");
 
       resolve();
-    }, "blocklist-updated", false);
+    }, "blocklist-updated");
 
     Services.prefs.setCharPref("extensions.blocklist.url", `http://localhost:${gPort}/data/${aFile}`);
     var blocklist = Cc["@mozilla.org/extensions/blocklist;1"].
@@ -70,7 +70,7 @@ function run_test() {
 
 // Tests that an appDisabled add-on that becomes softBlocked remains disabled
 // when becoming appEnabled
-add_task(function* () {
+add_task(async function() {
   writeInstallRDFForExtension({
     id: "softblock1@tests.mozilla.org",
     version: "1.0",
@@ -84,26 +84,26 @@ add_task(function* () {
 
   startupManager();
 
-  let s1 = yield promiseAddonByID("softblock1@tests.mozilla.org");
+  let s1 = await promiseAddonByID("softblock1@tests.mozilla.org");
 
   // Make sure to mark it as previously enabled.
   s1.userDisabled = false;
 
-  do_check_false(s1.softDisabled);
-  do_check_true(s1.appDisabled);
-  do_check_false(s1.isActive);
+  Assert.ok(!s1.softDisabled);
+  Assert.ok(s1.appDisabled);
+  Assert.ok(!s1.isActive);
 
-  yield load_blocklist("test_softblocked1.xml");
+  await load_blocklist("test_softblocked1.xml");
 
-  do_check_true(s1.softDisabled);
-  do_check_true(s1.appDisabled);
-  do_check_false(s1.isActive);
+  Assert.ok(s1.softDisabled);
+  Assert.ok(s1.appDisabled);
+  Assert.ok(!s1.isActive);
 
-  yield promiseRestartManager("2");
+  await promiseRestartManager("2");
 
-  s1 = yield promiseAddonByID("softblock1@tests.mozilla.org");
+  s1 = await promiseAddonByID("softblock1@tests.mozilla.org");
 
-  do_check_true(s1.softDisabled);
-  do_check_false(s1.appDisabled);
-  do_check_false(s1.isActive);
+  Assert.ok(s1.softDisabled);
+  Assert.ok(!s1.appDisabled);
+  Assert.ok(!s1.isActive);
 });

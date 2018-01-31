@@ -8,7 +8,8 @@
 
 const actions = require("../actions/event-listeners");
 const { bindActionCreators } = require("devtools/client/shared/vendor/redux");
-const { Heritage, WidgetMethods } = require("devtools/client/shared/widgets/view-helpers");
+const { extend } = require("devtools/shared/extend");
+const { WidgetMethods } = require("devtools/client/shared/widgets/view-helpers");
 const { SideMenuWidget } = require("resource://devtools/client/shared/widgets/SideMenuWidget.jsm");
 
 /**
@@ -26,7 +27,7 @@ function EventListenersView(controller) {
   controller.onChange("event-listeners", this.renderListeners.bind(this));
 }
 
-EventListenersView.prototype = Heritage.extend(WidgetMethods, {
+EventListenersView.prototype = extend(WidgetMethods, {
   /**
    * Initialization function, called when the debugger is started.
    */
@@ -44,8 +45,8 @@ EventListenersView.prototype = Heritage.extend(WidgetMethods, {
     this._inSourceString = " " + L10N.getStr("eventInSource") + " ";
     this._inNativeCodeString = L10N.getStr("eventNative");
 
-    this.widget.addEventListener("check", this._onCheck, false);
-    this.widget.addEventListener("click", this._onClick, false);
+    this.widget.addEventListener("check", this._onCheck);
+    this.widget.addEventListener("click", this._onClick);
   },
 
   /**
@@ -54,8 +55,8 @@ EventListenersView.prototype = Heritage.extend(WidgetMethods, {
   destroy: function () {
     dumpn("Destroying the EventListenersView");
 
-    this.widget.removeEventListener("check", this._onCheck, false);
-    this.widget.removeEventListener("click", this._onClick, false);
+    this.widget.removeEventListener("check", this._onCheck);
+    this.widget.removeEventListener("click", this._onClick);
   },
 
   renderListeners: function (listeners) {

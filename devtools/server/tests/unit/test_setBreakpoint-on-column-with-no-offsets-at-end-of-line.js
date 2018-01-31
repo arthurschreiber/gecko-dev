@@ -27,9 +27,9 @@ function run_test() {
     let sourceClient = threadClient.source(source);
 
     let location = { line: 4, column: 23 };
-    let [packet, breakpointClient] = yield setBreakpoint(sourceClient, location);
-    do_check_true(packet.isPending);
-    do_check_false("actualLocation" in packet);
+    let [packet, ] = yield setBreakpoint(sourceClient, location);
+    Assert.ok(packet.isPending);
+    Assert.equal(false, "actualLocation" in packet);
 
     Cu.evalInSandbox("f()", global);
     yield close(client);

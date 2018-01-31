@@ -138,8 +138,13 @@ nsXULPopupListener::HandleEvent(nsIDOMEvent* aEvent)
   if (!targetContent) {
     return NS_OK;
   }
-  if (EventStateManager::IsRemoteTarget(targetContent)) {
-    return NS_OK;
+
+  {
+    EventTarget* originalTarget = mouseEvent->AsEvent()->InternalDOMEvent()->GetOriginalTarget();
+    nsCOMPtr<nsIContent> content = do_QueryInterface(originalTarget);
+    if (content && EventStateManager::IsRemoteTarget(content)) {
+      return NS_OK;
+    }
   }
 
   bool preventDefault;
@@ -220,67 +225,62 @@ nsXULPopupListener::HandleEvent(nsIDOMEvent* aEvent)
 nsresult
 nsXULPopupListener::FireFocusOnTargetContent(nsIDOMNode* aTargetNode, bool aIsTouch)
 {
-  nsresult rv;
-  nsCOMPtr<nsIDOMDocument> domDoc;
-  rv = aTargetNode->GetOwnerDocument(getter_AddRefs(domDoc));
-  if(NS_SUCCEEDED(rv) && domDoc)
-  {
-    nsCOMPtr<nsIDocument> doc = do_QueryInterface(domDoc);
+  nsCOMPtr<nsIContent> content = do_QueryInterface(aTargetNode);
+  nsCOMPtr<nsIDocument> doc = content->OwnerDoc();
 
-    // Get nsIDOMElement for targetNode
-    nsIPresShell *shell = doc->GetShell();
-    if (!shell)
-      return NS_ERROR_FAILURE;
+  // Get nsIDOMElement for targetNode
+  nsIPresShell *shell = doc->GetShell();
+  if (!shell)
+    return NS_ERROR_FAILURE;
 
-    // strong reference to keep this from going away between events
-    // XXXbz between what events?  We don't use this local at all!
-    RefPtr<nsPresContext> context = shell->GetPresContext();
- 
-    nsCOMPtr<nsIContent> content = do_QueryInterface(aTargetNode);
-    nsIFrame* targetFrame = content->GetPrimaryFrame();
-    if (!targetFrame) return NS_ERROR_FAILURE;
+  // strong reference to keep this from going away between events
+  // XXXbz between what events?  We don't use this local at all!
+  RefPtr<nsPresContext> context = shell->GetPresContext();
 
-    const nsStyleUserInterface* ui = targetFrame->StyleUserInterface();
-    bool suppressBlur = (ui->mUserFocus == StyleUserFocus::Ignore);
+  nsIFrame* targetFrame = content->GetPrimaryFrame();
+  if (!targetFrame) return NS_ERROR_FAILURE;
 
-    nsCOMPtr<nsIDOMElement> element;
-    nsCOMPtr<nsIContent> newFocus = do_QueryInterface(content);
+  const nsStyleUserInterface* ui = targetFrame->StyleUserInterface();
+  bool suppressBlur = (ui->mUserFocus == StyleUserFocus::Ignore);
 
-    nsIFrame* currFrame = targetFrame;
-    // Look for the nearest enclosing focusable frame.
-    while (currFrame) {
-        int32_t tabIndexUnused;
-        if (currFrame->IsFocusable(&tabIndexUnused, true)) {
-          newFocus = currFrame->GetContent();
-          nsCOMPtr<nsIDOMElement> domElement(do_QueryInterface(newFocus));
-          if (domElement) {
-            element = domElement;
-            break;
-          }
-        }
-        currFrame = currFrame->GetParent();
-    } 
+  nsCOMPtr<nsIDOMElement> element;
+  nsCOMPtr<nsIContent> newFocus = content;
 
-    nsIFocusManager* fm = nsFocusManager::GetFocusManager();
-    if (fm) {
-      if (element) {
-        uint32_t focusFlags = nsIFocusManager::FLAG_BYMOUSE |
-                              nsIFocusManager::FLAG_NOSCROLL;
-        if (aIsTouch) {
-          focusFlags |= nsIFocusManager::FLAG_BYTOUCH;
-        }
-        fm->SetFocus(element, focusFlags);
-      } else if (!suppressBlur) {
-        nsPIDOMWindowOuter *window = doc->GetWindow();
-        fm->ClearFocus(window);
+  nsIFrame* currFrame = targetFrame;
+  // Look for the nearest enclosing focusable frame.
+  while (currFrame) {
+    int32_t tabIndexUnused;
+    if (currFrame->IsFocusable(&tabIndexUnused, true)) {
+      newFocus = currFrame->GetContent();
+      nsCOMPtr<nsIDOMElement> domElement(do_QueryInterface(newFocus));
+      if (domElement) {
+        element = domElement;
+        break;
       }
     }
-
-    EventStateManager* esm = context->EventStateManager();
-    nsCOMPtr<nsIContent> focusableContent = do_QueryInterface(element);
-    esm->SetContentState(focusableContent, NS_EVENT_STATE_ACTIVE);
+    currFrame = currFrame->GetParent();
   }
-  return rv;
+
+  nsIFocusManager* fm = nsFocusManager::GetFocusManager();
+  if (fm) {
+    if (element) {
+      uint32_t focusFlags = nsIFocusManager::FLAG_BYMOUSE |
+                            nsIFocusManager::FLAG_NOSCROLL;
+      if (aIsTouch) {
+        focusFlags |= nsIFocusManager::FLAG_BYTOUCH;
+      }
+      fm->SetFocus(element, focusFlags);
+    } else if (!suppressBlur) {
+      nsPIDOMWindowOuter *window = doc->GetWindow();
+      fm->ClearFocus(window);
+    }
+  }
+
+  EventStateManager* esm = context->EventStateManager();
+  nsCOMPtr<nsIContent> focusableContent = do_QueryInterface(element);
+  esm->SetContentState(focusableContent, NS_EVENT_STATE_ACTIVE);
+
+  return NS_OK;
 }
 #endif
 
@@ -296,7 +296,7 @@ nsXULPopupListener::ClosePopup()
   if (mPopupContent) {
     // this is called when the listener is going away, so make sure that the
     // popup is hidden. Use asynchronous hiding just to be safe so we don't
-    // fire events during destruction.  
+    // fire events during destruction.
     nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
     if (pm)
       pm->HidePopup(mPopupContent, false, true, true, false);
@@ -304,14 +304,14 @@ nsXULPopupListener::ClosePopup()
   }
 } // ClosePopup
 
-static already_AddRefed<nsIContent>
-GetImmediateChild(nsIContent* aContent, nsIAtom *aTag) 
+static already_AddRefed<Element>
+GetImmediateChild(nsIContent* aContent, nsAtom *aTag)
 {
   for (nsIContent* child = aContent->GetFirstChild();
        child;
        child = child->GetNextSibling()) {
     if (child->IsXULElement(aTag)) {
-      nsCOMPtr<nsIContent> ret = child;
+      RefPtr<Element> ret = child->AsElement();
       return ret.forget();
     }
   }
@@ -323,14 +323,14 @@ GetImmediateChild(nsIContent* aContent, nsIAtom *aTag)
 // LaunchPopup
 //
 // Given the element on which the event was triggered and the mouse locations in
-// Client and widget coordinates, popup a new window showing the appropriate 
+// Client and widget coordinates, popup a new window showing the appropriate
 // content.
 //
 // aTargetContent is the target of the mouse event aEvent that triggered the
 // popup. mElement is the element that the popup menu is attached to.
 // aTargetContent may be equal to mElement or it may be a descendant.
 //
-// This looks for an attribute on |mElement| of the appropriate popup type 
+// This looks for an attribute on |mElement| of the appropriate popup type
 // (popup, context) and uses that attribute's value as an ID for
 // the popup content in the document.
 //
@@ -340,7 +340,7 @@ nsXULPopupListener::LaunchPopup(nsIDOMEvent* aEvent, nsIContent* aTargetContent)
   nsresult rv = NS_OK;
 
   nsAutoString identifier;
-  nsIAtom* type = mIsContext ? nsGkAtoms::context : nsGkAtoms::popup;
+  nsAtom* type = mIsContext ? nsGkAtoms::context : nsGkAtoms::popup;
   bool hasPopupAttr = mElement->GetAttr(kNameSpaceID_None, type, identifier);
 
   if (identifier.IsEmpty()) {
@@ -365,7 +365,7 @@ nsXULPopupListener::LaunchPopup(nsIDOMEvent* aEvent, nsIContent* aTargetContent)
   }
 
   // Handle the _child case for popups and context menus
-  nsCOMPtr<nsIContent> popup;
+  RefPtr<Element> popup;
   if (identifier.EqualsLiteral("_child")) {
     popup = GetImmediateChild(mElement, nsGkAtoms::menupopup);
     if (!popup) {
@@ -383,7 +383,7 @@ nsXULPopupListener::LaunchPopup(nsIDOMEvent* aEvent, nsIContent* aTargetContent)
 
           if (childContent->NodeInfo()->Equals(nsGkAtoms::menupopup,
                                                kNameSpaceID_XUL)) {
-            popup.swap(childContent);
+            popup = childContent->AsElement();
             break;
           }
         }
@@ -394,8 +394,8 @@ nsXULPopupListener::LaunchPopup(nsIDOMEvent* aEvent, nsIContent* aTargetContent)
     // XXXsmaug Should we try to use ShadowRoot::GetElementById in case
     //          mElement is in shadow DOM?
     //
-    // Use getElementById to obtain the popup content and gracefully fail if 
-    // we didn't find any popup content in the document. 
+    // Use getElementById to obtain the popup content and gracefully fail if
+    // we didn't find any popup content in the document.
     NS_WARNING("GetElementById had some kind of spasm.");
     return rv;
   }

@@ -34,7 +34,7 @@ TestBulkActor.prototype = {
   actorPrefix: "testBulk",
 
   bulkEcho: function ({actor, type, length, copyTo}) {
-    do_check_eq(length, really_long().length);
+    Assert.equal(length, really_long().length);
     this.conn.startBulkSend({
       actor: actor,
       type: type,
@@ -69,7 +69,7 @@ TestBulkActor.prototype = {
   },
 
   jsonReply: function ({length, copyTo}) {
-    do_check_eq(length, really_long().length);
+    Assert.equal(length, really_long().length);
 
     let outputFile = getTestTempFile("bulk-output", true);
     outputFile.create(Ci.nsIFile.NORMAL_FILE_TYPE, parseInt("666", 8));
@@ -104,7 +104,7 @@ var replyHandlers = {
     // Receive JSON reply from server
     let replyDeferred = defer();
     request.on("json-reply", (reply) => {
-      do_check_true(reply.allDone);
+      Assert.ok(reply.allDone);
       replyDeferred.resolve();
     });
     return replyDeferred.promise;
@@ -114,7 +114,7 @@ var replyHandlers = {
     // Receive bulk data reply from server
     let replyDeferred = defer();
     request.on("bulk-reply", ({length, copyTo}) => {
-      do_check_eq(length, really_long().length);
+      Assert.equal(length, really_long().length);
 
       let outputFile = getTestTempFile("bulk-output", true);
       outputFile.create(Ci.nsIFile.NORMAL_FILE_TYPE, parseInt("666", 8));
@@ -146,9 +146,21 @@ var test_bulk_request_cs = Task.async(function* (transportFactory, actorType, re
 
   let client = new DebuggerClient(transport);
   client.connect().then(([app, traits]) => {
-    do_check_eq(traits.bulk, true);
-    client.listTabs(clientDeferred.resolve);
+    Assert.equal(traits.bulk, true);
+    client.listTabs().then(clientDeferred.resolve);
   });
+
+  function bulkSendReadyCallback({copyFrom}) {
+    NetUtil.asyncFetch({
+      uri: NetUtil.newURI(getTestTempFile("bulk-input")),
+      loadUsingSystemPrincipal: true
+    }, input => {
+      copyFrom(input).then(() => {
+        input.close();
+        bulkCopyDeferred.resolve();
+      });
+    });
+  }
 
   clientDeferred.promise.then(response => {
     let request = client.startBulkRequest({
@@ -158,24 +170,14 @@ var test_bulk_request_cs = Task.async(function* (transportFactory, actorType, re
     });
 
     // Send bulk data to server
-    request.on("bulk-send-ready", ({copyFrom}) => {
-      NetUtil.asyncFetch({
-        uri: NetUtil.newURI(getTestTempFile("bulk-input")),
-        loadUsingSystemPrincipal: true
-      }, input => {
-        copyFrom(input).then(() => {
-          input.close();
-          bulkCopyDeferred.resolve();
-        });
-      });
-    });
+    request.on("bulk-send-ready", bulkSendReadyCallback);
 
     // Set up reply handling for this type
     replyHandlers[replyType](request).then(() => {
       client.close();
       transport.close();
     });
-  }).then(null, do_throw);
+  }).catch(do_throw);
 
   DebuggerServer.on("connectionchange", (event, type) => {
     if (type === "closed") {
@@ -202,8 +204,8 @@ var test_json_request_cs = Task.async(function* (transportFactory, actorType, re
 
   let client = new DebuggerClient(transport);
   client.connect((app, traits) => {
-    do_check_eq(traits.bulk, true);
-    client.listTabs(clientDeferred.resolve);
+    Assert.equal(traits.bulk, true);
+    client.listTabs().then(clientDeferred.resolve);
   });
 
   clientDeferred.promise.then(response => {
@@ -217,7 +219,7 @@ var test_json_request_cs = Task.async(function* (transportFactory, actorType, re
       client.close();
       transport.close();
     });
-  }).then(null, do_throw);
+  }).catch(do_throw);
 
   DebuggerServer.on("connectionchange", (event, type) => {
     if (type === "closed") {
@@ -239,8 +241,8 @@ function verify_files() {
   let inputFile = getTestTempFile("bulk-input");
   let outputFile = getTestTempFile("bulk-output");
 
-  do_check_eq(inputFile.fileSize, reallyLong.length);
-  do_check_eq(outputFile.fileSize, reallyLong.length);
+  Assert.equal(inputFile.fileSize, reallyLong.length);
+  Assert.equal(outputFile.fileSize, reallyLong.length);
 
   // Ensure output file contents actually match
   let compareDeferred = defer();
@@ -250,7 +252,7 @@ function verify_files() {
   }, input => {
     let outputData = NetUtil.readInputStreamToString(input, reallyLong.length);
       // Avoid do_check_eq here so we don't log the contents
-    do_check_true(outputData === reallyLong);
+    Assert.ok(outputData === reallyLong);
     input.close();
     compareDeferred.resolve();
   });

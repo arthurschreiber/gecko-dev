@@ -7,6 +7,7 @@
 
 #include <cstdlib>
 
+#include "gfxPrefs.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsIDirectoryService.h"
 #include "nsIFile.h"
@@ -24,6 +25,41 @@ using namespace gfx;
 
 using std::abs;
 using std::vector;
+
+static bool sImageLibInitialized = false;
+
+AutoInitializeImageLib::AutoInitializeImageLib()
+{
+  if (MOZ_LIKELY(sImageLibInitialized)) {
+    return;
+  }
+
+  EXPECT_TRUE(NS_IsMainThread());
+  sImageLibInitialized = true;
+
+  // Force sRGB to be consistent with reftests.
+  Preferences::SetBool("gfx.color_management.force_srgb", true);
+
+  // Ensure that ImageLib services are initialized.
+  nsCOMPtr<imgITools> imgTools = do_CreateInstance("@mozilla.org/image/tools;1");
+  EXPECT_TRUE(imgTools != nullptr);
+
+  // Ensure gfxPlatform is initialized.
+  gfxPlatform::GetPlatform();
+
+  // Depending on initialization order, it is possible that our pref changes
+  // have not taken effect yet because there are pending gfx-related events on
+  // the main thread.
+  nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
+  EXPECT_TRUE(mainThread != nullptr);
+
+  bool processed;
+  do {
+    processed = false;
+    nsresult rv = mainThread->ProcessNextEvent(false, &processed);
+    EXPECT_TRUE(NS_SUCCEEDED(rv));
+  } while (processed);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // General Helpers
@@ -89,7 +125,7 @@ LoadFile(const char* aRelativePath)
   if (!NS_InputStreamIsBuffered(inputStream)) {
     nsCOMPtr<nsIInputStream> bufStream;
     rv = NS_NewBufferedInputStream(getter_AddRefs(bufStream),
-                                   inputStream, 1024);
+                                   inputStream.forget(), 1024);
     ASSERT_TRUE_OR_RETURN(NS_SUCCEEDED(rv), nullptr);
     inputStream = bufStream;
   }
@@ -134,7 +170,7 @@ PalettedRowsAreSolidColor(Decoder* aDecoder,
 {
   RawAccessFrameRef currentFrame = aDecoder->GetCurrentFrameRef();
   IntRect frameRect = currentFrame->GetRect();
-  IntRect solidColorRect(frameRect.x, aStartRow, frameRect.width, aRowCount);
+  IntRect solidColorRect(frameRect.X(), aStartRow, frameRect.Width(), aRowCount);
   return PalettedRectIsSolidColor(aDecoder, solidColorRect, aColor);
 }
 
@@ -151,18 +187,17 @@ RectIsSolidColor(SourceSurface* aSurface,
   RefPtr<DataSourceSurface> dataSurface = aSurface->GetDataSurface();
   ASSERT_TRUE_OR_RETURN(dataSurface != nullptr, false);
 
-  ASSERT_EQ_OR_RETURN(dataSurface->Stride(), surfaceSize.width * 4, false);
-
   DataSourceSurface::ScopedMap mapping(dataSurface,
                                        DataSourceSurface::MapType::READ);
   ASSERT_TRUE_OR_RETURN(mapping.IsMapped(), false);
+  ASSERT_EQ_OR_RETURN(mapping.GetStride(), surfaceSize.width * 4, false);
 
-  uint8_t* data = dataSurface->GetData();
+  uint8_t* data = mapping.GetData();
   ASSERT_TRUE_OR_RETURN(data != nullptr, false);
 
-  int32_t rowLength = dataSurface->Stride();
-  for (int32_t row = rect.y; row < rect.YMost(); ++row) {
-    for (int32_t col = rect.x; col < rect.XMost(); ++col) {
+  int32_t rowLength = mapping.GetStride();
+  for (int32_t row = rect.Y(); row < rect.YMost(); ++row) {
+    for (int32_t col = rect.X(); col < rect.XMost(); ++col) {
       int32_t i = row * rowLength + col * 4;
       if (aFuzz != 0) {
         ASSERT_LE_OR_RETURN(abs(aColor.mBlue - data[i + 0]), aFuzz, false);
@@ -207,9 +242,9 @@ PalettedRectIsSolidColor(Decoder* aDecoder, const IntRect& aRect, uint8_t aColor
 
   // Walk through the image data and make sure that the entire rect has the
   // palette index |aColor|.
-  int32_t rowLength = frameRect.width;
-  for (int32_t row = rect.y; row < rect.YMost(); ++row) {
-    for (int32_t col = rect.x; col < rect.XMost(); ++col) {
+  int32_t rowLength = frameRect.Width();
+  for (int32_t row = rect.Y(); row < rect.YMost(); ++row) {
+    for (int32_t col = rect.X(); col < rect.XMost(); ++col) {
       int32_t i = row * rowLength + col;
       ASSERT_EQ_OR_RETURN(aColor, imageData[i], false);
     }
@@ -232,16 +267,15 @@ RowHasPixels(SourceSurface* aSurface,
   RefPtr<DataSourceSurface> dataSurface = aSurface->GetDataSurface();
   ASSERT_TRUE_OR_RETURN(dataSurface, false);
 
-  ASSERT_EQ_OR_RETURN(dataSurface->Stride(), surfaceSize.width * 4, false);
-
   DataSourceSurface::ScopedMap mapping(dataSurface,
                                        DataSourceSurface::MapType::READ);
   ASSERT_TRUE_OR_RETURN(mapping.IsMapped(), false);
+  ASSERT_EQ_OR_RETURN(mapping.GetStride(), surfaceSize.width * 4, false);
 
-  uint8_t* data = dataSurface->GetData();
+  uint8_t* data = mapping.GetData();
   ASSERT_TRUE_OR_RETURN(data != nullptr, false);
 
-  int32_t rowLength = dataSurface->Stride();
+  int32_t rowLength = mapping.GetStride();
   for (int32_t col = 0; col < surfaceSize.width; ++col) {
     int32_t i = aRow * rowLength + col * 4;
     ASSERT_EQ_OR_RETURN(aPixels[col].mBlue,  data[i + 0], false);
@@ -263,7 +297,7 @@ CreateTrivialDecoder()
 {
   gfxPrefs::GetSingleton();
   DecoderType decoderType = DecoderFactory::GetDecoderType("image/gif");
-  NotNull<RefPtr<SourceBuffer>> sourceBuffer = WrapNotNull(new SourceBuffer());
+  auto sourceBuffer = MakeNotNull<RefPtr<SourceBuffer>>();
   RefPtr<Decoder> decoder =
     DecoderFactory::CreateAnonymousDecoder(decoderType, sourceBuffer, Nothing(),
                                            DefaultSurfaceFlags());
@@ -308,18 +342,18 @@ CheckGeneratedImage(Decoder* aDecoder,
 
   // Check that the area above the output rect is transparent. (Region 'A'.)
   EXPECT_TRUE(RectIsSolidColor(surface,
-                               IntRect(0, 0, surfaceSize.width, aRect.y),
+                               IntRect(0, 0, surfaceSize.width, aRect.Y()),
                                BGRAColor::Transparent(), aFuzz));
 
   // Check that the area to the left of the output rect is transparent. (Region 'B'.)
   EXPECT_TRUE(RectIsSolidColor(surface,
-                               IntRect(0, aRect.y, aRect.x, aRect.YMost()),
+                               IntRect(0, aRect.Y(), aRect.X(), aRect.YMost()),
                                BGRAColor::Transparent(), aFuzz));
 
   // Check that the area to the right of the output rect is transparent. (Region 'D'.)
   const int32_t widthOnRight = surfaceSize.width - aRect.XMost();
   EXPECT_TRUE(RectIsSolidColor(surface,
-                               IntRect(aRect.XMost(), aRect.y, widthOnRight, aRect.YMost()),
+                               IntRect(aRect.XMost(), aRect.Y(), widthOnRight, aRect.YMost()),
                                BGRAColor::Transparent(), aFuzz));
 
   // Check that the area below the output rect is transparent. (Region 'E'.)
@@ -352,18 +386,18 @@ CheckGeneratedPalettedImage(Decoder* aDecoder, const IntRect& aRect)
 
   // Check that the area above the output rect is all 0's. (Region 'A'.)
   EXPECT_TRUE(PalettedRectIsSolidColor(aDecoder,
-                                       IntRect(0, 0, imageSize.width, aRect.y),
+                                       IntRect(0, 0, imageSize.width, aRect.Y()),
                                        0));
 
   // Check that the area to the left of the output rect is all 0's. (Region 'B'.)
   EXPECT_TRUE(PalettedRectIsSolidColor(aDecoder,
-                                       IntRect(0, aRect.y, aRect.x, aRect.YMost()),
+                                       IntRect(0, aRect.Y(), aRect.X(), aRect.YMost()),
                                        0));
 
   // Check that the area to the right of the output rect is all 0's. (Region 'D'.)
   const int32_t widthOnRight = imageSize.width - aRect.XMost();
   EXPECT_TRUE(PalettedRectIsSolidColor(aDecoder,
-                                       IntRect(aRect.XMost(), aRect.y, widthOnRight, aRect.YMost()),
+                                       IntRect(aRect.XMost(), aRect.Y(), widthOnRight, aRect.YMost()),
                                        0));
 
   // Check that the area below the output rect is transparent. (Region 'E'.)
@@ -376,10 +410,10 @@ CheckGeneratedPalettedImage(Decoder* aDecoder, const IntRect& aRect)
 void
 CheckWritePixels(Decoder* aDecoder,
                  SurfaceFilter* aFilter,
-                 Maybe<IntRect> aOutputRect /* = Nothing() */,
-                 Maybe<IntRect> aInputRect /* = Nothing() */,
-                 Maybe<IntRect> aInputWriteRect /* = Nothing() */,
-                 Maybe<IntRect> aOutputWriteRect /* = Nothing() */,
+                 const Maybe<IntRect>& aOutputRect /* = Nothing() */,
+                 const Maybe<IntRect>& aInputRect /* = Nothing() */,
+                 const Maybe<IntRect>& aInputWriteRect /* = Nothing() */,
+                 const Maybe<IntRect>& aOutputWriteRect /* = Nothing() */,
                  uint8_t aFuzz /* = 0 */)
 {
   IntRect outputRect = aOutputRect.valueOr(IntRect(0, 0, 100, 100));
@@ -394,7 +428,7 @@ CheckWritePixels(Decoder* aDecoder,
     return AsVariant(BGRAColor::Green().AsPixel());
   });
   EXPECT_EQ(WriteState::FINISHED, result);
-  EXPECT_EQ(inputWriteRect.width * inputWriteRect.height, count);
+  EXPECT_EQ(inputWriteRect.Width() * inputWriteRect.Height(), count);
 
   AssertCorrectPipelineFinalState(aFilter, inputRect, outputRect);
 
@@ -423,10 +457,10 @@ CheckWritePixels(Decoder* aDecoder,
 void
 CheckPalettedWritePixels(Decoder* aDecoder,
                          SurfaceFilter* aFilter,
-                         Maybe<IntRect> aOutputRect /* = Nothing() */,
-                         Maybe<IntRect> aInputRect /* = Nothing() */,
-                         Maybe<IntRect> aInputWriteRect /* = Nothing() */,
-                         Maybe<IntRect> aOutputWriteRect /* = Nothing() */,
+                         const Maybe<IntRect>& aOutputRect /* = Nothing() */,
+                         const Maybe<IntRect>& aInputRect /* = Nothing() */,
+                         const Maybe<IntRect>& aInputWriteRect /* = Nothing() */,
+                         const Maybe<IntRect>& aOutputWriteRect /* = Nothing() */,
                          uint8_t aFuzz /* = 0 */)
 {
   IntRect outputRect = aOutputRect.valueOr(IntRect(0, 0, 100, 100));
@@ -441,7 +475,7 @@ CheckPalettedWritePixels(Decoder* aDecoder,
     return AsVariant(uint8_t(255));
   });
   EXPECT_EQ(WriteState::FINISHED, result);
-  EXPECT_EQ(inputWriteRect.width * inputWriteRect.height, count);
+  EXPECT_EQ(inputWriteRect.Width() * inputWriteRect.Height(), count);
 
   AssertCorrectPipelineFinalState(aFilter, inputRect, outputRect);
 
@@ -469,7 +503,7 @@ CheckPalettedWritePixels(Decoder* aDecoder,
   uint32_t imageLength;
   currentFrame->GetImageData(&imageData, &imageLength);
   ASSERT_TRUE(imageData != nullptr);
-  ASSERT_EQ(outputWriteRect.width * outputWriteRect.height, int32_t(imageLength));
+  ASSERT_EQ(outputWriteRect.Width() * outputWriteRect.Height(), int32_t(imageLength));
   for (uint32_t i = 0; i < imageLength; ++i) {
     ASSERT_EQ(uint8_t(255), imageData[i]);
   }
@@ -556,6 +590,15 @@ ImageTestCase CorruptICOWithBadBMPHeightTestCase()
   // listed in the corresponding ICO directory entry.
   return ImageTestCase("corrupt-with-bad-bmp-height.ico", "image/x-icon",
                        IntSize(100, 100), TEST_CASE_HAS_ERROR);
+}
+
+ImageTestCase CorruptICOWithBadBppTestCase()
+{
+  // This test case is an ICO with a BPP (15) in the ICO header which differs
+  // from that in the BMP header itself (1). It should ignore the ICO BPP when
+  // the BMP BPP is available and thus correctly decode the image.
+  return ImageTestCase("corrupt-with-bad-ico-bpp.ico", "image/x-icon",
+                       IntSize(100, 100), TEST_CASE_IS_TRANSPARENT);
 }
 
 ImageTestCase TransparentPNGTestCase()
@@ -662,6 +705,29 @@ ImageTestCase DownscaledTransparentICOWithANDMaskTestCase()
   return ImageTestCase("transparent-ico-with-and-mask.ico", "image/x-icon",
                        IntSize(32, 32), IntSize(20, 20),
                        TEST_CASE_IS_TRANSPARENT | TEST_CASE_IGNORE_OUTPUT);
+}
+
+ImageTestCase TruncatedSmallGIFTestCase()
+{
+  return ImageTestCase("green-1x1-truncated.gif", "image/gif", IntSize(1, 1));
+}
+
+ImageTestCase LargeICOWithBMPTestCase()
+{
+  return ImageTestCase("green-large-bmp.ico", "image/x-icon", IntSize(256, 256),
+                       TEST_CASE_IS_TRANSPARENT);
+}
+
+ImageTestCase LargeICOWithPNGTestCase()
+{
+  return ImageTestCase("green-large-png.ico", "image/x-icon", IntSize(512, 512),
+                       TEST_CASE_IS_TRANSPARENT);
+}
+
+ImageTestCase GreenMultipleSizesICOTestCase()
+{
+  return ImageTestCase("green-multiple-sizes.ico", "image/x-icon",
+                       IntSize(256, 256));
 }
 
 } // namespace image

@@ -4,8 +4,23 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "Widget: Gtk")
+
+with Files("*CompositorWidget*"):
+    BUG_COMPONENT = ("Core", "Graphics")
+
+with Files("*WindowSurface*"):
+    BUG_COMPONENT = ("Core", "Graphics")
+
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk3':
     DIRS += ['mozgtk']
+
+if CONFIG['MOZ_WAYLAND']:
+    if CONFIG['GLIB_LIBS']:
+        DIRS += ['mozwayland']
+    else:
+        error('We support Wayland on glibc systems only, see Bug 1409707 for reference.')
 
 EXPORTS += [
     'mozcontainer.h',
@@ -19,7 +34,7 @@ EXPORTS.mozilla += [
 
 UNIFIED_SOURCES += [
     'IMContextWrapper.cpp',
-    'mozcontainer.c',
+    'mozcontainer.cpp',
     'NativeKeyBindings.cpp',
     'nsAppShell.cpp',
     'nsBidiKeyboard.cpp',
@@ -29,11 +44,10 @@ UNIFIED_SOURCES += [
     'nsImageToPixbuf.cpp',
     'nsLookAndFeel.cpp',
     'nsNativeThemeGTK.cpp',
-    'nsScreenGtk.cpp',
-    'nsScreenManagerGtk.cpp',
     'nsSound.cpp',
     'nsToolkit.cpp',
     'nsWidgetFactory.cpp',
+    'ScreenHelperGTK.cpp',
     'WakeLockListener.cpp',
     'WidgetTraceEvent.cpp',
     'WidgetUtilsGtk.cpp',
@@ -47,31 +61,31 @@ if CONFIG['MOZ_X11']:
     UNIFIED_SOURCES += [
         'CompositorWidgetChild.cpp',
         'CompositorWidgetParent.cpp',
-        'InProcessX11CompositorWidget.cpp',
+        'GtkCompositorWidget.cpp',
+        'InProcessGtkCompositorWidget.cpp',
         'nsIdleServiceGTK.cpp',
-        'X11CompositorWidget.cpp',
     ]
     EXPORTS.mozilla.widget += [
         'CompositorWidgetChild.h',
         'CompositorWidgetParent.h',
-        'InProcessX11CompositorWidget.h',
-        'X11CompositorWidget.h',
+        'GtkCompositorWidget.h',
+        'InProcessGtkCompositorWidget.h',
     ]
 
 if CONFIG['NS_PRINTING']:
     UNIFIED_SOURCES += [
         'nsCUPSShim.cpp',
         'nsDeviceContextSpecG.cpp',
-        'nsPaperPS.cpp',
         'nsPrintDialogGTK.cpp',
-        'nsPrintOptionsGTK.cpp',
         'nsPrintSettingsGTK.cpp',
+        'nsPrintSettingsServiceGTK.cpp',
         'nsPSPrinters.cpp',
     ]
 
 if CONFIG['MOZ_X11']:
     UNIFIED_SOURCES += [
         'nsClipboard.cpp',
+        'nsClipboardX11.cpp',
         'nsDragService.cpp',
         'WindowSurfaceProvider.cpp',
         'WindowSurfaceX11.cpp',
@@ -80,6 +94,12 @@ if CONFIG['MOZ_X11']:
     ]
     EXPORTS.mozilla.widget += [
         'WindowSurfaceProvider.h',
+    ]
+
+if CONFIG['MOZ_WAYLAND']:
+    UNIFIED_SOURCES += [
+        'nsClipboardWayland.cpp',
+        'WindowSurfaceWayland.cpp',
     ]
 
 if CONFIG['ACCESSIBILITY']:
@@ -107,6 +127,7 @@ LOCAL_INCLUDES += [
     '/layout/xul',
     '/other-licenses/atk-1.0',
     '/widget',
+    '/widget/headless',
 ]
 
 if CONFIG['MOZ_X11']:

@@ -44,12 +44,21 @@ ImageBitmapRenderingContext::ClipToIntrinsicSize()
   } else {
     surface = mImage->GetAsSourceSurface();
   }
+  if (!surface) {
+    return nullptr;
+  }
   result = new layers::SourceSurfaceImage(gfx::IntSize(mWidth, mHeight), surface);
   return result.forget();
 }
 
 void
 ImageBitmapRenderingContext::TransferImageBitmap(ImageBitmap& aImageBitmap)
+{
+  TransferFromImageBitmap(aImageBitmap);
+}
+
+void
+ImageBitmapRenderingContext::TransferFromImageBitmap(ImageBitmap& aImageBitmap)
 {
   Reset();
   mImage = aImageBitmap.TransferAsImage();
@@ -59,18 +68,6 @@ ImageBitmapRenderingContext::TransferImageBitmap(ImageBitmap& aImageBitmap)
   }
 
   Redraw(gfxRect(0, 0, mWidth, mHeight));
-}
-
-int32_t
-ImageBitmapRenderingContext::GetWidth() const
-{
-  return mWidth;
-}
-
-int32_t
-ImageBitmapRenderingContext::GetHeight() const
-{
-  return mHeight;
 }
 
 NS_IMETHODIMP
@@ -104,12 +101,13 @@ ImageBitmapRenderingContext::MatchWithIntrinsicSize()
   }
 
   RefPtr<DrawTarget> dt =
-    Factory::CreateDrawTargetForData(BackendType::CAIRO,
+    Factory::CreateDrawTargetForData(gfxPlatform::GetPlatform()->GetSoftwareBackend(),
                                      map.GetData(),
                                      temp->GetSize(),
                                      map.GetStride(),
                                      temp->GetFormat());
-  if (!dt) {
+  if (!dt || !dt->IsValid()) {
+    gfxWarning() << "ImageBitmapRenderingContext::MatchWithIntrinsicSize failed";
     return nullptr;
   }
 
@@ -140,6 +138,9 @@ ImageBitmapRenderingContext::GetImageBuffer(int32_t* aFormat)
 
   if (data->GetSize() != IntSize(mWidth, mHeight)) {
     data = MatchWithIntrinsicSize();
+    if (!data) {
+      return nullptr;
+    }
   }
 
   *aFormat = imgIEncoder::INPUT_FORMAT_HOSTARGB;
@@ -169,14 +170,14 @@ ImageBitmapRenderingContext::GetInputStream(const char* aMimeType,
 }
 
 already_AddRefed<mozilla::gfx::SourceSurface>
-ImageBitmapRenderingContext::GetSurfaceSnapshot(bool* aPremultAlpha)
+ImageBitmapRenderingContext::GetSurfaceSnapshot(gfxAlphaType* const aOutAlphaType)
 {
   if (!mImage) {
     return nullptr;
   }
 
-  if (aPremultAlpha) {
-    *aPremultAlpha = true;
+  if (aOutAlphaType) {
+    *aOutAlphaType = (GetIsOpaque() ? gfxAlphaType::Opaque : gfxAlphaType::Premult);
   }
 
   RefPtr<SourceSurface> surface = mImage->GetAsSourceSurface();
@@ -187,10 +188,9 @@ ImageBitmapRenderingContext::GetSurfaceSnapshot(bool* aPremultAlpha)
   return surface.forget();
 }
 
-NS_IMETHODIMP
+void
 ImageBitmapRenderingContext::SetIsOpaque(bool aIsOpaque)
 {
-  return NS_OK;
 }
 
 bool
@@ -214,14 +214,8 @@ ImageBitmapRenderingContext::Reset()
 already_AddRefed<Layer>
 ImageBitmapRenderingContext::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
                                             Layer* aOldLayer,
-                                            LayerManager* aManager,
-                                            bool aMirror /* = false */)
+                                            LayerManager* aManager)
 {
-  if (aMirror) {
-    // Not supported for ImageBitmapRenderingContext
-    return nullptr;
-  }
-
   if (!mImage) {
     // No DidTransactionCallback will be received, so mark the context clean
     // now so future invalidations will be dispatched.
@@ -245,6 +239,9 @@ ImageBitmapRenderingContext::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
 
   AutoTArray<ImageContainer::NonOwningImage, 1> imageList;
   RefPtr<layers::Image> image = ClipToIntrinsicSize();
+  if (!image) {
+    return nullptr;
+  }
   imageList.AppendElement(ImageContainer::NonOwningImage(image));
   imageContainer->SetCurrentImages(imageList);
 

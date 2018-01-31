@@ -14,6 +14,7 @@
 #include "nsIFormProcessor.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsNSSShutDown.h"
+#include "nsString.h"
 #include "nsTArray.h"
 #include "secmodt.h"
 
@@ -34,7 +35,7 @@ public:
   nsKeygenFormProcessor();
   nsresult Init();
 
-  virtual nsresult ProcessValue(nsIDOMHTMLElement* aElement,
+  virtual nsresult ProcessValue(mozilla::dom::Element* aElement,
                                 const nsAString& aName,
                                 nsAString& aValue) override;
 
@@ -51,7 +52,7 @@ public:
 
   static nsresult Create(nsISupports* aOuter, const nsIID& aIID, void* *aResult);
 
-  static void ExtractParams(nsIDOMHTMLElement* aElement,
+  static void ExtractParams(mozilla::dom::Element* aElement,
                             nsAString& challengeValue,
                             nsAString& keyTypeValue,
                             nsAString& keyParamsValue);
@@ -63,7 +64,7 @@ protected:
   virtual ~nsKeygenFormProcessor();
 
   nsresult GetPublicKey(const nsAString& aValue, const nsAString& aChallenge,
-                        const nsAFlatString& akeyType, nsAString& aOutPublicKey,
+                        const nsString& akeyType, nsAString& aOutPublicKey,
                         const nsAString& aPqg);
   nsresult GetSlot(uint32_t aMechanism, PK11SlotInfo** aSlot);
 private:

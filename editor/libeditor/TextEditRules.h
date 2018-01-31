@@ -6,22 +6,24 @@
 #ifndef mozilla_TextEditRules_h
 #define mozilla_TextEditRules_h
 
-#include "mozilla/EditorBase.h"
+#include "mozilla/EditAction.h"
+#include "mozilla/EditorDOMPoint.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsIEditRules.h"
 #include "nsIEditor.h"
+#include "nsINamed.h"
 #include "nsISupportsImpl.h"
 #include "nsITimer.h"
 #include "nsString.h"
 #include "nscore.h"
 
-class nsIDOMElement;
 class nsIDOMNode;
 
 namespace mozilla {
 
 class AutoLockRulesSniffing;
+class HTMLEditRules;
+class RulesInfo;
 class TextEditor;
 namespace dom {
 class Selection;
@@ -39,8 +41,8 @@ class Selection;
  * 2. Selection must not be explicitly set by the rule method.
  *    Any manipulation of Selection must be done by the editor.
  */
-class TextEditRules : public nsIEditRules
-                    , public nsITimerCallback
+class TextEditRules : public nsITimerCallback
+                    , public nsINamed
 {
 public:
   typedef dom::Element Element;
@@ -49,25 +51,31 @@ public:
   template<typename T> using OwningNonNull = OwningNonNull<T>;
 
   NS_DECL_NSITIMERCALLBACK
+  NS_DECL_NSINAMED
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(TextEditRules, nsIEditRules)
+  NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(TextEditRules, nsITimerCallback)
 
   TextEditRules();
 
-  // nsIEditRules methods
-  NS_IMETHOD Init(TextEditor* aTextEditor) override;
-  NS_IMETHOD SetInitialValue(const nsAString& aValue) override;
-  NS_IMETHOD DetachEditor() override;
-  NS_IMETHOD BeforeEdit(EditAction action,
-                        nsIEditor::EDirection aDirection) override;
-  NS_IMETHOD AfterEdit(EditAction action,
-                       nsIEditor::EDirection aDirection) override;
-  NS_IMETHOD WillDoAction(Selection* aSelection, RulesInfo* aInfo,
-                          bool* aCancel, bool* aHandled) override;
-  NS_IMETHOD DidDoAction(Selection* aSelection, RulesInfo* aInfo,
-                         nsresult aResult) override;
-  NS_IMETHOD DocumentIsEmpty(bool* aDocumentIsEmpty) override;
-  NS_IMETHOD DocumentModified() override;
+  HTMLEditRules* AsHTMLEditRules();
+  const HTMLEditRules* AsHTMLEditRules() const;
+
+  virtual nsresult Init(TextEditor* aTextEditor);
+  virtual nsresult SetInitialValue(const nsAString& aValue);
+  virtual nsresult DetachEditor();
+  virtual nsresult BeforeEdit(EditAction aAction,
+                              nsIEditor::EDirection aDirection);
+  virtual nsresult AfterEdit(EditAction aAction,
+                             nsIEditor::EDirection aDirection);
+  virtual nsresult WillDoAction(Selection* aSelection,
+                                RulesInfo* aInfo,
+                                bool* aCancel,
+                                bool* aHandled);
+  virtual nsresult DidDoAction(Selection* aSelection,
+                               RulesInfo* aInfo,
+                               nsresult aResult);
+  virtual bool DocumentIsEmpty();
+  virtual nsresult DocumentModified();
 
 protected:
   virtual ~TextEditRules();
@@ -111,6 +119,11 @@ public:
    */
   static void FillBufWithPWChars(nsAString* aOutString, int32_t aLength);
 
+  bool HasBogusNode()
+  {
+    return !!mBogusNode;
+  }
+
 protected:
 
   void InitFields();
@@ -124,11 +137,17 @@ protected:
                           nsAString* outString,
                           int32_t aMaxLength);
   nsresult DidInsertText(Selection* aSelection, nsresult aResult);
-  nsresult GetTopEnclosingPre(nsIDOMNode* aNode, nsIDOMNode** aOutPreNode);
 
   nsresult WillInsertBreak(Selection* aSelection, bool* aCancel,
                            bool* aHandled, int32_t aMaxLength);
   nsresult DidInsertBreak(Selection* aSelection, nsresult aResult);
+
+  nsresult WillSetText(Selection& aSelection,
+                       bool* aCancel,
+                       bool* aHandled,
+                       const nsAString* inString,
+                       int32_t aMaxLength);
+  nsresult DidSetText(Selection& aSelection, nsresult aResult);
 
   void WillInsert(Selection& aSelection, bool* aCancel);
   nsresult DidInsert(Selection* aSelection, nsresult aResult);
@@ -166,6 +185,7 @@ protected:
   nsresult WillOutputText(Selection* aSelection,
                           const nsAString* aInFormat,
                           nsAString* aOutText,
+                          uint32_t aFlags,
                           bool* aOutCancel,
                           bool* aHandled);
 
@@ -199,10 +219,45 @@ protected:
   /**
    * Remove IME composition text from password buffer.
    */
-  void RemoveIMETextFromPWBuf(int32_t& aStart, nsAString* aIMEString);
+  void RemoveIMETextFromPWBuf(uint32_t& aStart, nsAString* aIMEString);
 
-  nsresult CreateMozBR(nsIDOMNode* inParent, int32_t inOffset,
-                       nsIDOMNode** outBRNode = nullptr);
+  /**
+   * Create a normal <br> element and insert it to aPointToInsert.
+   *
+   * @param aPointToInsert  The point where the new <br> element will be
+   *                        inserted.
+   * @return                Returns created <br> element.
+   */
+  already_AddRefed<Element> CreateBR(const EditorRawDOMPoint& aPointToInsert)
+  {
+    return CreateBRInternal(aPointToInsert, false);
+  }
+
+  /**
+   * Create a moz-<br> element and insert it to aPointToInsert.
+   *
+   * @param aPointToInsert  The point where the new moz-<br> element will be
+   *                        inserted.
+   * @return                Returns created moz-<br> element.
+   */
+  already_AddRefed<Element> CreateMozBR(const EditorRawDOMPoint& aPointToInsert)
+  {
+    return CreateBRInternal(aPointToInsert, true);
+  }
+
+  /**
+   * Create a normal <br> element or a moz-<br> element and insert it to
+   * aPointToInsert.
+   *
+   * @param aParentToInsert     The point where the new <br> element will be
+   *                            inserted.
+   * @param aCreateMozBR        true if the caller wants to create a moz-<br>
+   *                            element.  Otherwise, false.
+   * @return                    Returns created <br> element.
+   */
+  already_AddRefed<Element>
+  CreateBRInternal(const EditorRawDOMPoint& aPointToInsert,
+                   bool aCreateMozBR);
 
   void UndefineCaretBidiLevel(Selection* aSelection);
 
@@ -224,25 +279,29 @@ protected:
   bool IsMailEditor() const;
   bool DontEchoPassword() const;
 
+private:
   // Note that we do not refcount the editor.
   TextEditor* mTextEditor;
+
+protected:
   // A buffer we use to store the real value of password editors.
   nsString mPasswordText;
   // A buffer we use to track the IME composition string.
   nsString mPasswordIMEText;
   uint32_t mPasswordIMEIndex;
   // Magic node acts as placeholder in empty doc.
-  nsCOMPtr<nsIDOMNode> mBogusNode;
+  nsCOMPtr<nsIContent> mBogusNode;
   // Cached selected node.
-  nsCOMPtr<nsIDOMNode> mCachedSelectionNode;
+  nsCOMPtr<nsINode> mCachedSelectionNode;
   // Cached selected offset.
-  int32_t mCachedSelectionOffset;
+  uint32_t mCachedSelectionOffset;
   uint32_t mActionNesting;
   bool mLockRulesSniffing;
   bool mDidExplicitlySetInterline;
   // In bidirectional text, delete characters not visually adjacent to the
   // caret without moving the caret first.
   bool mDeleteBidiImmediately;
+  bool mIsHTMLEditRules;
   // The top level editor action.
   EditAction mTheAction;
   nsCOMPtr<nsITimer> mTimer;
@@ -253,15 +312,22 @@ protected:
   friend class AutoLockRulesSniffing;
 };
 
-class TextRulesInfo final : public RulesInfo
+/**
+ * An object to encapsulate any additional info needed to be passed
+ * to rules system by the editor.
+ * TODO: This class (almost struct, though) is ugly and its size isn't
+ *       optimized.  Should be refined later.
+ */
+class RulesInfo final
 {
 public:
-  explicit TextRulesInfo(EditAction aAction)
-    : RulesInfo(aAction)
+  explicit RulesInfo(EditAction aAction)
+    : action(aAction)
     , inString(nullptr)
     , outString(nullptr)
     , outputFormat(nullptr)
     , maxLength(-1)
+    , flags(0)
     , collapsedAction(nsIEditor::eNext)
     , stripWrappers(nsIEditor::eStrip)
     , bOrdered(false)
@@ -269,32 +335,35 @@ public:
     , bulletType(nullptr)
     , alignType(nullptr)
     , blockType(nullptr)
-    , insertElement(nullptr)
   {}
 
-  // kInsertText
+  EditAction action;
+
+  // EditAction::insertText / EditAction::insertIMEText
   const nsAString* inString;
   nsAString* outString;
   const nsAString* outputFormat;
   int32_t maxLength;
 
-  // kDeleteSelection
+  // EditAction::outputText
+  uint32_t flags;
+
+  // EditAction::deleteSelection
   nsIEditor::EDirection collapsedAction;
   nsIEditor::EStripWrappers stripWrappers;
 
-  // kMakeList
+  // EditAction::removeList
   bool bOrdered;
+
+  // EditAction::makeList
   bool entireList;
   const nsAString* bulletType;
 
-  // kAlign
+  // EditAction::align
   const nsAString* alignType;
 
-  // kMakeBasicBlock
+  // EditAction::makeBasicBlock
   const nsAString* blockType;
-
-  // kInsertElement
-  const nsIDOMElement* insertElement;
 };
 
 /**

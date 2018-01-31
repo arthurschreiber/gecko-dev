@@ -6,13 +6,13 @@
 
 #include "mozilla/dom/KeyframeEffect.h"
 
-#include "mozilla/dom/AnimatableBinding.h"
+#include "mozilla/dom/KeyframeAnimationOptionsBinding.h"
   // For UnrestrictedDoubleOrKeyframeAnimationOptions
 #include "mozilla/dom/AnimationEffectTiming.h"
 #include "mozilla/dom/KeyframeEffectBinding.h"
-#include "mozilla/KeyframeUtils.h"
+#include "nsDocument.h" // For nsDocument::IsWebAnimationsEnabled
 #include "nsDOMMutationObserver.h" // For nsAutoAnimationMutationBatch
-#include "nsIScriptError.h"
+#include "nsStyleContext.h"
 
 namespace mozilla {
 namespace dom {
@@ -44,6 +44,14 @@ KeyframeEffect::Constructor(
 {
   return ConstructKeyframeEffect<KeyframeEffect>(aGlobal, aTarget, aKeyframes,
                                                  aOptions, aRv);
+}
+
+/* static */ already_AddRefed<KeyframeEffect>
+KeyframeEffect::Constructor(const GlobalObject& aGlobal,
+                            KeyframeEffectReadOnly& aSource,
+                            ErrorResult& aRv)
+{
+  return ConstructKeyframeEffect<KeyframeEffect>(aGlobal, aSource, aRv);
 }
 
 /* static */ already_AddRefed<KeyframeEffect>
@@ -89,9 +97,6 @@ KeyframeEffect::SetTarget(const Nullable<ElementOrCSSPseudoElement>& aTarget)
   if (mTarget) {
     UnregisterTarget();
     ResetIsRunningOnCompositor();
-    // We don't need to reset the mWinsInCascade member since it will be updated
-    // when we later associate with a different target (and until that time this
-    // flag is not used).
 
     RequestRestyle(EffectCompositor::RestyleType::Layer);
 
@@ -108,8 +113,6 @@ KeyframeEffect::SetTarget(const Nullable<ElementOrCSSPseudoElement>& aTarget)
     RefPtr<nsStyleContext> styleContext = GetTargetStyleContext();
     if (styleContext) {
       UpdateProperties(styleContext);
-    } else if (mEffectOptions.mSpacingMode == SpacingMode::paced) {
-      KeyframeUtils::ApplyDistributeSpacing(mKeyframes);
     }
 
     MaybeUpdateFrameForCompositor();
@@ -120,53 +123,40 @@ KeyframeEffect::SetTarget(const Nullable<ElementOrCSSPseudoElement>& aTarget)
     if (mAnimation) {
       nsNodeUtils::AnimationAdded(mAnimation);
     }
-  } else if (mEffectOptions.mSpacingMode == SpacingMode::paced) {
-    // New target is null, so fall back to distribute spacing.
-    KeyframeUtils::ApplyDistributeSpacing(mKeyframes);
   }
 }
 
 void
-KeyframeEffect::SetSpacing(JSContext* aCx,
-                           const nsAString& aSpacing,
-                           ErrorResult& aRv)
+KeyframeEffect::SetIterationComposite(
+  const IterationCompositeOperation& aIterationComposite,
+  CallerType aCallerType)
 {
-  SpacingMode spacingMode = SpacingMode::distribute;
-  nsCSSPropertyID pacedProperty = eCSSProperty_UNKNOWN;
-  nsAutoString invalidPacedProperty;
-  KeyframeEffectParams::ParseSpacing(aSpacing,
-                                     spacingMode,
-                                     pacedProperty,
-                                     invalidPacedProperty,
-                                     aRv);
-  if (aRv.Failed()) {
+  // Ignore iterationComposite if the Web Animations API is not enabled,
+  // then the default value 'Replace' will be used.
+  if (!nsDocument::IsWebAnimationsEnabled(aCallerType)) {
     return;
   }
 
-  if (!invalidPacedProperty.IsEmpty()) {
-    const char16_t* params[] = { invalidPacedProperty.get() };
-    nsIDocument* doc = AnimationUtils::GetCurrentRealmDocument(aCx);
-    nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
-                                    NS_LITERAL_CSTRING("Animation"),
-                                    doc,
-                                    nsContentUtils::eDOM_PROPERTIES,
-                                    "UnanimatablePacedProperty",
-                                    params, ArrayLength(params));
-  }
-
-  if (mEffectOptions.mSpacingMode == spacingMode &&
-      mEffectOptions.mPacedProperty == pacedProperty) {
+  if (mEffectOptions.mIterationComposite == aIterationComposite) {
     return;
   }
 
-  mEffectOptions.mSpacingMode = spacingMode;
-  mEffectOptions.mPacedProperty = pacedProperty;
-
-  // Apply spacing. We apply distribute here. If the new spacing is paced,
-  // UpdateProperties() will apply it.
-  if (mEffectOptions.mSpacingMode == SpacingMode::distribute) {
-    KeyframeUtils::ApplyDistributeSpacing(mKeyframes);
+  if (mAnimation && mAnimation->IsRelevant()) {
+    nsNodeUtils::AnimationChanged(mAnimation);
   }
+
+  mEffectOptions.mIterationComposite = aIterationComposite;
+  RequestRestyle(EffectCompositor::RestyleType::Layer);
+}
+
+void
+KeyframeEffect::SetComposite(const CompositeOperation& aComposite)
+{
+  if (mEffectOptions.mComposite == aComposite) {
+    return;
+  }
+
+  mEffectOptions.mComposite = aComposite;
 
   if (mAnimation && mAnimation->IsRelevant()) {
     nsNodeUtils::AnimationChanged(mAnimation);

@@ -5,9 +5,9 @@
 
 const { classes: Cc, interfaces: Ci, manager: Cm, utils: Cu, results: Cr } = Components;
 
-Cu.import('resource://gre/modules/XPCOMUtils.jsm');
-Cu.import('resource://gre/modules/Services.jsm');
-Cu.import('resource://gre/modules/Timer.jsm');
+ChromeUtils.import('resource://gre/modules/XPCOMUtils.jsm');
+ChromeUtils.import('resource://gre/modules/Services.jsm');
+ChromeUtils.import('resource://gre/modules/Timer.jsm');
 
 const uuidGenerator = Cc["@mozilla.org/uuid-generator;1"]
                       .getService(Ci.nsIUUIDGenerator);
@@ -51,7 +51,7 @@ const address = Cc["@mozilla.org/supports-cstring;1"]
                   .createInstance(Ci.nsISupportsCString);
 address.data = "127.0.0.1";
 const addresses = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
-addresses.appendElement(address, false);
+addresses.appendElement(address);
 
 const mockedChannelDescription = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationChannelDescription]),
@@ -220,6 +220,7 @@ const mockedDevicePrompt = {
 
 const mockedSessionTransport = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationSessionTransport,
+                                         Ci.nsIPresentationSessionTransportBuilder,
                                          Ci.nsIPresentationTCPSessionTransportBuilder,
                                          Ci.nsIPresentationDataChannelSessionTransportBuilder,
                                          Ci.nsIPresentationControlChannelListener,
@@ -288,14 +289,17 @@ const mockedSessionTransport = {
     sendAsyncMessage('message-sent', data);
   },
   close: function(reason) {
-    sendAsyncMessage('data-transport-closed', reason);
-    this._callback.QueryInterface(Ci.nsIPresentationSessionTransportCallback).notifyTransportClosed(reason);
+    // Don't send a message after tearDown, to avoid a leak.
+    if (this._callback) {
+      sendAsyncMessage('data-transport-closed', reason);
+      this._callback.QueryInterface(Ci.nsIPresentationSessionTransportCallback).notifyTransportClosed(reason);
+    }
   },
   simulateTransportReady: function() {
     this._callback.QueryInterface(Ci.nsIPresentationSessionTransportCallback).notifyTransportReady();
   },
   simulateIncomingMessage: function(message) {
-    this._callback.QueryInterface(Ci.nsIPresentationSessionTransportCallback).notifyData(message);
+    this._callback.QueryInterface(Ci.nsIPresentationSessionTransportCallback).notifyData(message, false);
   },
   onOffer: function(aOffer) {
   },
@@ -404,14 +408,14 @@ addMessageListener('trigger-incoming-session-request', function(url) {
   var deviceManager = Cc['@mozilla.org/presentation-device/manager;1']
                       .getService(Ci.nsIPresentationDeviceManager);
   deviceManager.QueryInterface(Ci.nsIPresentationDeviceListener)
-	       .onSessionRequest(mockedDevice, url, sessionId, mockedControlChannel);
+               .onSessionRequest(mockedDevice, url, sessionId, mockedControlChannel);
 });
 
 addMessageListener('trigger-incoming-terminate-request', function() {
   var deviceManager = Cc['@mozilla.org/presentation-device/manager;1']
                       .getService(Ci.nsIPresentationDeviceManager);
   deviceManager.QueryInterface(Ci.nsIPresentationDeviceListener)
-	       .onTerminateRequest(mockedDevice, sessionId, mockedControlChannel, true);
+               .onTerminateRequest(mockedDevice, sessionId, mockedControlChannel, true);
 });
 
 addMessageListener('trigger-reconnected-acked', function(url) {
@@ -466,4 +470,4 @@ obs.addObserver(function observer(aSubject, aTopic, aData) {
   obs.removeObserver(observer, aTopic);
 
   requestPromise = aSubject;
-}, 'setup-request-promise', false);
+}, 'setup-request-promise');

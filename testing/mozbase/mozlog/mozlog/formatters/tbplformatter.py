@@ -2,11 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
+
 import functools
 from collections import deque
 
 from .base import BaseFormatter
 from .process import strstatus
+from ..handlers import SummaryHandler
+
 
 def output_subtests(func):
     @functools.wraps(func)
@@ -23,12 +27,21 @@ class TbplFormatter(BaseFormatter):
     This is intended to be used to preserve backward compatibility with existing tools
     hand-parsing this format.
     """
-    def __init__(self, compact=False):
+    def __init__(self, compact=False, summary_on_shutdown=False, **kwargs):
+        super(TbplFormatter, self).__init__(**kwargs)
         self.suite_start_time = None
         self.test_start_times = {}
         self.buffer = None
         self.compact = compact
         self.subtests_count = 0
+
+        self.summary = SummaryHandler()
+        self.summary_on_shutdown = summary_on_shutdown
+
+    def __call__(self, data):
+        if self.summary_on_shutdown:
+            self.summary(data)
+        return super(TbplFormatter, self).__call__(data)
 
     @property
     def compact(self):
@@ -41,9 +54,6 @@ class TbplFormatter(BaseFormatter):
             self.buffer = deque([], 10)
         else:
             self.buffer = None
-
-    def __call__(self, data):
-        return getattr(self, data["action"])(data)
 
     def _format_subtests(self, component, subtract_context=False):
         count = self.subtests_count
@@ -71,7 +81,10 @@ class TbplFormatter(BaseFormatter):
 
     @output_subtests
     def process_output(self, data):
-        return "PROCESS | %(process)s | %(data)s\n" % data
+        pid = data['process']
+        if pid.isdigit():
+            pid = 'PID %s' % pid
+        return "%s | %s\n" % (pid, data['data'])
 
     @output_subtests
     def process_start(self, data):
@@ -116,7 +129,8 @@ class TbplFormatter(BaseFormatter):
 
     def suite_start(self, data):
         self.suite_start_time = data["time"]
-        return "SUITE-START | Running %i tests\n" % len(data["tests"])
+        num_tests = reduce(lambda x, y: x + len(y), data['tests'].itervalues(), 0)
+        return "SUITE-START | Running %i tests\n" % num_tests
 
     def test_start(self, data):
         self.test_start_times[self.test_id(data["test"])] = data["time"]
@@ -137,6 +151,25 @@ class TbplFormatter(BaseFormatter):
                 self.buffer.append(data)
         else:
             return self._format_status(data)
+
+    def assertion_count(self, data):
+        if data["min_expected"] != data["max_expected"]:
+            expected = "%i to %i" % (data["min_expected"],
+                                     data["max_expected"])
+        else:
+            expected = "%i" % data["min_expected"]
+
+        if data["count"] < data["min_expected"]:
+            status, comparison = "TEST-UNEXPECTED-PASS", "is less than"
+        elif data["count"] > data["max_expected"]:
+            status, comparison = "TEST-UNEXPECTED-FAIL", "is more than"
+        elif data["count"] > 0:
+            status, comparison = "TEST-KNOWN-FAIL", "matches"
+        else:
+            return
+
+        return ("%s | %s | assertion count %i %s expected %s assertions\n" %
+                (status, data["test"], data["count"], comparison, expected))
 
     def _format_status(self, data):
         message = "- " + data["message"] if "message" in data else ""
@@ -191,14 +224,16 @@ class TbplFormatter(BaseFormatter):
             if "reftest_screenshots" in extra:
                 screenshots = extra["reftest_screenshots"]
                 if len(screenshots) == 3:
-                     message += ("\nREFTEST   IMAGE 1 (TEST): %s\n"
-                                 "REFTEST   IMAGE 2 (REFERENCE): %s") % (screenshots[0]["screenshot"],
-                                                                         screenshots[2]["screenshot"])
+                    message += ("\nREFTEST   IMAGE 1 (TEST): data:image/png;base64,%s\n"
+                                "REFTEST   IMAGE 2 (REFERENCE): data:image/png;base64,%s") % (
+                                    screenshots[0]["screenshot"],
+                                    screenshots[2]["screenshot"])
                 elif len(screenshots) == 1:
-                    message += "\nREFTEST   IMAGE: %(image1)s" % screenshots[0]["screenshot"]
+                    message += "\nREFTEST   IMAGE: data:image/png;base64,%s" \
+                               % screenshots[0]["screenshot"]
 
             failure_line = "TEST-UNEXPECTED-%s | %s | %s\n" % (
-            data["status"], test_id, message)
+                data["status"], test_id, message)
 
             if data["expected"] not in ("PASS", "OK"):
                 expected_msg = "expected %s | " % data["expected"]
@@ -233,3 +268,33 @@ class TbplFormatter(BaseFormatter):
             rv = rv + line + "\n"
 
         return rv
+
+    def lint(self, data):
+        fmt = "TEST-UNEXPECTED-{level} | {path}:{lineno}{column} | {message} ({rule})"
+        data["column"] = ":%s" % data["column"] if data["column"] else ""
+        data['rule'] = data['rule'] or data['linter'] or ""
+        return fmt.append(fmt.format(**data))
+
+    def _format_suite_summary(self, suite, summary):
+        counts = summary['counts']
+        logs = summary['unexpected_logs']
+
+        total = sum(self.summary.aggregate('count', counts).values())
+        expected = sum(self.summary.aggregate('expected', counts).values())
+        status_str = "{}/{}".format(expected, total)
+        rv = ["{}: {}".format(suite, status_str)]
+
+        for results in logs.values():
+            for data in results:
+                rv.append("  {}".format(self._format_status(data)))
+        return "\n".join(rv)
+
+    def shutdown(self, data):
+        if not self.summary_on_shutdown:
+            return
+
+        rv = ["", "Overall Summary"]
+        for suite, summary in self.summary:
+            rv.append(self._format_suite_summary(suite, summary))
+        rv.append("")
+        return "\n".join(rv)

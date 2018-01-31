@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ResponsiveImageSelector.h"
+#include "mozilla/ServoStyleSet.h"
 #include "nsIURI.h"
 #include "nsIDocument.h"
 #include "nsContentUtils.h"
@@ -12,13 +13,9 @@
 
 #include "nsCSSParser.h"
 #include "nsCSSProps.h"
-#include "nsIMediaList.h"
+#include "nsMediaList.h"
 #include "nsRuleNode.h"
 #include "nsRuleData.h"
-
-// For IsPictureEnabled() -- the candidate parser needs to be aware of sizes
-// support being enabled
-#include "HTMLPictureElement.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -120,7 +117,8 @@ ResponsiveImageSelector::~ResponsiveImageSelector()
 
 // http://www.whatwg.org/specs/web-apps/current-work/#processing-the-image-candidates
 bool
-ResponsiveImageSelector::SetCandidatesFromSourceSet(const nsAString & aSrcSet)
+ResponsiveImageSelector::SetCandidatesFromSourceSet(const nsAString & aSrcSet,
+                                                    nsIPrincipal* aTriggeringPrincipal)
 {
   ClearSelectedCandidate();
 
@@ -172,6 +170,8 @@ ResponsiveImageSelector::SetCandidatesFromSourceSet(const nsAString & aSrcSet)
     ResponsiveImageCandidate candidate;
     if (candidate.ConsumeDescriptors(iter, end)) {
       candidate.SetURLSpec(urlStr);
+      candidate.SetTriggeringPrincipal(nsContentUtils::GetAttrTriggeringPrincipal(
+          Content(), urlStr, aTriggeringPrincipal));
       AppendCandidateIfUnique(candidate);
     }
   }
@@ -212,7 +212,8 @@ ResponsiveImageSelector::Document()
 }
 
 void
-ResponsiveImageSelector::SetDefaultSource(const nsAString& aURLString)
+ResponsiveImageSelector::SetDefaultSource(const nsAString& aURLString,
+                                          nsIPrincipal* aPrincipal)
 {
   ClearSelectedCandidate();
 
@@ -224,6 +225,7 @@ ResponsiveImageSelector::SetDefaultSource(const nsAString& aURLString)
   }
 
   mDefaultSourceURL = aURLString;
+  mDefaultSourceTriggeringPrincipal = aPrincipal;
 
   // Add new default to end of list
   MaybeAppendDefaultCandidate();
@@ -240,13 +242,20 @@ bool
 ResponsiveImageSelector::SetSizesFromDescriptor(const nsAString & aSizes)
 {
   ClearSelectedCandidate();
-  mSizeQueries.Clear();
-  mSizeValues.Clear();
+
+  if (Document()->IsStyledByServo()) {
+    NS_ConvertUTF16toUTF8 sizes(aSizes);
+    mServoSourceSizeList.reset(Servo_SourceSizeList_Parse(&sizes));
+    return !!mServoSourceSizeList;
+  }
 
   nsCSSParser cssParser;
 
+  mSizeQueries.Clear();
+  mSizeValues.Clear();
+
   return cssParser.ParseSourceSizeList(aSizes, nullptr, 0,
-                                       mSizeQueries, mSizeValues, true);
+                                       mSizeQueries, mSizeValues);
 }
 
 void
@@ -296,6 +305,7 @@ ResponsiveImageSelector::MaybeAppendDefaultCandidate()
   ResponsiveImageCandidate defaultCandidate;
   defaultCandidate.SetParameterDefault();
   defaultCandidate.SetURLSpec(mDefaultSourceURL);
+  defaultCandidate.SetTriggeringPrincipal(mDefaultSourceTriggeringPrincipal);
   // We don't use MaybeAppend since we want to keep this even if it can never
   // match, as it may if the source set changes.
   mCandidates.AppendElement(defaultCandidate);
@@ -334,6 +344,17 @@ ResponsiveImageSelector::GetSelectedImageDensity()
   return mCandidates[bestIndex].Density(this);
 }
 
+nsIPrincipal*
+ResponsiveImageSelector::GetSelectedImageTriggeringPrincipal()
+{
+  int bestIndex = GetSelectedCandidateIndex();
+  if (bestIndex < 0) {
+    return nullptr;
+  }
+
+  return mCandidates[bestIndex].TriggeringPrincipal();
+}
+
 bool
 ResponsiveImageSelector::SelectImage(bool aReselect)
 {
@@ -351,15 +372,20 @@ ResponsiveImageSelector::SelectImage(bool aReselect)
   }
 
   nsIDocument* doc = Document();
-  nsIPresShell *shell = doc ? doc->GetShell() : nullptr;
-  nsPresContext *pctx = shell ? shell->GetPresContext() : nullptr;
-  nsCOMPtr<nsIURI> baseURI = mOwnerNode ? mOwnerNode->GetBaseURI() : nullptr;
+  nsIPresShell* shell = doc->GetShell();
+  nsPresContext* pctx = shell ? shell->GetPresContext() : nullptr;
+  nsCOMPtr<nsIURI> baseURI = mOwnerNode->GetBaseURI();
 
-  if (!pctx || !doc || !baseURI) {
+  if (!pctx || !baseURI) {
     return oldBest != -1;
   }
 
   double displayDensity = pctx->CSSPixelsToDevPixels(1.0f);
+  double overrideDPPX = pctx->GetOverrideDPPX();
+
+  if (overrideDPPX > 0) {
+    displayDensity = overrideDPPX;
+  }
 
   // Per spec, "In a UA-specific manner, choose one image source"
   // - For now, select the lowest density greater than displayDensity, otherwise
@@ -370,7 +396,7 @@ ResponsiveImageSelector::SelectImage(bool aReselect)
   double computedWidth = -1;
   for (int i = 0; i < numCandidates; i++) {
     if (mCandidates[i].IsComputedFromWidth()) {
-      DebugOnly<bool> computeResult = \
+      DebugOnly<bool> computeResult =
         ComputeFinalWidthForCurrentViewport(&computedWidth);
       MOZ_ASSERT(computeResult,
                  "Computed candidates not allowed without sizes data");
@@ -421,34 +447,38 @@ ResponsiveImageSelector::GetSelectedCandidateIndex()
 bool
 ResponsiveImageSelector::ComputeFinalWidthForCurrentViewport(double *aWidth)
 {
-  unsigned int numSizes = mSizeQueries.Length();
   nsIDocument* doc = Document();
-  nsIPresShell *presShell = doc ? doc->GetShell() : nullptr;
-  nsPresContext *pctx = presShell ? presShell->GetPresContext() : nullptr;
+  nsIPresShell* presShell = doc->GetShell();
+  nsPresContext* pctx = presShell ? presShell->GetPresContext() : nullptr;
 
   if (!pctx) {
     return false;
   }
-
-  MOZ_ASSERT(numSizes == mSizeValues.Length(),
-             "mSizeValues length differs from mSizeQueries");
-
-  unsigned int i;
-  for (i = 0; i < numSizes; i++) {
-    if (mSizeQueries[i]->Matches(pctx, nullptr)) {
-      break;
-    }
-  }
-
   nscoord effectiveWidth;
-  if (i == numSizes) {
-    // No match defaults to 100% viewport
-    nsCSSValue defaultWidth(100.0f, eCSSUnit_ViewportWidth);
-    effectiveWidth = nsRuleNode::CalcLengthWithInitialFont(pctx,
-                                                           defaultWidth);
+  if (doc->IsStyledByServo()) {
+    effectiveWidth = presShell->StyleSet()->AsServo()->EvaluateSourceSizeList(
+      mServoSourceSizeList.get());
   } else {
-    effectiveWidth = nsRuleNode::CalcLengthWithInitialFont(pctx,
-                                                           mSizeValues[i]);
+    unsigned int numSizes = mSizeQueries.Length();
+    MOZ_ASSERT(numSizes == mSizeValues.Length(),
+               "mSizeValues length differs from mSizeQueries");
+
+    unsigned int i;
+    for (i = 0; i < numSizes; i++) {
+      if (mSizeQueries[i]->Matches(pctx, nullptr)) {
+        break;
+      }
+    }
+
+    if (i == numSizes) {
+      // No match defaults to 100% viewport
+      nsCSSValue defaultWidth(100.0f, eCSSUnit_ViewportWidth);
+      effectiveWidth = nsRuleNode::CalcLengthWithInitialFont(pctx,
+                                                             defaultWidth);
+    } else {
+      effectiveWidth = nsRuleNode::CalcLengthWithInitialFont(pctx,
+                                                             mSizeValues[i]);
+    }
   }
 
   *aWidth = nsPresContext::AppUnitsToDoubleCSSPixels(std::max(effectiveWidth, 0));
@@ -462,8 +492,10 @@ ResponsiveImageCandidate::ResponsiveImageCandidate()
 }
 
 ResponsiveImageCandidate::ResponsiveImageCandidate(const nsAString& aURLString,
-                                                   double aDensity)
+                                                   double aDensity,
+                                                   nsIPrincipal* aTriggeringPrincipal)
   : mURLString(aURLString)
+  , mTriggeringPrincipal(aTriggeringPrincipal)
 {
   mType = eCandidateType_Density;
   mValue.mDensity = aDensity;
@@ -474,6 +506,12 @@ void
 ResponsiveImageCandidate::SetURLSpec(const nsAString& aURLString)
 {
   mURLString = aURLString;
+}
+
+void
+ResponsiveImageCandidate::SetTriggeringPrincipal(nsIPrincipal* aPrincipal)
+{
+  mTriggeringPrincipal = aPrincipal;
 }
 
 void
@@ -557,8 +595,7 @@ ResponsiveImageDescriptors::AddDescriptor(const nsAString& aDescriptor)
     // If the value is not a valid non-negative integer, it doesn't match this
     // descriptor, fall through.
     if (ParseInteger(valueStr, possibleWidth) && possibleWidth >= 0) {
-      if (possibleWidth != 0 && HTMLPictureElement::IsPictureEnabled() &&
-          mWidth.isNothing() && mDensity.isNothing()) {
+      if (possibleWidth != 0 && mWidth.isNothing() && mDensity.isNothing()) {
         mWidth.emplace(possibleWidth);
       } else {
         // Valid width descriptor, but width or density were already seen, sizes
@@ -721,6 +758,12 @@ const nsAString&
 ResponsiveImageCandidate::URLString() const
 {
   return mURLString;
+}
+
+nsIPrincipal*
+ResponsiveImageCandidate::TriggeringPrincipal() const
+{
+  return mTriggeringPrincipal;
 }
 
 double

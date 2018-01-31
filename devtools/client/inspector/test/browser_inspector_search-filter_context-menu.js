@@ -15,7 +15,7 @@ add_task(function* () {
   yield selectNode("h1", inspector);
 
   let win = inspector.panelWin;
-  let searchContextMenu = toolbox.textboxContextMenuPopup;
+  let searchContextMenu = toolbox.textBoxContextMenuPopup;
   ok(searchContextMenu,
     "The search filter context menu is loaded in the inspector");
 
@@ -26,7 +26,13 @@ add_task(function* () {
   let cmdCopy = searchContextMenu.querySelector("[command=cmd_copy]");
   let cmdPaste = searchContextMenu.querySelector("[command=cmd_paste]");
 
+  emptyClipboard();
+
   info("Opening context menu");
+  let onFocus = once(searchBox, "focus");
+  searchBox.focus();
+  yield onFocus;
+
   let onContextMenuPopup = once(searchContextMenu, "popupshowing");
   EventUtils.synthesizeMouse(searchBox, 2, 2,
     {type: "contextmenu", button: 2}, win);
@@ -34,10 +40,13 @@ add_task(function* () {
 
   is(cmdUndo.getAttribute("disabled"), "true", "cmdUndo is disabled");
   is(cmdDelete.getAttribute("disabled"), "true", "cmdDelete is disabled");
-  is(cmdSelectAll.getAttribute("disabled"), "", "cmdSelectAll is enabled");
-  is(cmdCut.getAttribute("disabled"), "true", "cmdCut is disabled");
-  is(cmdCopy.getAttribute("disabled"), "true", "cmdCopy is disabled");
-  is(cmdPaste.getAttribute("disabled"), "true", "cmdPaste is disabled");
+  is(cmdSelectAll.getAttribute("disabled"), "true", "cmdSelectAll is disabled");
+
+  // Cut/Copy items are enabled in context menu even if there
+  // is no selection. See also Bug 1303033, and 1317322
+  is(cmdCut.getAttribute("disabled"), "", "cmdCut is enabled");
+  is(cmdCopy.getAttribute("disabled"), "", "cmdCopy is enabled");
+  is(cmdPaste.getAttribute("disabled"), "", "cmdPaste is enabled");
 
   info("Closing context menu");
   let onContextMenuHidden = once(searchContextMenu, "popuphidden");
@@ -45,12 +54,13 @@ add_task(function* () {
   yield onContextMenuHidden;
 
   info("Copy text in search field using the context menu");
-  searchBox.value = TEST_INPUT;
+  searchBox.setUserInput(TEST_INPUT);
   searchBox.select();
+  searchBox.focus();
   EventUtils.synthesizeMouse(searchBox, 2, 2,
     {type: "contextmenu", button: 2}, win);
   yield onContextMenuPopup;
-  yield waitForClipboard(() => cmdCopy.click(), TEST_INPUT);
+  yield waitForClipboardPromise(() => cmdCopy.click(), TEST_INPUT);
   searchContextMenu.hidePopup();
   yield onContextMenuHidden;
 
@@ -65,4 +75,8 @@ add_task(function* () {
   is(cmdCut.getAttribute("disabled"), "", "cmdCut is enabled");
   is(cmdCopy.getAttribute("disabled"), "", "cmdCopy is enabled");
   is(cmdPaste.getAttribute("disabled"), "", "cmdPaste is enabled");
+
+  // We have to wait for search query to avoid test failure.
+  info("Waiting for search query to complete and getting the suggestions");
+  yield inspector.searchSuggestions._lastQuery;
 });

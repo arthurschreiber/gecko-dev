@@ -8,19 +8,19 @@
 
 #include "FFmpegAudioDecoder.h"
 #include "TimeUnits.h"
+#include "VideoUtils.h"
 
 #define MAX_CHANNELS 16
 
-namespace mozilla
-{
+namespace mozilla {
 
 FFmpegAudioDecoder<LIBAV_VER>::FFmpegAudioDecoder(FFmpegLibWrapper* aLib,
-  TaskQueue* aTaskQueue, MediaDataDecoderCallback* aCallback,
-  const AudioInfo& aConfig)
-  : FFmpegDataDecoder(aLib, aTaskQueue, aCallback, GetCodecId(aConfig.mMimeType))
+  TaskQueue* aTaskQueue, const AudioInfo& aConfig)
+  : FFmpegDataDecoder(aLib, aTaskQueue, GetCodecId(aConfig.mMimeType))
 {
   MOZ_COUNT_CTOR(FFmpegAudioDecoder);
-  // Use a new MediaByteBuffer as the object will be modified during initialization.
+  // Use a new MediaByteBuffer as the object will be modified during
+  // initialization.
   if (aConfig.mCodecSpecificConfig && aConfig.mCodecSpecificConfig->Length()) {
     mExtraData = new MediaByteBuffer;
     mExtraData->AppendElements(*aConfig.mCodecSpecificConfig);
@@ -30,10 +30,11 @@ FFmpegAudioDecoder<LIBAV_VER>::FFmpegAudioDecoder(FFmpegLibWrapper* aLib,
 RefPtr<MediaDataDecoder::InitPromise>
 FFmpegAudioDecoder<LIBAV_VER>::Init()
 {
-  nsresult rv = InitDecoder();
+  MediaResult rv = InitDecoder();
 
-  return rv == NS_OK ? InitPromise::CreateAndResolve(TrackInfo::kAudioTrack, __func__)
-                     : InitPromise::CreateAndReject(DecoderFailureReason::INIT_ERROR, __func__);
+  return NS_SUCCEEDED(rv)
+         ? InitPromise::CreateAndResolve(TrackInfo::kAudioTrack, __func__)
+         : InitPromise::CreateAndReject(rv, __func__);
 }
 
 void
@@ -45,9 +46,14 @@ FFmpegAudioDecoder<LIBAV_VER>::InitCodecContext()
   // isn't implemented.
   mCodecContext->thread_count = 1;
   // FFmpeg takes this as a suggestion for what format to use for audio samples.
-  // LibAV 0.8 produces rubbish float interleaved samples, request 16 bits audio.
+  // LibAV 0.8 produces rubbish float interleaved samples, request 16 bits
+  // audio.
+#ifdef MOZ_SAMPLE_TYPE_S16
+  mCodecContext->request_sample_fmt = AV_SAMPLE_FMT_S16;
+#else
   mCodecContext->request_sample_fmt =
     (mLib->mVersion == 53) ? AV_SAMPLE_FMT_S16 : AV_SAMPLE_FMT_FLT;
+#endif
 }
 
 static AlignedAudioBuffer
@@ -60,6 +66,62 @@ CopyAndPackAudio(AVFrame* aFrame, uint32_t aNumChannels, uint32_t aNumAFrames)
     return audio;
   }
 
+#ifdef MOZ_SAMPLE_TYPE_S16
+  if (aFrame->format == AV_SAMPLE_FMT_FLT) {
+    // Audio data already packed. Need to convert from 32 bits Float to S16
+    AudioDataValue* tmp = audio.get();
+    float* data = reinterpret_cast<float**>(aFrame->data)[0];
+    for (uint32_t frame = 0; frame < aNumAFrames; frame++) {
+      for (uint32_t channel = 0; channel < aNumChannels; channel++) {
+        *tmp++ = FloatToAudioSample<int16_t>(*data++);
+      }
+    }
+  } else if (aFrame->format == AV_SAMPLE_FMT_FLTP) {
+    // Planar audio data. Convert it from 32 bits float to S16
+    // and pack it into something we can understand.
+    AudioDataValue* tmp = audio.get();
+    float** data = reinterpret_cast<float**>(aFrame->data);
+    for (uint32_t frame = 0; frame < aNumAFrames; frame++) {
+      for (uint32_t channel = 0; channel < aNumChannels; channel++) {
+        *tmp++ = FloatToAudioSample<int16_t>(data[channel][frame]);
+      }
+    }
+  } else if (aFrame->format == AV_SAMPLE_FMT_S16) {
+    // Audio data already packed. No need to do anything other than copy it
+    // into a buffer we own.
+    memcpy(audio.get(),
+           aFrame->data[0],
+           aNumChannels * aNumAFrames * sizeof(AudioDataValue));
+  } else if (aFrame->format == AV_SAMPLE_FMT_S16P) {
+    // Planar audio data. Pack it into something we can understand.
+    AudioDataValue* tmp = audio.get();
+    AudioDataValue** data = reinterpret_cast<AudioDataValue**>(aFrame->data);
+    for (uint32_t frame = 0; frame < aNumAFrames; frame++) {
+      for (uint32_t channel = 0; channel < aNumChannels; channel++) {
+        *tmp++ = data[channel][frame];
+      }
+    }
+  } else if (aFrame->format == AV_SAMPLE_FMT_S32) {
+    // Audio data already packed. Need to convert from S32 to S16
+    AudioDataValue* tmp = audio.get();
+    int32_t* data = reinterpret_cast<int32_t**>(aFrame->data)[0];
+    for (uint32_t frame = 0; frame < aNumAFrames; frame++) {
+      for (uint32_t channel = 0; channel < aNumChannels; channel++) {
+        *tmp++ = *data++ / (1U<<16);
+      }
+    }
+  } else if (aFrame->format == AV_SAMPLE_FMT_S32P) {
+    // Planar audio data. Convert it from S32 to S16
+    // and pack it into something we can understand.
+    AudioDataValue* tmp = audio.get();
+    int32_t** data = reinterpret_cast<int32_t**>(aFrame->data);
+    for (uint32_t frame = 0; frame < aNumAFrames; frame++) {
+      for (uint32_t channel = 0; channel < aNumChannels; channel++) {
+        *tmp++ = data[channel][frame] / (1U<<16);
+      }
+    }
+  }
+#else
   if (aFrame->format == AV_SAMPLE_FMT_FLT) {
     // Audio data already packed. No need to do anything other than copy it
     // into a buffer we own.
@@ -113,27 +175,36 @@ CopyAndPackAudio(AVFrame* aFrame, uint32_t aNumChannels, uint32_t aNumAFrames)
       }
     }
   }
+#endif
 
   return audio;
 }
 
-FFmpegAudioDecoder<LIBAV_VER>::DecodeResult
-FFmpegAudioDecoder<LIBAV_VER>::DoDecode(MediaRawData* aSample)
+MediaResult
+FFmpegAudioDecoder<LIBAV_VER>::DoDecode(MediaRawData* aSample,
+                                        uint8_t* aData,
+                                        int aSize,
+                                        bool* aGotFrame,
+                                        DecodedData& aResults)
 {
   AVPacket packet;
   mLib->av_init_packet(&packet);
 
-  packet.data = const_cast<uint8_t*>(aSample->Data());
-  packet.size = aSample->Size();
+  packet.data = const_cast<uint8_t*>(aData);
+  packet.size = aSize;
+
+  if (aGotFrame) {
+    *aGotFrame = false;
+  }
 
   if (!PrepareFrame()) {
-    NS_WARNING("FFmpeg audio decoder failed to allocate frame.");
-    return DecodeResult::FATAL_ERROR;
+    return MediaResult(
+      NS_ERROR_OUT_OF_MEMORY,
+      RESULT_DETAIL("FFmpeg audio decoder failed to allocate frame"));
   }
 
   int64_t samplePosition = aSample->mOffset;
-  media::TimeUnit pts = media::TimeUnit::FromMicroseconds(aSample->mTime);
-  bool didOutput = false;
+  media::TimeUnit pts = aSample->mTime;
 
   while (packet.size > 0) {
     int decoded;
@@ -142,66 +213,67 @@ FFmpegAudioDecoder<LIBAV_VER>::DoDecode(MediaRawData* aSample)
 
     if (bytesConsumed < 0) {
       NS_WARNING("FFmpeg audio decoder error.");
-      return DecodeResult::DECODE_ERROR;
-    }
-
-    if (mFrame->format != AV_SAMPLE_FMT_FLT &&
-        mFrame->format != AV_SAMPLE_FMT_FLTP &&
-        mFrame->format != AV_SAMPLE_FMT_S16 &&
-        mFrame->format != AV_SAMPLE_FMT_S16P &&
-        mFrame->format != AV_SAMPLE_FMT_S32 &&
-        mFrame->format != AV_SAMPLE_FMT_S32P) {
-      NS_WARNING("FFmpeg audio decoder outputs unsupported audio format.");
-      return DecodeResult::DECODE_ERROR;
+      return MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
+                         RESULT_DETAIL("FFmpeg audio error:%d", bytesConsumed));
     }
 
     if (decoded) {
+      if (mFrame->format != AV_SAMPLE_FMT_FLT &&
+          mFrame->format != AV_SAMPLE_FMT_FLTP &&
+          mFrame->format != AV_SAMPLE_FMT_S16 &&
+          mFrame->format != AV_SAMPLE_FMT_S16P &&
+          mFrame->format != AV_SAMPLE_FMT_S32 &&
+          mFrame->format != AV_SAMPLE_FMT_S32P) {
+        return MediaResult(
+          NS_ERROR_DOM_MEDIA_DECODE_ERR,
+          RESULT_DETAIL(
+            "FFmpeg audio decoder outputs unsupported audio format"));
+      }
       uint32_t numChannels = mCodecContext->channels;
       AudioConfig::ChannelLayout layout(numChannels);
       if (!layout.IsValid()) {
-        return DecodeResult::FATAL_ERROR;
+        return MediaResult(
+          NS_ERROR_DOM_MEDIA_FATAL_ERR,
+          RESULT_DETAIL("Unsupported channel layout:%u", numChannels));
       }
 
       uint32_t samplingRate = mCodecContext->sample_rate;
 
       AlignedAudioBuffer audio =
         CopyAndPackAudio(mFrame, numChannels, mFrame->nb_samples);
+      if (!audio) {
+        return MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__);
+      }
 
       media::TimeUnit duration =
         FramesToTimeUnit(mFrame->nb_samples, samplingRate);
-      if (!audio || !duration.IsValid()) {
-        NS_WARNING("Invalid count of accumulated audio samples");
-        return DecodeResult::DECODE_ERROR;
+      if (!duration.IsValid()) {
+        return MediaResult(NS_ERROR_DOM_MEDIA_OVERFLOW_ERR,
+                           RESULT_DETAIL("Invalid sample duration"));
       }
 
-      RefPtr<AudioData> data = new AudioData(samplePosition,
-                                             pts.ToMicroseconds(),
-                                             duration.ToMicroseconds(),
-                                             mFrame->nb_samples,
-                                             Move(audio),
-                                             numChannels,
-                                             samplingRate);
-      mCallback->Output(data);
-      didOutput = true;
-      pts += duration;
-      if (!pts.IsValid()) {
-        NS_WARNING("Invalid count of accumulated audio samples");
-        return DecodeResult::DECODE_ERROR;
+      media::TimeUnit newpts = pts + duration;
+      if (!newpts.IsValid()) {
+        return MediaResult(
+          NS_ERROR_DOM_MEDIA_OVERFLOW_ERR,
+          RESULT_DETAIL("Invalid count of accumulated audio samples"));
+      }
+
+      aResults.AppendElement(new AudioData(
+        samplePosition, pts, duration,
+        mFrame->nb_samples, Move(audio), numChannels, samplingRate));
+
+      pts = newpts;
+
+      if (aGotFrame) {
+        *aGotFrame = true;
       }
     }
     packet.data += bytesConsumed;
     packet.size -= bytesConsumed;
     samplePosition += bytesConsumed;
   }
-
-  return didOutput ? DecodeResult::DECODE_FRAME : DecodeResult::DECODE_NO_FRAME;
-}
-
-void
-FFmpegAudioDecoder<LIBAV_VER>::ProcessDrain()
-{
-  ProcessFlush();
-  mCallback->DrainComplete();
+  return NS_OK;
 }
 
 AVCodecID

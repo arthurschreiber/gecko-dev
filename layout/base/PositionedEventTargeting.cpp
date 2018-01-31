@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -127,17 +129,11 @@ GetPrefsFor(EventClassID aEventClassID)
     nsPrintfCString repositionPref("ui.%s.radius.reposition", prefBranch);
     Preferences::AddBoolVarCache(&prefs->mRepositionEventCoords, repositionPref.get(), false);
 
-    nsPrintfCString touchClusterPref("ui.zoomedview.enabled", prefBranch);
-    Preferences::AddBoolVarCache(&prefs->mTouchClusterDetectionEnabled, touchClusterPref.get(), false);
-
-    nsPrintfCString simplifiedClusterDetectionPref("ui.zoomedview.simplified", prefBranch);
-    Preferences::AddBoolVarCache(&prefs->mSimplifiedClusterDetection, simplifiedClusterDetectionPref.get(), false);
-
-    nsPrintfCString limitReadableSizePref("ui.zoomedview.limitReadableSize", prefBranch);
-    Preferences::AddUintVarCache(&prefs->mLimitReadableSize, limitReadableSizePref.get(), 8);
-
-    nsPrintfCString keepLimitSize("ui.zoomedview.keepLimitSize", prefBranch);
-    Preferences::AddUintVarCache(&prefs->mKeepLimitSizeForCluster, keepLimitSize.get(), 16);
+    // These values were formerly set by ui.zoomedview preferences.
+    prefs->mTouchClusterDetectionEnabled = false;
+    prefs->mSimplifiedClusterDetection = false;
+    prefs->mLimitReadableSize = 8;
+    prefs->mKeepLimitSizeForCluster = 16;
   }
 
   return prefs;
@@ -186,7 +182,8 @@ IsDescendant(nsIFrame* aFrame, nsIContent* aAncestor, nsAutoString* aLabelTarget
   for (nsIContent* content = aFrame->GetContent(); content;
        content = content->GetFlattenedTreeParent()) {
     if (aLabelTargetId && content->IsHTMLElement(nsGkAtoms::label)) {
-      content->GetAttr(kNameSpaceID_None, nsGkAtoms::_for, *aLabelTargetId);
+      content->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::_for,
+                                    *aLabelTargetId);
     }
     if (content == aAncestor) {
       return true;
@@ -196,7 +193,7 @@ IsDescendant(nsIFrame* aFrame, nsIContent* aAncestor, nsAutoString* aLabelTarget
 }
 
 static nsIContent*
-GetClickableAncestor(nsIFrame* aFrame, nsIAtom* stopAt = nullptr, nsAutoString* aLabelTargetId = nullptr)
+GetClickableAncestor(nsIFrame* aFrame, nsAtom* stopAt = nullptr, nsAutoString* aLabelTargetId = nullptr)
 {
   // Input events propagate up the content tree so we'll follow the content
   // ancestors to look for elements accepting the click.
@@ -216,7 +213,8 @@ GetClickableAncestor(nsIFrame* aFrame, nsIAtom* stopAt = nullptr, nsAutoString* 
     }
     if (content->IsHTMLElement(nsGkAtoms::label)) {
       if (aLabelTargetId) {
-        content->GetAttr(kNameSpaceID_None, nsGkAtoms::_for, *aLabelTargetId);
+        content->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::_for,
+                                      *aLabelTargetId);
       }
       return content;
     }
@@ -225,10 +223,10 @@ GetClickableAncestor(nsIFrame* aFrame, nsIAtom* stopAt = nullptr, nsAutoString* 
     // So fluffing won't go there. We do an optimistic assumption here:
     // that the content of the remote iframe needs to be a target.
     if (content->IsHTMLElement(nsGkAtoms::iframe) &&
-        content->AttrValueIs(kNameSpaceID_None, nsGkAtoms::mozbrowser,
-                             nsGkAtoms::_true, eIgnoreCase) &&
-        content->AttrValueIs(kNameSpaceID_None, nsGkAtoms::Remote,
-                             nsGkAtoms::_true, eIgnoreCase)) {
+        content->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::mozbrowser,
+                                          nsGkAtoms::_true, eIgnoreCase) &&
+        content->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::Remote,
+                                          nsGkAtoms::_true, eIgnoreCase)) {
       return content;
     }
 
@@ -247,10 +245,11 @@ GetClickableAncestor(nsIFrame* aFrame, nsIAtom* stopAt = nullptr, nsAutoString* 
       return content;
     }
 
-    static nsIContent::AttrValuesArray clickableRoles[] =
+    static Element::AttrValuesArray clickableRoles[] =
       { &nsGkAtoms::button, &nsGkAtoms::key, nullptr };
-    if (content->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::role,
-                                 clickableRoles, eIgnoreCase) >= 0) {
+    if (content->IsElement() &&
+        content->AsElement()->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::role,
+                                              clickableRoles, eIgnoreCase) >= 0) {
       return content;
     }
     if (content->IsEditable()) {
@@ -588,7 +587,7 @@ FindFrameTargetedByInputEvent(WidgetGUIEvent* aEvent,
   // never be targeted --- something nsSubDocumentFrame in an ancestor document
   // would be targeted instead.
   nsIFrame* restrictToDescendants = target ?
-    target->PresContext()->PresShell()->GetRootFrame() : aRootFrame;
+    target->PresShell()->GetRootFrame() : aRootFrame;
 
   nsRect targetRect = GetTargetRect(aRootFrame, aPointRelativeToRootFrame,
                                     restrictToDescendants, prefs, aFlags);

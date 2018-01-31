@@ -10,10 +10,10 @@
 
 const URL = "http://mochi.test:8888/browser/docshell/test/browser/file_bug670318.html";
 
-add_task(function* test() {
-  yield BrowserTestUtils.withNewTab({ gBrowser, url: "about:blank" },
-                                    function* (browser) {
-    yield ContentTask.spawn(browser, URL, function* (URL) {
+add_task(async function test() {
+  await BrowserTestUtils.withNewTab({ gBrowser, url: "about:blank" },
+                                    async function(browser) {
+    await ContentTask.spawn(browser, URL, async function(URL) {
       let history = docShell.QueryInterface(Ci.nsIWebNavigation).sessionHistory;
       let count = 0;
 
@@ -31,6 +31,7 @@ add_task(function* test() {
             }, true);
 
             history.removeSHistoryListener(listener);
+            delete content._testListener;
             content.setTimeout(() => { content.location.reload(); }, 0);
           }
 
@@ -55,8 +56,15 @@ add_task(function* test() {
       };
 
       history.addSHistoryListener(listener);
+      // Since listener implements nsISupportsWeakReference, we are
+      // responsible for keeping it alive so that the GC doesn't clear
+      // it before the test completes. We do this by anchoring the listener
+      // to the content global window, and clearing it just before the test
+      // completes.
+      content._testListener = listener;
       content.location = URL;
-      yield testDone.promise;
+
+      await testDone.promise;
     });
   });
 });

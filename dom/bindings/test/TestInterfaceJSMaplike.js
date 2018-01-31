@@ -7,8 +7,8 @@
 const Cu = Components.utils;
 const Ci = Components.interfaces;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function TestInterfaceJSMaplike() {}
 
@@ -32,7 +32,11 @@ TestInterfaceJSMaplike.prototype = {
 
   clearInternal: function() {
     return this.__DOM_IMPL__.__clear();
-  }
+  },
+
+  __onget: function(key, value) {
+    /* no-op */
+  },
 };
 
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([TestInterfaceJSMaplike])

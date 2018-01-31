@@ -63,6 +63,7 @@ function PeerConnectionTest(options) {
   options.bundle = "bundle" in options ? options.bundle : true;
   options.rtcpmux = "rtcpmux" in options ? options.rtcpmux : true;
   options.opus = "opus" in options ? options.opus : true;
+  options.ssrc = "ssrc" in options ? options.ssrc : true;
 
   if (iceServersArray.length) {
     if (!options.turn_disabled_local) {
@@ -149,7 +150,7 @@ PeerConnectionTest.prototype.closePC = function() {
           return haveEvent(receiver.track, "ended", wait(50000))
             .then(event => {
               is(event.target, receiver.track, "Event target should be the correct track");
-              info("ended fired for track " + receiver.track.id);
+              info(pc + " ended fired for track " + receiver.track.id);
             }, e => e ? Promise.reject(e)
                       : ok(false, "ended never fired for track " +
                                     receiver.track.id));
@@ -172,7 +173,7 @@ PeerConnectionTest.prototype.close = function() {
   var allChannels = (this.pcLocal || this.pcRemote).dataChannels;
   return timerGuard(
     Promise.all(allChannels.map((channel, i) => this.closeDataChannels(i))),
-    60000, "failed to close data channels")
+    120000, "failed to close data channels")
     .then(() => this.closePC());
 };
 
@@ -211,7 +212,7 @@ PeerConnectionTest.prototype.closeDataChannels = function(index) {
     setupClosePromise(localChannel),
     setupClosePromise(remoteChannel)
   ]);
-  var complete = timerGuard(allClosed, 60000, "failed to close data channel pair");
+  var complete = timerGuard(allClosed, 120000, "failed to close data channel pair");
 
   // triggering close on one side should suffice
   if (remoteChannel) {
@@ -334,7 +335,7 @@ PeerConnectionTest.prototype.createOffer = function(peer) {
  *
  * @param {PeerConnectionWrapper} peer
           The peer connection wrapper to run the command on
- * @param {RTCSessionDescription} desc
+ * @param {RTCSessionDescriptionInit} desc
  *        Session description for the local description request
  */
 PeerConnectionTest.prototype.setLocalDescription =
@@ -403,7 +404,7 @@ PeerConnectionTest.prototype.setOfferOptions = function(options) {
  *
  * @param {PeerConnectionWrapper} peer
           The peer connection wrapper to run the command on
- * @param {RTCSessionDescription} desc
+ * @param {RTCSessionDescriptionInit} desc
  *        Session description for the remote description request
  */
 PeerConnectionTest.prototype.setRemoteDescription =
@@ -439,7 +440,7 @@ PeerConnectionTest.prototype.updateChainSteps = function() {
   if (this.testOptions.h264) {
     this.chain.insertAfterEach(
       'PC_LOCAL_CREATE_OFFER',
-      [PC_LOCAL_REMOVE_VP8_FROM_OFFER]);
+      [PC_LOCAL_REMOVE_ALL_BUT_H264_FROM_OFFER]);
   }
   if (!this.testOptions.bundle) {
     this.chain.insertAfterEach(
@@ -450,6 +451,14 @@ PeerConnectionTest.prototype.updateChainSteps = function() {
     this.chain.insertAfterEach(
       'PC_LOCAL_CREATE_OFFER',
       [PC_LOCAL_REMOVE_RTCPMUX_FROM_OFFER]);
+  }
+  if (!this.testOptions.ssrc) {
+    this.chain.insertAfterEach(
+      'PC_LOCAL_CREATE_OFFER',
+      [PC_LOCAL_REMOVE_SSRC_FROM_OFFER]);
+    this.chain.insertAfterEach(
+      'PC_REMOTE_CREATE_ANSWER',
+      [PC_REMOTE_REMOVE_SSRC_FROM_ANSWER]);
   }
   if (!this.testOptions.is_local) {
     this.chain.filterOut(/^PC_LOCAL/);
@@ -752,12 +761,20 @@ function PeerConnectionWrapper(label, configuration) {
   this.remoteMediaElements = [];
   this.audioElementsOnly = false;
 
+  this._sendStreams = [];
+
   this.expectedLocalTrackInfoById = {};
-  this.expectedRemoteTrackInfoById = {};
+  this.expectedSignalledTrackInfoById = {};
   this.observedRemoteTrackInfoById = {};
 
   this.disableRtpCountChecking = false;
 
+  this.iceConnectedResolve;
+  this.iceConnectedReject;
+  this.iceConnected = new Promise((resolve, reject) => {
+    this.iceConnectedResolve = resolve;
+    this.iceConnectedReject = reject;
+  });
   this.iceCheckingRestartExpected = false;
   this.iceCheckingIceRollbackExpected = false;
 
@@ -773,10 +790,23 @@ function PeerConnectionWrapper(label, configuration) {
   this._pc.oniceconnectionstatechange = e => {
     isnot(typeof this._pc.iceConnectionState, "undefined",
           "iceConnectionState should not be undefined");
-    info(this + ": oniceconnectionstatechange fired, new state is: " + this._pc.iceConnectionState);
+    var iceState = this._pc.iceConnectionState;
+    info(this + ": oniceconnectionstatechange fired, new state is: " + iceState);
     Object.keys(this.ice_connection_callbacks).forEach(name => {
       this.ice_connection_callbacks[name]();
     });
+    if (iceState === "connected") {
+      this.iceConnectedResolve();
+    } else if (iceState === "failed") {
+      this.iceConnectedReject();
+    }
+  };
+
+  this._pc.onicegatheringstatechange = e => {
+    isnot(typeof this._pc.iceGatheringState, "undefined",
+          "iceGetheringState should not be undefined");
+    var gatheringState = this._pc.iceGatheringState;
+    info(this + ": onicegatheringstatechange fired, new state is: " + gatheringState);
   };
 
   createOneShotEventWrapper(this, this._pc, 'datachannel');
@@ -790,6 +820,23 @@ function PeerConnectionWrapper(label, configuration) {
 }
 
 PeerConnectionWrapper.prototype = {
+  /**
+   * Returns the senders
+   *
+   * @returns {sequence<RTCRtpSender>} the senders
+   */
+  getSenders: function() {
+    return this._pc.getSenders();
+  },
+
+  /**
+   * Returns the getters
+   *
+   * @returns {sequence<RTCRtpReceiver>} the receivers
+   */
+  getReceivers: function() {
+    return this._pc.getReceivers();
+  },
 
   /**
    * Returns the local description.
@@ -801,32 +848,12 @@ PeerConnectionWrapper.prototype = {
   },
 
   /**
-   * Sets the local description.
-   *
-   * @param {object} desc
-   *        The new local description
-   */
-  set localDescription(desc) {
-    this._pc.localDescription = desc;
-  },
-
-  /**
    * Returns the remote description.
    *
    * @returns {object} The remote description
    */
   get remoteDescription() {
     return this._pc.remoteDescription;
-  },
-
-  /**
-   * Sets the remote description.
-   *
-   * @param {object} desc
-   *        The new remote description
-   */
-  set remoteDescription(desc) {
-    this._pc.remoteDescription = desc;
   },
 
   /**
@@ -850,12 +877,28 @@ PeerConnectionWrapper.prototype = {
     this._pc.setIdentityProvider(provider, protocol, identity);
   },
 
-  ensureMediaElement : function(track, stream, direction) {
-    var element = getMediaElement(this.label, direction, stream.id);
+  elementPrefix : direction =>
+  {
+    return [this.label, direction].join('_');
+  },
 
+  getMediaElementForTrack : function (track, direction)
+  {
+    var prefix = this.elementPrefix(direction);
+    return getMediaElementForTrack(track, prefix);
+  },
+
+  createMediaElementForTrack : function(track, direction)
+  {
+    var prefix = this.elementPrefix(direction);
+    return createMediaElementForTrack(track, prefix);
+  },
+
+  ensureMediaElement : function(track, direction) {
+    var prefix = this.elementPrefix(direction);
+    var element = this.getMediaElementForTrack(track, direction);
     if (!element) {
-      element = createMediaElement(this.label, direction, stream.id,
-                                   this.audioElementsOnly);
+      element = this.createMediaElementForTrack(track, direction);
       if (direction == "local") {
         this.localMediaElements.push(element);
       } else if (direction == "remote") {
@@ -866,8 +909,26 @@ PeerConnectionWrapper.prototype = {
     // We do this regardless, because sometimes we end up with a new stream with
     // an old id (ie; the rollback tests cause the same stream to be added
     // twice)
-    element.srcObject = stream;
+    element.srcObject = new MediaStream([track]);
     element.play();
+  },
+
+  addSendStream : function(stream)
+  {
+    // The PeerConnection will not necessarily know about this stream
+    // automatically, because replaceTrack is not told about any streams the
+    // new track might be associated with. Only content really knows.
+    this._sendStreams.push(stream);
+  },
+
+  getStreamForSendTrack : function(track)
+  {
+    return this._sendStreams.find(str => str.getTrackById(track.id));
+  },
+
+  getStreamForRecvTrack : function(track)
+  {
+    return this._pc.getRemoteStreams().find(s => !!s.getTrackById(track.id));
   },
 
   /**
@@ -896,29 +957,40 @@ PeerConnectionWrapper.prototype = {
       type: track.kind,
       streamId: stream.id,
     };
+    this.expectedSignalledTrackInfoById[track.id] =
+      this.expectedLocalTrackInfoById[track.id];
+
+    this.addSendStream(stream);
 
     // This will create one media element per track, which might not be how
     // we set up things with the RTCPeerConnection. It's the only way
     // we can ensure all sent tracks are flowing however.
-    this.ensureMediaElement(track, new MediaStream([track]), "local");
+    this.ensureMediaElement(track, "local");
 
     return this.observedNegotiationNeeded;
   },
 
   /**
    * Callback when we get local media. Also an appropriate HTML media element
-   * will be created, which may be obtained later with |getMediaElement|.
+   * will be created and added to the content node.
    *
    * @param {MediaStream} stream
    *        Media stream to handle
    */
-  attachLocalStream : function(stream) {
+  attachLocalStream : function(stream, useAddTransceiver) {
     info("Got local media stream: (" + stream.id + ")");
 
     this.expectNegotiationNeeded();
+    if (useAddTransceiver) {
+      info("Using addTransceiver (on PC).");
+      stream.getTracks().forEach(track => {
+        var transceiver = this._pc.addTransceiver(track, {streams: [stream]});
+        is(transceiver.sender.track, track, "addTransceiver returns sender");
+      });
+    }
     // In order to test both the addStream and addTrack APIs, we do half one
     // way, half the other, at random.
-    if (Math.random() < 0.5) {
+    else if (Math.random() < 0.5) {
       info("Using addStream.");
       this._pc.addStream(stream);
       ok(this._pc.getSenders().find(sender => sender.track == stream.getTracks()[0]),
@@ -931,6 +1003,8 @@ PeerConnectionWrapper.prototype = {
       });
     }
 
+    this.addSendStream(stream);
+
     stream.getTracks().forEach(track => {
       ok(track.id, "track has id");
       ok(track.kind, "track has kind");
@@ -938,8 +1012,12 @@ PeerConnectionWrapper.prototype = {
           type: track.kind,
           streamId: stream.id
         };
-      this.ensureMediaElement(track, stream, "local");
+      this.expectedSignalledTrackInfoById[track.id] =
+        this.expectedLocalTrackInfoById[track.id];
+      this.ensureMediaElement(track, "local");
     });
+
+    return this.observedNegotiationNeeded;
   },
 
   removeSender : function(index) {
@@ -950,14 +1028,32 @@ PeerConnectionWrapper.prototype = {
     return this.observedNegotiationNeeded;
   },
 
-  senderReplaceTrack : function(index, withTrack, withStreamId) {
-    var sender = this._pc.getSenders()[index];
+  senderReplaceTrack : function(sender, withTrack, stream) {
     delete this.expectedLocalTrackInfoById[sender.track.id];
     this.expectedLocalTrackInfoById[withTrack.id] = {
         type: withTrack.kind,
-        streamId: withStreamId
+        streamId: stream.id
       };
+    this.addSendStream(stream);
+    this.ensureMediaElement(withTrack, 'local');
     return sender.replaceTrack(withTrack);
+  },
+
+  getUserMedia : async function(constraints) {
+    var stream = await getUserMedia(constraints);
+    if (constraints.audio) {
+      stream.getAudioTracks().forEach(track => {
+        info(this + " gUM local stream " + stream.id +
+          " with audio track " + track.id);
+      });
+    }
+    if (constraints.video) {
+      stream.getVideoTracks().forEach(track => {
+        info(this + " gUM local stream " + stream.id +
+          " with video track " + track.id);
+      });
+    }
+    return stream;
   },
 
   /**
@@ -973,23 +1069,25 @@ PeerConnectionWrapper.prototype = {
     }
 
     info("Get " + constraintsList.length + " local streams");
-    return Promise.all(constraintsList.map(constraints => {
-      return getUserMedia(constraints).then(stream => {
-        if (constraints.audio) {
-          stream.getAudioTracks().map(track => {
-            info(this + " gUM local stream " + stream.id +
-              " with audio track " + track.id);
-          });
-        }
-        if (constraints.video) {
-          stream.getVideoTracks().map(track => {
-            info(this + " gUM local stream " + stream.id +
-              " with video track " + track.id);
-          });
-        }
-        return this.attachLocalStream(stream);
-      });
-    }));
+    return Promise.all(
+      constraintsList.map(constraints => this.getUserMedia(constraints))
+    );
+  },
+
+  getAllUserMediaAndAddStreams : async function(constraintsList) {
+    var streams = await this.getAllUserMedia(constraintsList);
+    if (!streams) {
+      return;
+    }
+    return Promise.all(streams.map(stream => this.attachLocalStream(stream)));
+  },
+
+  getAllUserMediaAndAddTransceivers : async function(constraintsList) {
+    var streams = await this.getAllUserMedia(constraintsList);
+    if (!streams) {
+      return;
+    }
+    return Promise.all(streams.map(stream => this.attachLocalStream(stream, true)));
   },
 
   /**
@@ -1052,7 +1150,7 @@ PeerConnectionWrapper.prototype = {
    * Sets the local description and automatically handles the failure case.
    *
    * @param {object} desc
-   *        RTCSessionDescription for the local description request
+   *        RTCSessionDescriptionInit for the local description request
    */
   setLocalDescription : function(desc) {
     this.observedNegotiationNeeded = undefined;
@@ -1066,7 +1164,7 @@ PeerConnectionWrapper.prototype = {
    * causes the test case to fail if the call succeeds.
    *
    * @param {object} desc
-   *        RTCSessionDescription for the local description request
+   *        RTCSessionDescriptionInit for the local description request
    * @returns {Promise}
    *        A promise that resolves to the expected error
    */
@@ -1083,7 +1181,7 @@ PeerConnectionWrapper.prototype = {
    * Sets the remote description and automatically handles the failure case.
    *
    * @param {object} desc
-   *        RTCSessionDescription for the remote description request
+   *        RTCSessionDescriptionInit for the remote description request
    */
   setRemoteDescription : function(desc) {
     this.observedNegotiationNeeded = undefined;
@@ -1103,7 +1201,7 @@ PeerConnectionWrapper.prototype = {
    * causes the test case to fail if the call succeeds.
    *
    * @param {object} desc
-   *        RTCSessionDescription for the remote description request
+   *        RTCSessionDescriptionInit for the remote description request
    * @returns {Promise}
    *        a promise that resolve to the returned error
    */
@@ -1139,37 +1237,58 @@ PeerConnectionWrapper.prototype = {
    * is of the correct type. Then, moves the track from
    * |expectedTrackInfoById| to |observedTrackInfoById|.
    */
-  checkTrackIsExpected : function(track,
+  checkTrackIsExpected : function(trackId,
+                                  kind,
                                   expectedTrackInfoById,
                                   observedTrackInfoById) {
-    ok(expectedTrackInfoById[track.id], "track id " + track.id + " was expected");
-    ok(!observedTrackInfoById[track.id], "track id " + track.id + " was not yet observed");
-    var observedKind = track.kind;
-    var expectedKind = expectedTrackInfoById[track.id].type;
+    ok(expectedTrackInfoById[trackId], "track id " + trackId + " was expected");
+    ok(!observedTrackInfoById[trackId], "track id " + trackId + " was not yet observed");
+    var observedKind = kind;
+    var expectedKind = expectedTrackInfoById[trackId].type;
     is(observedKind, expectedKind,
-        "track id " + track.id + " was of kind " +
+        "track id " + trackId + " was of kind " +
         observedKind + ", which matches " + expectedKind);
-    observedTrackInfoById[track.id] = expectedTrackInfoById[track.id];
+    observedTrackInfoById[trackId] = expectedTrackInfoById[trackId];
   },
 
   isTrackOnPC: function(track) {
-    return this._pc.getRemoteStreams().some(s => !!s.getTrackById(track.id));
+    return !!this.getStreamForRecvTrack(track);
   },
 
   allExpectedTracksAreObserved: function(expected, observed) {
     return Object.keys(expected).every(trackId => observed[trackId]);
   },
 
+  getWebrtcTrackId: function(receiveTrack) {
+    let matchingTransceiver = this._pc.getTransceivers().find(
+        transceiver => transceiver.receiver.track == receiveTrack);
+    if (!matchingTransceiver) {
+      return null;
+    }
+
+    return matchingTransceiver.getRemoteTrackId();
+  },
+
   setupTrackEventHandler: function() {
     this._pc.addEventListener('track', event => {
-      info(this + ": 'ontrack' event fired for " + JSON.stringify(event.track));
+      info(this + ": 'ontrack' event fired for " + event.track.id +
+                  "(SDP msid is " + this.getWebrtcTrackId(event.track) +
+                  ")");
 
-      this.checkTrackIsExpected(event.track,
-                                this.expectedRemoteTrackInfoById,
-                                this.observedRemoteTrackInfoById);
+      // TODO(bug 1403238): Checking for remote tracks needs to be completely
+      // reworked, because with the latest spec the identifiers aren't the same
+      // as they are on the other end. Ultimately, what we need to check is
+      // whether the _transceivers_ are in line with what is expected, and
+      // whether the callbacks are consistent with the transceivers.
+      let trackId = this.getWebrtcTrackId(event.track);
+      ok(!this.observedRemoteTrackInfoById[trackId],
+         "track id " + trackId + " was not yet observed");
+      this.observedRemoteTrackInfoById[trackId] = {
+        type: event.track.kind
+      };
       ok(this.isTrackOnPC(event.track), "Found track " + event.track.id);
 
-      this.ensureMediaElement(event.track, event.streams[0], 'remote');
+      this.ensureMediaElement(event.track, 'remote');
     });
   },
 
@@ -1199,45 +1318,6 @@ PeerConnectionWrapper.prototype = {
       //       of sRD() this should never ever happen.
       ok(false, this + " adding ICE candidate failed with: " + e.message)
     );
-  },
-
-  /**
-   * Returns if the ICE the connection state is "connected".
-   *
-   * @returns {boolean} True if the connection state is "connected", otherwise false.
-   */
-  isIceConnected : function() {
-    info(this + ": iceConnectionState = " + this.iceConnectionState);
-    return this.iceConnectionState === "connected";
-  },
-
-  /**
-   * Returns if the ICE the connection state is "checking".
-   *
-   * @returns {boolean} True if the connection state is "checking", otherwise false.
-   */
-  isIceChecking : function() {
-    return this.iceConnectionState === "checking";
-  },
-
-  /**
-   * Returns if the ICE the connection state is "new".
-   *
-   * @returns {boolean} True if the connection state is "new", otherwise false.
-   */
-  isIceNew : function() {
-    return this.iceConnectionState === "new";
-  },
-
-  /**
-   * Checks if the ICE connection state still waits for a connection to get
-   * established.
-   *
-   * @returns {boolean} True if the connection state is "checking" or "new",
-   *  otherwise false.
-   */
-  isIceConnectionPending : function() {
-    return (this.isIceChecking() || this.isIceNew());
   },
 
   /**
@@ -1271,24 +1351,25 @@ PeerConnectionWrapper.prototype = {
   },
 
   /**
-   * Registers a callback for the ICE connection state change and
-   * reports success (=connected) or failure via the callbacks.
-   * States "new" and "checking" are ignored.
+   * Resets the ICE connected Promise and allows ICE connection state monitoring
+   * to go backwards to 'checking'.
+   */
+  expectIceChecking : function() {
+    this.iceCheckingRestartExpected = true;
+    this.iceConnected = new Promise((resolve, reject) => {
+      this.iceConnectedResolve = resolve;
+      this.iceConnectedReject = reject;
+    });
+  },
+
+  /**
+   * Waits for ICE to either connect or fail.
    *
    * @returns {Promise}
    *          resolves when connected, rejects on failure
    */
   waitForIceConnected : function() {
-    return new Promise((resolve, reject) =>
-        this.ice_connection_callbacks.waitForIceConnected = () => {
-      if (this.isIceConnected()) {
-        delete this.ice_connection_callbacks.waitForIceConnected;
-        resolve();
-      } else if (!this.isIceConnectionPending()) {
-        delete this.ice_connection_callbacks.waitForIceConnected;
-        reject(new Error('ICE failed'));
-      }
-    });
+    return this.iceConnected;
   },
 
   /**
@@ -1310,11 +1391,8 @@ PeerConnectionWrapper.prototype = {
         this._pc.onicecandidate = () =>
           ok(false, this.label + " received ICE candidate after end of trickle");
         info(this.label + ": received end of trickle ICE event");
-        /* Bug 1193731. Accroding to WebRTC spec 4.3.1 the ICE Agent first sets
-         * the gathering state to completed (step 3.) before sending out the
-         * null newCandidate in step 4. */
-        todo(this._pc.iceGatheringState === 'completed',
-           "ICE gathering state has reached completed");
+        ok(this._pc.iceGatheringState === 'complete',
+           "ICE gathering state has reached complete");
         resolveEndOfTrickle(this.label);
         return;
       }
@@ -1340,7 +1418,12 @@ PeerConnectionWrapper.prototype = {
     var observed = {};
     info(this + " Checking local tracks " + JSON.stringify(this.expectedLocalTrackInfoById));
     this._pc.getSenders().forEach(sender => {
-      this.checkTrackIsExpected(sender.track, this.expectedLocalTrackInfoById, observed);
+      if (sender.track) {
+        this.checkTrackIsExpected(sender.track.id,
+                                  sender.track.kind,
+                                  this.expectedLocalTrackInfoById,
+                                  observed);
+      }
     });
 
     Object.keys(this.expectedLocalTrackInfoById).forEach(
@@ -1352,15 +1435,6 @@ PeerConnectionWrapper.prototype = {
    */
   checkMediaTracks : function() {
     this.checkLocalMediaTracks();
-
-    info(this + " Checking remote tracks " +
-         JSON.stringify(this.expectedRemoteTrackInfoById));
-
-    ok(this.allExpectedTracksAreObserved(this.expectedRemoteTrackInfoById,
-                                         this.observedRemoteTrackInfoById),
-       "All expected tracks have been observed"
-       + "\nexpected: " + JSON.stringify(this.expectedRemoteTrackInfoById)
-       + "\nobserved: " + JSON.stringify(this.observedRemoteTrackInfoById));
   },
 
   checkMsids: function() {
@@ -1373,10 +1447,8 @@ PeerConnectionWrapper.prototype = {
       });
     };
 
-    checkSdpForMsids(this.localDescription, this.expectedLocalTrackInfoById,
+    checkSdpForMsids(this.localDescription, this.expectedSignalledTrackInfoById,
                      "local");
-    checkSdpForMsids(this.remoteDescription, this.expectedRemoteTrackInfoById,
-                     "remote");
   },
 
   markRemoteTracksAsNegotiated: function() {
@@ -1394,45 +1466,42 @@ PeerConnectionWrapper.prototype = {
   },
 
   /**
-   * Check that media flow is present on the given media element by waiting for
-   * it to reach ready state HAVE_ENOUGH_DATA and progress time further than
-   * the start of the check.
+   * Check that media flow is present for the given media element by checking
+   * that it reaches ready state HAVE_ENOUGH_DATA and progresses time further
+   * than the start of the check.
    *
    * This ensures, that the stream being played is producing
-   * data and that at least one video frame has been displayed.
+   * data and, in case it contains a video track, that at least one video frame
+   * has been displayed.
    *
-   * @param {object} element
-   *        A media element to wait for data flow on.
+   * @param {HTMLMediaElement} track
+   *        The media element to check
    * @returns {Promise}
-   *        A promise that resolves when media is flowing.
+   *        A promise that resolves when media data is flowing.
    */
   waitForMediaElementFlow : function(element) {
-    return new Promise(resolve => {
-      info("Checking data flow to element: " + element.id);
-      if (element.ended && element.readyState >= element.HAVE_CURRENT_DATA) {
-        resolve();
-        return;
-      }
-      var haveEnoughData = false;
-      var oncanplay = () => {
-        info("Element " + element.id + " saw 'canplay', " +
-             "meaning HAVE_ENOUGH_DATA was just reached.");
-        haveEnoughData = true;
-        element.removeEventListener("canplay", oncanplay);
-      };
-      var ontimeupdate = () => {
-        info("Element " + element.id + " saw 'timeupdate'" +
-             ", currentTime=" + element.currentTime +
-             "s, readyState=" + element.readyState);
-        if (haveEnoughData || element.readyState == element.HAVE_ENOUGH_DATA) {
-          element.removeEventListener("timeupdate", ontimeupdate);
-          ok(true, "Media flowing for element: " + element.id);
-          resolve();
-        }
-      };
-      element.addEventListener("canplay", oncanplay);
-      element.addEventListener("timeupdate", ontimeupdate);
-    });
+    info("Checking data flow for element: " + element.id);
+    is(element.ended, !element.srcObject.active,
+       "Element ended should be the inverse of the MediaStream's active state");
+    if (element.ended) {
+      is(element.readyState, element.HAVE_CURRENT_DATA,
+         "Element " + element.id + " is ended and should have had data");
+      return Promise.resolve();
+    }
+
+    const haveEnoughData = (element.readyState == element.HAVE_ENOUGH_DATA ?
+        Promise.resolve() :
+        haveEvent(element, "canplay", wait(60000,
+            new Error("Timeout for element " + element.id))))
+      .then(_ => info("Element " + element.id + " has enough data."));
+
+    const startTime = element.currentTime;
+    const timeProgressed = timeout(
+        listenUntil(element, "timeupdate", _ => element.currentTime > startTime),
+        60000, "Element " + element.id + " should progress currentTime")
+      .then();
+
+    return Promise.all([haveEnoughData, timeProgressed]);
   },
 
   /**
@@ -1441,29 +1510,76 @@ PeerConnectionWrapper.prototype = {
    * @param {object} track
    *        A MediaStreamTrack to wait for data flow on.
    * @returns {Promise}
-   *        A promise that resolves when media is flowing.
+   *        Returns a promise which yields a StatsReport object with RTP stats.
    */
-  waitForRtpFlow(track) {
-    var hasFlow = stats => {
-      var rtp = stats.get([...stats.keys()].find(key =>
-        !stats.get(key).isRemote && stats.get(key).type.endsWith("boundrtp")));
-      ok(rtp, "Should have RTP stats for track " + track.id);
+  async waitForRtpFlow(track) {
+    info("waitForRtpFlow("+track.id+")");
+    let hasFlow = (stats, retries) => {
+      info("Checking for stats in " + JSON.stringify(stats) + " for " + track.kind
+        + " track " + track.id + ", retry number " + retries);
+      let rtp = stats.get([...Object.keys(stats)].find(key =>
+        !stats.get(key).isRemote && stats.get(key).type.endsWith("bound-rtp")));
       if (!rtp) {
         return false;
       }
-      var nrPackets = rtp[rtp.type == "outboundrtp" ? "packetsSent"
+      info("Should have RTP stats for track " + track.id);
+      info("RTP stats: " + JSON.stringify(rtp));
+      let nrPackets = rtp[rtp.type == "outbound-rtp" ? "packetsSent"
                                                     : "packetsReceived"];
       info("Track " + track.id + " has " + nrPackets + " " +
            rtp.type + " RTP packets.");
       return nrPackets > 0;
     };
 
-    info("Checking RTP packet flow for track " + track.id);
+    // Time between stats checks
+    const retryInterval = 500;
+    // Timeout in ms
+    const timeout = 30000;
+    let retry = 0;
+    // Check hasFlow at a reasonable interval
+    for (let remaining = timeout; remaining >= 0; remaining -= retryInterval) {
+      let stats = await this._pc.getStats(track);
+      if (hasFlow(stats, retry++)) {
+        ok(true, "RTP flowing for " + track.kind + " track " + track.id);
+        return stats;
+      }
+      await wait(retryInterval);
+    }
+    throw new Error("Timeout checking for stats for track " + track.id
+                    + " after at least" + timeout + "ms");
+  },
 
-    var retry = (delay) => this._pc.getStats(track)
-      .then(stats => hasFlow(stats)? ok(true, "RTP flowing for track " + track.id) :
-            wait(delay).then(retry(1000)));
-    return retry(200);
+  getExpectedActiveReceiveTracks : function() {
+    return this._pc.getTransceivers()
+      .filter(t => {
+        return !t.stopped &&
+               t.currentDirection &&
+               (t.currentDirection != "inactive") &&
+               (t.currentDirection != "sendonly");
+      })
+      .map(t => {
+        info("Found transceiver that should be receiving RTP: mid=" + t.mid +
+             " currentDirection=" + t.currentDirection + " kind=" +
+             t.receiver.track.kind + " track-id=" + t.receiver.track.id);
+        return t.receiver.track;
+      });
+  },
+
+  getExpectedSendTracks : function() {
+    return Object.keys(this.expectedLocalTrackInfoById)
+              .map(id => this.findSendTrackByWebrtcId(id));
+  },
+
+  findReceiveTrackByWebrtcId : function(webrtcId) {
+    return this._pc.getReceivers().map(receiver => receiver.track)
+              .find(track => this.getWebrtcTrackId(track) == webrtcId);
+  },
+
+  // Send tracks use the same identifiers that go in the signaling
+  findSendTrackByWebrtcId : function(webrtcId) {
+    return this._pc.getSenders().map(sender => sender.track)
+              .filter(track => track) // strip out null
+              .find(track => track.id == webrtcId);
   },
 
   /**
@@ -1476,61 +1592,164 @@ PeerConnectionWrapper.prototype = {
   waitForMediaFlow : function() {
     return Promise.all([].concat(
       this.localMediaElements.map(element => this.waitForMediaElementFlow(element)),
-      this.remoteMediaElements.map(element => this.waitForMediaElementFlow(element)),
-      this._pc.getSenders().map(sender => this.waitForRtpFlow(sender.track)),
-      this._pc.getReceivers().map(receiver => this.waitForRtpFlow(receiver.track))));
+      this.remoteMediaElements.filter(elem =>
+          this.getExpectedActiveReceiveTracks()
+            .some(track => elem.srcObject.getTracks().some(t => t == track))
+        )
+        .map(elem => this.waitForMediaElementFlow(elem)),
+      this.getExpectedActiveReceiveTracks().map(track => this.waitForRtpFlow(track)),
+      this.getExpectedSendTracks().map(track => this.waitForRtpFlow(track))));
+  },
+
+  async waitForSyncedRtcp() {
+    // Ensures that RTCP is present
+    let ensureSyncedRtcp = async () => {
+      let report = await this._pc.getStats();
+      for (let [k, v] of report) {
+        if (v.type.endsWith("bound-rtp") && !v.remoteId) {
+          info(v.id + " is missing remoteId: " + JSON.stringify(v));
+          return null;
+        }
+        if (v.type == "inbound-rtp" && v.isRemote == true
+            && v.roundTripTime === undefined) {
+          info(v.id + " is missing roundTripTime: " + JSON.stringify(v));
+          return null;
+        }
+      }
+      return report;
+    }
+    let attempts = 0;
+    // Time-units are MS
+    const waitPeriod = 500;
+    const maxTime = 15000;
+    for (let totalTime = maxTime; totalTime > 0; totalTime -= waitPeriod) {
+      try {
+        let syncedStats = await ensureSyncedRtcp();
+        if (syncedStats) {
+          return syncedStats;
+        }
+      } catch (e) {
+          info(e);
+          info(e.stack);
+          throw e;
+      }
+      attempts += 1;
+      info("waitForSyncedRtcp: no synced RTCP on attempt" + attempts
+           + ", retrying.\n");
+      await wait(waitPeriod);
+    }
+    throw Error("Waiting for synced RTCP timed out after at least "
+                + maxTime + "ms");
   },
 
   /**
    * Check that correct audio (typically a flat tone) is flowing to this
-   * PeerConnection. Uses WebAudio AnalyserNodes to compare input and output
-   * audio data in the frequency domain.
+   * PeerConnection for each transceiver that should be receiving. Uses
+   * WebAudio AnalyserNodes to compare input and output audio data in the
+   * frequency domain.
    *
    * @param {object} from
    *        A PeerConnectionWrapper whose audio RTPSender we use as source for
    *        the audio flow check.
    * @returns {Promise}
-   *        A promise that resolves when we're receiving the tone from |from|.
+   *        A promise that resolves when we're receiving the tone/s from |from|.
    */
-  checkReceivingToneFrom : function(audiocontext, from) {
-    var inputElem = from.localMediaElements[0];
+  checkReceivingToneFrom : async function(audiocontext, from,
+      cancel = wait(60000, new Error("Tone not detected"))) {
+    let localTransceivers = this._pc.getTransceivers()
+      .filter(t => t.mid)
+      .filter(t => t.receiver.track.kind == "audio")
+      .sort((t1, t2) => t1.mid < t2.mid);
+    let remoteTransceivers = from._pc.getTransceivers()
+      .filter(t => t.mid)
+      .filter(t => t.receiver.track.kind == "audio")
+      .sort((t1, t2) => t1.mid < t2.mid);
 
-    // As input we use the stream of |from|'s first available audio sender.
-    var inputSenderTracks = from._pc.getSenders().map(sn => sn.track);
-    var inputAudioStream = from._pc.getLocalStreams()
-      .find(s => inputSenderTracks.some(t => t.kind == "audio" && s.getTrackById(t.id)));
-    var inputAnalyser = new AudioStreamAnalyser(audiocontext, inputAudioStream);
+    is(localTransceivers.length, remoteTransceivers.length,
+       "Same number of associated audio transceivers on remote and local.");
 
-    // It would have been nice to have a working getReceivers() here, but until
-    // we do, let's use what remote streams we have.
-    var outputAudioStream = this._pc.getRemoteStreams()
-      .find(s => s.getAudioTracks().length > 0);
-    var outputAnalyser = new AudioStreamAnalyser(audiocontext, outputAudioStream);
+    for (let i = 0; i < localTransceivers.length; i++) {
+      is(localTransceivers[i].mid, remoteTransceivers[i].mid,
+         "Transceivers at index " + i + " have the same mid.");
 
-    var maxWithIndex = (a, b, i) => (b >= a.value) ? { value: b, index: i } : a;
-    var initial = { value: -1, index: -1 };
-
-    return new Promise((resolve, reject) => inputElem.ontimeupdate = () => {
-      var inputData = inputAnalyser.getByteFrequencyData();
-      var outputData = outputAnalyser.getByteFrequencyData();
-
-      var inputMax = inputData.reduce(maxWithIndex, initial);
-      var outputMax = outputData.reduce(maxWithIndex, initial);
-      info("Comparing maxima; input[" + inputMax.index + "] = " + inputMax.value +
-           ", output[" + outputMax.index + "] = " + outputMax.value);
-      if (!inputMax.value || !outputMax.value) {
-        return;
+      if (!remoteTransceivers[i].sender.track) {
+        continue;
       }
 
-      // When the input and output maxima are within reasonable distance
-      // from each other, we can be sure that the input tone has made it
-      // through the peer connection.
-      if (Math.abs(inputMax.index - outputMax.index) < 10) {
-        ok(true, "input and output audio data matches");
-        inputElem.ontimeupdate = null;
-        resolve();
+      if (remoteTransceivers[i].currentDirection == "recvonly" ||
+          remoteTransceivers[i].currentDirection == "inactive") {
+        continue;
       }
-    });
+
+      let sendTrack = remoteTransceivers[i].sender.track;
+      let inputElem = from.getMediaElementForTrack(sendTrack, "local");
+      ok(inputElem,
+         "Remote wrapper should have a media element for track id " +
+         sendTrack.id);
+      let inputAudioStream = from.getStreamForSendTrack(sendTrack);
+      ok(inputAudioStream,
+         "Remote wrapper should have a stream for track id " + sendTrack.id);
+      let inputAnalyser =
+        new AudioStreamAnalyser(audiocontext, inputAudioStream);
+
+      let recvTrack = localTransceivers[i].receiver.track;
+      let outputAudioStream = this.getStreamForRecvTrack(recvTrack);
+      ok(outputAudioStream,
+         "Local wrapper should have a stream for track id " + recvTrack.id);
+      let outputAnalyser =
+        new AudioStreamAnalyser(audiocontext, outputAudioStream);
+
+      let error = null;
+      cancel.then(e => error = e);
+
+      let indexOfMax = data =>
+        data.reduce((max, val, i) => (val >= data[max]) ? i : max, 0);
+
+      await outputAnalyser.waitForAnalysisSuccess(() => {
+        if (error) {
+          throw error;
+        }
+
+        let inputData = inputAnalyser.getByteFrequencyData();
+        let outputData = outputAnalyser.getByteFrequencyData();
+
+        let inputMax = indexOfMax(inputData);
+        let outputMax = indexOfMax(outputData);
+        info(`Comparing maxima; input[${inputMax}] = ${inputData[inputMax]},`
+          + ` output[${outputMax}] = ${outputData[outputMax]}`);
+        if (!inputData[inputMax] || !outputData[outputMax]) {
+          return false;
+        }
+
+        // When the input and output maxima are within reasonable distance (2% of
+        // total length, which means ~10 for length 512) from each other, we can
+        // be sure that the input tone has made it through the peer connection.
+        info(`input data length: ${inputData.length}`);
+        return Math.abs(inputMax - outputMax) < (inputData.length * 0.02);
+      });
+    }
+  },
+
+  /**
+   * Get stats from the "legacy" getStats callback interface
+   */
+  getStatsLegacy : function(selector, onSuccess, onFail) {
+    let wrapper = stats => {
+      info(this + ": Got legacy stats: " + JSON.stringify(stats));
+      onSuccess(stats);
+    };
+    return this._pc.getStats(selector, wrapper, onFail);
+  },
+
+  /**
+   * Check that the stats returned from the "legacy" getStats callback
+   * interface have unhyphenated names.
+   */
+  checkLegacyStatTypeNames: function(stats) {
+    let types = [];
+    stats.forEach(stat => types.push(stat.type));
+    ok(types.filter(type => type.includes("-")).length == 0,
+       "legacy getStats API is not returning stats with hyphenated types.");
   },
 
   /**
@@ -1556,13 +1775,16 @@ PeerConnectionWrapper.prototype = {
     // Use spec way of enumerating stats
     var counters = {};
     for (let [key, res] of stats) {
+      info("Checking stats for " + key + " : " + res);
       // validate stats
       ok(res.id == key, "Coherent stats id");
       var nowish = Date.now() + 1000;        // TODO: clock drift observed
       var minimum = this.whenCreated - 1000; // on Windows XP (Bug 979649)
       if (isWinXP) {
         todo(false, "Can't reliably test rtcp timestamps on WinXP (Bug 979649)");
-      } else if (!twoMachines) {
+
+      } else if (false) { // Bug 1325430 - timestamps aren't working properly in update 49
+	// else if (!twoMachines) {
         // Bug 1225729: On android, sometimes the first RTCP of the first
         // test run gets this value, likely because no RTP has been sent yet.
         if (res.timestamp != 2085978496000) {
@@ -1585,15 +1807,21 @@ PeerConnectionWrapper.prototype = {
       counters[res.type] = (counters[res.type] || 0) + 1;
 
       switch (res.type) {
-        case "inboundrtp":
-        case "outboundrtp": {
-          // ssrc is a 32 bit number returned as a string by spec
-          ok(res.ssrc.length > 0, "Ssrc has length");
-          ok(res.ssrc.length < 11, "Ssrc not lengthy");
-          ok(!/[^0-9]/.test(res.ssrc), "Ssrc numeric");
-          ok(parseInt(res.ssrc) < Math.pow(2,32), "Ssrc within limits");
+        case "inbound-rtp":
+        case "outbound-rtp": {
+          // Inbound tracks won't have an ssrc if RTP is not flowing.
+          // (eg; negotiated inactive)
+          ok(res.ssrc || res.type == "inbound-rtp", "Outbound RTP stats has an ssrc.");
 
-          if (res.type == "outboundrtp") {
+          if (res.ssrc) {
+            // ssrc is a 32 bit number returned as a string by spec
+            ok(res.ssrc.length > 0, "Ssrc has length");
+            ok(res.ssrc.length < 11, "Ssrc not lengthy");
+            ok(!/[^0-9]/.test(res.ssrc), "Ssrc numeric");
+            ok(parseInt(res.ssrc) < Math.pow(2,32), "Ssrc within limits");
+          }
+
+          if (res.type == "outbound-rtp") {
             ok(res.packetsSent !== undefined, "Rtp packetsSent");
             // We assume minimum payload to be 1 byte (guess from RFC 3550)
             ok(res.bytesSent >= res.packetsSent, "Rtp bytesSent");
@@ -1602,24 +1830,36 @@ PeerConnectionWrapper.prototype = {
             ok(res.bytesReceived >= res.packetsReceived, "Rtp bytesReceived");
           }
           if (res.remoteId) {
-            var rem = stats[res.remoteId];
+            var rem = stats.get(res.remoteId);
             ok(rem.isRemote, "Remote is rtcp");
             ok(rem.remoteId == res.id, "Remote backlink match");
-            if(res.type == "outboundrtp") {
-              ok(rem.type == "inboundrtp", "Rtcp is inbound");
+            if(res.type == "outbound-rtp") {
+              ok(rem.type == "inbound-rtp", "Rtcp is inbound");
               ok(rem.packetsReceived !== undefined, "Rtcp packetsReceived");
               ok(rem.packetsLost !== undefined, "Rtcp packetsLost");
               ok(rem.bytesReceived >= rem.packetsReceived, "Rtcp bytesReceived");
-              if (!this.disableRtpCountChecking) {
-                ok(rem.packetsReceived <= res.packetsSent, "No more than sent packets");
+	       if (false) { // Bug 1325430 if (!this.disableRtpCountChecking) {
+	       // no guarantee which one is newer!
+	       // Note: this must change when we add a timestamp field to remote RTCP reports
+	       // and make rem.timestamp be the reception time
+		if (res.timestamp >= rem.timestamp) {
+                 ok(rem.packetsReceived <= res.packetsSent, "No more than sent packets");
+		 } else {
+                  info("REVERSED timestamps: rec:" +
+		     rem.packetsReceived + " time:" + rem.timestamp + " sent:" + res.packetsSent + " time:" + res.timestamp);
+		 }
+		// Else we may have received more than outdated Rtcp packetsSent
                 ok(rem.bytesReceived <= res.bytesSent, "No more than sent bytes");
               }
               ok(rem.jitter !== undefined, "Rtcp jitter");
-              ok(rem.mozRtt !== undefined, "Rtcp rtt");
-              ok(rem.mozRtt >= 0, "Rtcp rtt " + rem.mozRtt + " >= 0");
-              ok(rem.mozRtt < 60000, "Rtcp rtt " + rem.mozRtt + " < 1 min");
+              if (rem.roundTripTime) {
+                ok(rem.roundTripTime > 0,
+                   "Rtcp rtt " + rem.roundTripTime + " >= 0");
+                ok(rem.roundTripTime < 60000,
+                   "Rtcp rtt " + rem.roundTripTime + " < 1 min");
+              }
             } else {
-              ok(rem.type == "outboundrtp", "Rtcp is outbound");
+              ok(rem.type == "outbound-rtp", "Rtcp is outbound");
               ok(rem.packetsSent !== undefined, "Rtcp packetsSent");
               // We may have received more than outdated Rtcp packetsSent
               ok(rem.bytesSent >= rem.packetsSent, "Rtcp bytesSent");
@@ -1633,6 +1873,13 @@ PeerConnectionWrapper.prototype = {
       }
     }
 
+    var legacyToSpecMapping = {
+      'inboundrtp':'inbound-rtp',
+      'outboundrtp':'outbound-rtp',
+      'candidatepair':'candidate-pair',
+      'localcandidate':'local-candidate',
+      'remotecandidate':'remote-candidate'
+    };
     // Use legacy way of enumerating stats
     var counters2 = {};
     for (let key in stats) {
@@ -1640,31 +1887,37 @@ PeerConnectionWrapper.prototype = {
         continue;
       }
       var res = stats[key];
+      var type = legacyToSpecMapping[res.type] || res.type;
       if (!res.isRemote) {
-        counters2[res.type] = (counters2[res.type] || 0) + 1;
+        counters2[type] = (counters2[type] || 0) + 1;
       }
     }
     is(JSON.stringify(counters), JSON.stringify(counters2),
        "Spec and legacy variant of RTCStatsReport enumeration agree");
-    var nin = Object.keys(this.expectedRemoteTrackInfoById).length;
+    var nin = this._pc.getTransceivers()
+      .filter(t => {
+        return !t.stopped &&
+               (t.currentDirection != "inactive") &&
+               (t.currentDirection != "sendonly");
+      }).length;
     var nout = Object.keys(this.expectedLocalTrackInfoById).length;
     var ndata = this.dataChannels.length;
 
-    // TODO(Bug 957145): Restore stronger inboundrtp test once Bug 948249 is fixed
-    //is((counters["inboundrtp"] || 0), nin, "Have " + nin + " inboundrtp stat(s)");
-    ok((counters.inboundrtp || 0) >= nin, "Have at least " + nin + " inboundrtp stat(s) *");
+    // TODO(Bug 957145): Restore stronger inbound-rtp test once Bug 948249 is fixed
+    //is((counters["inbound-rtp"] || 0), nin, "Have " + nin + " inbound-rtp stat(s)");
+    ok((counters["inbound-rtp"] || 0) >= nin, "Have at least " + nin + " inbound-rtp stat(s) *");
 
-    is(counters.outboundrtp || 0, nout, "Have " + nout + " outboundrtp stat(s)");
+    is(counters["outbound-rtp"] || 0, nout, "Have " + nout + " outbound-rtp stat(s)");
 
-    var numLocalCandidates  = counters.localcandidate || 0;
-    var numRemoteCandidates = counters.remotecandidate || 0;
+    var numLocalCandidates  = counters["local-candidate"] || 0;
+    var numRemoteCandidates = counters["remote-candidate"] || 0;
     // If there are no tracks, there will be no stats either.
     if (nin + nout + ndata > 0) {
-      ok(numLocalCandidates, "Have localcandidate stat(s)");
-      ok(numRemoteCandidates, "Have remotecandidate stat(s)");
+      ok(numLocalCandidates, "Have local-candidate stat(s)");
+      ok(numRemoteCandidates, "Have remote-candidate stat(s)");
     } else {
-      is(numLocalCandidates, 0, "Have no localcandidate stats");
-      is(numRemoteCandidates, 0, "Have no remotecandidate stats");
+      is(numLocalCandidates, 0, "Have no local-candidate stats");
+      is(numRemoteCandidates, 0, "Have no remote-candidate stats");
     }
   },
 
@@ -1679,7 +1932,7 @@ PeerConnectionWrapper.prototype = {
     let lId;
     let rId;
     for (let stat of stats.values()) {
-      if (stat.type == "candidatepair" && stat.selected) {
+      if (stat.type == "candidate-pair" && stat.selected) {
         lId = stat.localCandidateId;
         rId = stat.remoteCandidateId;
         break;
@@ -1722,16 +1975,13 @@ PeerConnectionWrapper.prototype = {
    *
    * @param {object} stats
    *        The stats to check for ICE candidate pairs
-   * @param {object} counters
-   *        The counters for media and data tracks based on constraints
    * @param {object} testOptions
    *        The test options object from the PeerConnectionTest
    */
-  checkStatsIceConnections : function(stats,
-      offerConstraintsList, offerOptions, testOptions) {
+  checkStatsIceConnections : function(stats, testOptions) {
     var numIceConnections = 0;
-    Object.keys(stats).forEach(key => {
-      if ((stats[key].type === "candidatepair") && stats[key].selected) {
+    stats.forEach(stat => {
+      if ((stat.type === "candidate-pair") && stat.selected) {
         numIceConnections += 1;
       }
     });
@@ -1744,17 +1994,17 @@ PeerConnectionWrapper.prototype = {
         is(numIceConnections, 2, "stats report exactly 2 ICE connections for media and RTCP");
       }
     } else {
-      // This code assumes that no media sections have been rejected due to
-      // codec mismatch or other unrecoverable negotiation failures.
-      var numAudioTracks =
-          sdputils.countTracksInConstraint('audio', offerConstraintsList) ||
-          ((offerOptions && offerOptions.offerToReceiveAudio) ? 1 : 0);
+      var numAudioTransceivers =
+        this._pc.getTransceivers().filter((transceiver) => {
+          return (!transceiver.stopped) && transceiver.receiver.track.kind == "audio";
+        }).length;
 
-      var numVideoTracks =
-          sdputils.countTracksInConstraint('video', offerConstraintsList) ||
-          ((offerOptions && offerOptions.offerToReceiveVideo) ? 1 : 0);
+      var numVideoTransceivers =
+        this._pc.getTransceivers().filter((transceiver) => {
+          return (!transceiver.stopped) && transceiver.receiver.track.kind == "video";
+        }).length;
 
-      var numExpectedTransports = numAudioTracks + numVideoTracks;
+      var numExpectedTransports = numAudioTransceivers + numVideoTransceivers;
       if (!testOptions.rtcpmux) {
         numExpectedTransports *= 2;
       }
@@ -1823,23 +2073,33 @@ PeerConnectionWrapper.prototype = {
 // haxx to prevent SimpleTest from failing at window.onload
 function addLoadEvent() {}
 
-var scriptsReady = Promise.all([
-  "/tests/SimpleTest/SimpleTest.js",
-  "head.js",
-  "templates.js",
-  "turnConfig.js",
-  "dataChannel.js",
-  "network.js",
-  "sdpUtils.js"
-].map(script  => {
-  var el = document.createElement("script");
-  if (typeof scriptRelativePath === 'string' && script.charAt(0) !== '/') {
-    script = scriptRelativePath + script;
-  }
-  el.src = script;
-  document.head.appendChild(el);
-  return new Promise(r => { el.onload = r; el.onerror = r; });
-}));
+function loadScript(...scripts) {
+  return Promise.all(scripts.map(script => {
+    var el = document.createElement("script");
+    if (typeof scriptRelativePath === 'string' && script.charAt(0) !== '/') {
+      script = scriptRelativePath + script;
+    }
+    el.src = script;
+    document.head.appendChild(el);
+    return new Promise(r => {
+      el.onload = r;
+      el.onerror = r;
+    });
+  }));
+}
+
+// Ensure SimpleTest.js is loaded before other scripts.
+var scriptsReady = loadScript("/tests/SimpleTest/SimpleTest.js").then(() => {
+  return loadScript(
+    "../../test/manifest.js",
+    "head.js",
+    "templates.js",
+    "turnConfig.js",
+    "dataChannel.js",
+    "network.js",
+    "sdpUtils.js"
+  );
+});
 
 function createHTML(options) {
   return scriptsReady.then(() => realCreateHTML(options));
@@ -1848,15 +2108,40 @@ function createHTML(options) {
 var iceServerWebsocket;
 var iceServersArray = [];
 
+var addTurnsSelfsignedCerts = () => {
+  var gUrl = SimpleTest.getTestFileURL('addTurnsSelfsignedCert.js');
+  var gScript = SpecialPowers.loadChromeScript(gUrl);
+  var certs = [];
+  // If the ICE server is running TURNS, and includes a "cert" attribute in
+  // its JSON, we set up an override that will forgive things like
+  // self-signed for it.
+  iceServersArray.forEach(iceServer => {
+    if (iceServer.hasOwnProperty("cert")) {
+      iceServer.urls.forEach(url => {
+        if (url.startsWith("turns:")) {
+          // Assumes no port or params!
+          certs.push({"cert": iceServer.cert, "hostname": url.substr(6)});
+        }
+      });
+    }
+  });
+
+  return new Promise((resolve, reject) => {
+    gScript.addMessageListener('certs-added', () => {
+      resolve();
+    });
+
+    gScript.sendAsyncMessage('add-turns-certs', certs);
+  });
+};
+
 var setupIceServerConfig = useIceServer => {
   // We disable ICE support for HTTP proxy when using a TURN server, because
   // mochitest uses a fake HTTP proxy to serve content, which will eat our STUN
   // packets for TURN TCP.
-  var enableHttpProxy = enable => new Promise(resolve => {
+  var enableHttpProxy = enable =>
     SpecialPowers.pushPrefEnv(
-        {'set': [['media.peerconnection.disable_http_proxy', !enable]]},
-        resolve);
-  });
+      {'set': [['media.peerconnection.disable_http_proxy', !enable]]});
 
   var spawnIceServer = () => new Promise( (resolve, reject) => {
     iceServerWebsocket = new WebSocket("ws://localhost:8191/");
@@ -1889,16 +2174,37 @@ var setupIceServerConfig = useIceServer => {
 
   return enableHttpProxy(false)
     .then(spawnIceServer)
-    .then(iceServersStr => { iceServersArray = JSON.parse(iceServersStr); });
+    .then(iceServersStr => { iceServersArray = JSON.parse(iceServersStr); })
+    .then(addTurnsSelfsignedCerts);
 };
 
-function runNetworkTest(testFunction, fixtureOptions) {
-  fixtureOptions = fixtureOptions || {}
-  return scriptsReady.then(() =>
-    runTestWhenReady(options =>
-      startNetworkAndTest()
-        .then(() => setupIceServerConfig(fixtureOptions.useIceServer))
-        .then(() => testFunction(options))
-    )
+async function runNetworkTest(testFunction, fixtureOptions = {}) {
+
+  let version = SpecialPowers.Cc["@mozilla.org/xre/app-info;1"].
+    getService(SpecialPowers.Ci.nsIXULAppInfo).version;
+  let isNightly = version.endsWith("a1");
+  let isAndroid = !!navigator.userAgent.includes("Android");
+
+  await scriptsReady;
+  await runTestWhenReady(async options =>
+    {
+      await startNetworkAndTest();
+      await setupIceServerConfig(fixtureOptions.useIceServer);
+
+      // currently we set android hardware encoder default enabled in nightly.
+      // But before QA approves the quality, we want to ensure the legacy
+      // encoder is working fine.
+      if (isNightly && isAndroid) {
+        let value = Math.random() >= 0.5;
+        await SpecialPowers.pushPrefEnv(
+        {
+          set: [
+            ['media.navigator.hardware.vp8_encode.acceleration_enabled', value],
+            ['media.navigator.hardware.vp8_encode.acceleration_remote_enabled', value]
+          ]
+        });
+      }
+      await testFunction(options);
+    }
   );
 }

@@ -8,8 +8,8 @@ const promise = require("promise");
 const {Task} = require("devtools/shared/task");
 const {KeyCodes} = require("devtools/client/shared/keycodes");
 
-const EventEmitter = require("devtools/shared/event-emitter");
-const {AutocompletePopup} = require("devtools/client/shared/autocomplete-popup");
+const EventEmitter = require("devtools/shared/old-event-emitter");
+const AutocompletePopup = require("devtools/client/shared/autocomplete-popup");
 const Services = require("Services");
 
 // Maximum number of selector suggestions shown in the panel.
@@ -42,12 +42,8 @@ function InspectorSearch(inspector, input, clearBtn) {
   this._onKeyDown = this._onKeyDown.bind(this);
   this._onInput = this._onInput.bind(this);
   this._onClearSearch = this._onClearSearch.bind(this);
-  this._onFilterTextboxContextMenu =
-    this._onFilterTextboxContextMenu.bind(this);
   this.searchBox.addEventListener("keydown", this._onKeyDown, true);
   this.searchBox.addEventListener("input", this._onInput, true);
-  this.searchBox.addEventListener("contextmenu",
-    this._onFilterTextboxContextMenu);
   this.searchClearButton.addEventListener("click", this._onClearSearch);
 
   // For testing, we need to be able to wait for the most recent node request
@@ -68,8 +64,6 @@ InspectorSearch.prototype = {
   destroy: function () {
     this.searchBox.removeEventListener("keydown", this._onKeyDown, true);
     this.searchBox.removeEventListener("input", this._onInput, true);
-    this.searchBox.removeEventListener("contextmenu",
-      this._onFilterTextboxContextMenu);
     this.searchClearButton.removeEventListener("click", this._onClearSearch);
     this.searchBox = null;
     this.searchClearButton = null;
@@ -78,7 +72,7 @@ InspectorSearch.prototype = {
 
   _onSearch: function (reverse = false) {
     this.doFullTextSearch(this.searchBox.value, reverse)
-        .catch(e => console.error(e));
+        .catch(console.error);
   },
 
   doFullTextSearch: Task.async(function* (query, reverse) {
@@ -115,11 +109,9 @@ InspectorSearch.prototype = {
   _onInput: function () {
     if (this.searchBox.value.length === 0) {
       this.searchClearButton.hidden = true;
-      this.searchBox.removeAttribute("filled");
       this._onSearch();
     } else {
       this.searchClearButton.hidden = false;
-      this.searchBox.setAttribute("filled", true);
     }
   },
 
@@ -133,18 +125,6 @@ InspectorSearch.prototype = {
     if (event.keyCode === KeyCodes.DOM_VK_G && modifierKey) {
       this._onSearch(event.shiftKey);
       event.preventDefault();
-    }
-  },
-
-  /**
-   * Context menu handler for filter search box.
-   */
-  _onFilterTextboxContextMenu: function (event) {
-    try {
-      let contextmenu = this.inspector.toolbox.textboxContextMenuPopup;
-      contextmenu.openPopupAtScreen(event.screenX, event.screenY, true);
-    } catch (e) {
-      console.error(e);
     }
   },
 
@@ -190,7 +170,8 @@ function SelectorAutocompleter(inspector, inputNode) {
     onClick: this._onSearchPopupClick,
   };
 
-  this.searchPopup = new AutocompletePopup(inspector._toolbox, options);
+  // The popup will be attached to the toolbox document.
+  this.searchPopup = new AutocompletePopup(inspector._toolbox.doc, options);
 
   this.searchBox.addEventListener("input", this.showSuggestions, true);
   this.searchBox.addEventListener("keypress", this._onSearchKeypress, true);
@@ -346,7 +327,6 @@ SelectorAutocompleter.prototype = {
    */
   _onSearchKeypress: function (event) {
     let popup = this.searchPopup;
-
     switch (event.keyCode) {
       case KeyCodes.DOM_VK_RETURN:
       case KeyCodes.DOM_VK_TAB:
@@ -389,6 +369,9 @@ SelectorAutocompleter.prototype = {
       case KeyCodes.DOM_VK_ESCAPE:
         if (popup.isOpen) {
           this.hidePopup();
+        } else {
+          this.emit("processing-done");
+          return;
         }
         break;
 
@@ -559,7 +542,5 @@ SelectorAutocompleter.prototype = {
       // the autoSelect item has been selected.
       return this._showPopup(result.suggestions, firstPart, state);
     });
-
-    return;
   }
 };

@@ -1,5 +1,6 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -16,7 +17,7 @@
 #endif
 #include "mozilla/Tuple.h"
 
-#if defined(MOZ_WIDGET_GONK) || defined(MOZ_WIDGET_ANDROID)
+#if defined(MOZ_WIDGET_ANDROID)
 #include "nsDebug.h"
 #endif
 #include "Point.h"
@@ -128,6 +129,11 @@ enum class LogReason : int {
   InvalidCacheSurface,
   AlphaWithBasicClient,
   UnbalancedClipStack,
+  ProcessingError,
+  InvalidDrawTarget,
+  NativeFontResourceNotFound,
+  UnscaledFontNotFound,
+  InvalidLayerType,
   // End
   MustBeLessThanThis = 101,
 };
@@ -139,7 +145,7 @@ struct BasicLogger
   // in the appropriate places in that method.
   static bool ShouldOutputMessage(int aLevel) {
     if (LoggingPrefs::sGfxLogLevel >= aLevel) {
-#if defined(MOZ_WIDGET_GONK) || defined(MOZ_WIDGET_ANDROID)
+#if defined(MOZ_WIDGET_ANDROID)
       return true;
 #else
 #if defined(MOZ_LOGGING)
@@ -172,12 +178,12 @@ struct BasicLogger
     // make the corresponding change in the ShouldOutputMessage method
     // above.
     if (LoggingPrefs::sGfxLogLevel >= aLevel) {
-#if defined(MOZ_WIDGET_GONK) || defined(MOZ_WIDGET_ANDROID)
+#if defined(MOZ_WIDGET_ANDROID)
       printf_stderr("%s%s", aString.c_str(), aNoNewline ? "" : "\n");
 #else
 #if defined(MOZ_LOGGING)
       if (MOZ_LOG_TEST(GetGFX2DLog(), PRLogLevelForLevel(aLevel))) {
-        PR_LogPrint("%s%s", aString.c_str(), aNoNewline ? "" : "\n");
+        MOZ_LOG(GetGFX2DLog(), PRLogLevelForLevel(aLevel), ("%s%s", aString.c_str(), aNoNewline ? "" : "\n"));
       } else
 #endif
       if ((LoggingPrefs::sGfxLogLevel >= LOG_DEBUG_PRLOG) ||
@@ -462,6 +468,9 @@ public:
         case SurfaceType::TILED:
           mMessage << "SurfaceType::TILED";
           break;
+        case SurfaceType::DATA_SHARED:
+          mMessage << "SurfaceType::DATA_SHARED";
+          break;
         default:
           mMessage << "Invalid SurfaceType (" << (int)aType << ")";
           break;
@@ -642,7 +651,10 @@ public:
   }
 
   void IncreaseIndent() { ++mDepth; }
-  void DecreaseIndent() { --mDepth; }
+  void DecreaseIndent() {
+    MOZ_ASSERT(mDepth > 0);
+    --mDepth;
+  }
 
   void ConditionOnPrefFunction(bool(*aPrefFunction)()) {
     mConditionedOnPref = true;
@@ -680,6 +692,14 @@ public:
   explicit TreeAutoIndent(TreeLog& aTreeLog) : mTreeLog(aTreeLog) {
     mTreeLog.IncreaseIndent();
   }
+
+  TreeAutoIndent(const TreeAutoIndent& aTreeAutoIndent) :
+      mTreeLog(aTreeAutoIndent.mTreeLog) {
+    mTreeLog.IncreaseIndent();
+  }
+
+  TreeAutoIndent& operator=(const TreeAutoIndent& aTreeAutoIndent) = delete;
+
   ~TreeAutoIndent() {
     mTreeLog.DecreaseIndent();
   }

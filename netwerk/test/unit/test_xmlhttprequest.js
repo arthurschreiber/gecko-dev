@@ -1,5 +1,5 @@
 
-Cu.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://testing-common/httpd.js");
 
 var httpserver = new HttpServer();
 var testpath = "/simple";
@@ -19,11 +19,11 @@ function checkResults(xhr)
   if (xhr.readyState != 4)
     return false;
 
-  do_check_eq(xhr.status, 200);
-  do_check_eq(xhr.responseText, httpbody);
+  Assert.equal(xhr.status, 200);
+  Assert.equal(xhr.responseText, httpbody);
 
   var root_node = xhr.responseXML.getElementsByTagName('root').item(0);
-  do_check_eq(root_node.firstChild.data, "0123456789");
+  Assert.equal(root_node.firstChild.data, "0123456789");
   return true;
 }
 
@@ -42,7 +42,7 @@ function run_test()
   async.addEventListener("readystatechange", function(event) {
     if (checkResults(async))
       httpserver.stop(do_test_finished);
-  }, false);
+  });
   async.send(null);
   do_test_pending();
 }

@@ -45,6 +45,14 @@ public:
                    bool aIsRow);
 
 protected:
+  uint32_t AppendRemovedAutoFits(const ComputedGridTrackInfo* aTrackInfo,
+                                 const ComputedGridLineInfo* aLineInfo,
+                                 nscoord aLastTrackEdge,
+                                 uint32_t& aRepeatIndex,
+                                 uint32_t aNumRepeatTracks,
+                                 uint32_t aNumLeadingTracks,
+                                 nsTArray<nsString>& aLineNames);
+
   RefPtr<GridDimension> mParent;
   nsTArray<RefPtr<GridLine>> mLines;
 };

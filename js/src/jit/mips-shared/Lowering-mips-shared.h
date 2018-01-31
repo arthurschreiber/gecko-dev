@@ -27,9 +27,6 @@ class LIRGeneratorMIPSShared : public LIRGeneratorShared
     LAllocation useByteOpRegisterOrNonDoubleConstant(MDefinition* mir);
     LDefinition tempByteOpRegister();
 
-    void lowerInt64PhiInput(MPhi*, uint32_t, LBlock*, size_t) { MOZ_CRASH("NYI"); }
-    void defineInt64Phi(MPhi*, size_t) { MOZ_CRASH("NYI"); }
-
     bool needTempForPostBarrier() { return false; }
 
     void lowerForShift(LInstructionHelper<1, 2, 0>* ins, MDefinition* mir, MDefinition* lhs,
@@ -69,16 +66,14 @@ class LIRGeneratorMIPSShared : public LIRGeneratorShared
                                  MDefinition* lhs, MDefinition* rhs);
     void lowerDivI(MDiv* div);
     void lowerModI(MMod* mod);
-    void lowerDivI64(MDiv* div);
-    void lowerModI64(MMod* mod);
     void lowerMulI(MMul* mul, MDefinition* lhs, MDefinition* rhs);
     void lowerUDiv(MDiv* div);
     void lowerUMod(MMod* mod);
     void visitPowHalf(MPowHalf* ins);
-    void visitAsmJSNeg(MAsmJSNeg* ins);
+    void visitWasmNeg(MWasmNeg* ins);
     void visitWasmLoad(MWasmLoad* ins);
     void visitWasmStore(MWasmStore* ins);
-    void visitAsmSelect(MAsmSelect* ins);
+    void visitWasmSelect(MWasmSelect* ins);
 
     LTableSwitch* newLTableSwitch(const LAllocation& in, const LDefinition& inputCopy,
                                   MTableSwitch* ins);
@@ -88,22 +83,21 @@ class LIRGeneratorMIPSShared : public LIRGeneratorShared
     void lowerPhi(MPhi* phi);
     void visitGuardShape(MGuardShape* ins);
     void visitGuardObjectGroup(MGuardObjectGroup* ins);
-    void visitAsmJSUnsignedToDouble(MAsmJSUnsignedToDouble* ins);
-    void visitAsmJSUnsignedToFloat32(MAsmJSUnsignedToFloat32* ins);
+    void visitWasmUnsignedToDouble(MWasmUnsignedToDouble* ins);
+    void visitWasmUnsignedToFloat32(MWasmUnsignedToFloat32* ins);
     void visitAsmJSLoadHeap(MAsmJSLoadHeap* ins);
     void visitAsmJSStoreHeap(MAsmJSStoreHeap* ins);
-    void visitAsmJSCompareExchangeHeap(MAsmJSCompareExchangeHeap* ins);
-    void visitAsmJSAtomicExchangeHeap(MAsmJSAtomicExchangeHeap* ins);
-    void visitAsmJSAtomicBinopHeap(MAsmJSAtomicBinopHeap* ins);
+    void visitWasmCompareExchangeHeap(MWasmCompareExchangeHeap* ins);
+    void visitWasmAtomicExchangeHeap(MWasmAtomicExchangeHeap* ins);
+    void visitWasmAtomicBinopHeap(MWasmAtomicBinopHeap* ins);
     void visitStoreTypedArrayElementStatic(MStoreTypedArrayElementStatic* ins);
     void visitCompareExchangeTypedArrayElement(MCompareExchangeTypedArrayElement* ins);
     void visitAtomicExchangeTypedArrayElement(MAtomicExchangeTypedArrayElement* ins);
     void visitAtomicTypedArrayElementBinop(MAtomicTypedArrayElementBinop* ins);
     void visitSubstr(MSubstr* ins);
-    void visitWasmTruncateToInt64(MWasmTruncateToInt64* ins);
-    void visitInt64ToFloatingPoint(MInt64ToFloatingPoint* ins);
     void visitCopySign(MCopySign* ins);
     void visitExtendInt32ToInt64(MExtendInt32ToInt64* ins);
+    void visitSignExtendInt64(MSignExtendInt64* ins);
 
 };
 

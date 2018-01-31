@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -51,20 +52,24 @@ public:
   };
 
   DataTransferItem* Add(const nsAString& aData, const nsAString& aType,
+                        nsIPrincipal& aSubjectPrincipal,
                         ErrorResult& rv);
-  DataTransferItem* Add(File& aData, ErrorResult& aRv);
+  DataTransferItem* Add(File& aData,
+                        nsIPrincipal& aSubjectPrincipal,
+                        ErrorResult& aRv);
 
-  void Remove(uint32_t aIndex, ErrorResult& aRv);
+  void Remove(uint32_t aIndex,
+              nsIPrincipal& aSubjectPrincipal,
+              ErrorResult& aRv);
 
-  DataTransferItem* IndexedGetter(uint32_t aIndex, bool& aFound,
-                                  ErrorResult& aRv) const;
+  DataTransferItem* IndexedGetter(uint32_t aIndex, bool& aFound) const;
 
   DataTransfer* GetParentObject() const
   {
     return mDataTransfer;
   }
 
-  void Clear(ErrorResult& aRv);
+  void Clear(nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv);
 
   already_AddRefed<DataTransferItem>
   SetDataWithPrincipal(const nsAString& aType, nsIVariant* aData,
@@ -75,6 +80,7 @@ public:
 
   // Moz-style helper methods for interacting with the stored data
   void MozRemoveByTypeAt(const nsAString& aType, uint32_t aIndex,
+                         nsIPrincipal& aSubjectPrincipal,
                          ErrorResult& aRv);
   DataTransferItem* MozItemByTypeAt(const nsAString& aType, uint32_t aIndex);
   const nsTArray<RefPtr<DataTransferItem>>* MozItemsAt(uint32_t aIndex);
@@ -89,7 +95,9 @@ public:
 
 private:
   void ClearDataHelper(DataTransferItem* aItem, uint32_t aIndexHint,
-                       uint32_t aMozOffsetHint, ErrorResult& aRv);
+                       uint32_t aMozOffsetHint,
+                       nsIPrincipal& aSubjectPrincipal,
+                       ErrorResult& aRv);
   DataTransferItem* AppendNewItem(uint32_t aIndex, const nsAString& aType,
                                   nsIVariant* aData, nsIPrincipal* aPrincipal,
                                   bool aHidden);
@@ -103,7 +111,18 @@ private:
   RefPtr<FileList> mFiles;
   // The principal for which mFiles is cached
   nsCOMPtr<nsIPrincipal> mFilesPrincipal;
+  // mItems is the list of items that corresponds to the spec concept of a
+  // DataTransferItemList.  That is, this is the thing the spec's indexed getter
+  // operates on.  The items in here are a subset of the items present in the
+  // arrays that live in mIndexedItems.
   nsTArray<RefPtr<DataTransferItem>> mItems;
+  // mIndexedItems represents all our items.  For any given index, all items at
+  // that index have different types in the GetType() sense.  That means that
+  // representing multiple items with the same type (e.g. multiple files)
+  // requires using multiple indices.
+  //
+  // There is always a (possibly empty) list of items at index 0, so
+  // mIndexedItems.Length() >= 1 at all times.
   nsTArray<nsTArray<RefPtr<DataTransferItem>>> mIndexedItems;
 };
 

@@ -6,6 +6,7 @@
 
 #include "nsDOMSerializer.h"
 
+#include "mozilla/Encoding.h"
 #include "nsIDocument.h"
 #include "nsIDocumentEncoder.h"
 #include "nsIDOMDocument.h"
@@ -43,21 +44,19 @@ SetUpEncoder(nsIDOMNode *aRoot, const nsACString& aCharset,
              nsIDocumentEncoder **aEncoder)
 {
   *aEncoder = nullptr;
-   
+
   nsresult rv;
   nsCOMPtr<nsIDocumentEncoder> encoder =
     do_CreateInstance(NS_DOC_ENCODER_CONTRACTID_BASE "application/xhtml+xml", &rv);
   if (NS_FAILED(rv))
     return rv;
 
-  bool entireDocument = true;
-  nsCOMPtr<nsIDOMDocument> domDoc(do_QueryInterface(aRoot));
-  if (!domDoc) {
-    entireDocument = false;
-    rv = aRoot->GetOwnerDocument(getter_AddRefs(domDoc));
-    if (NS_FAILED(rv))
-      return rv;
-  }
+  nsCOMPtr<nsINode> root = do_QueryInterface(aRoot);
+  MOZ_ASSERT(root);
+
+  nsIDocument* doc = root->OwnerDoc();
+  bool entireDocument = (doc == root);
+  nsCOMPtr<nsIDOMDocument> domDoc(do_QueryInterface(doc));
 
   // This method will fail if no document
   rv = encoder->Init(domDoc, NS_LITERAL_STRING("application/xhtml+xml"),
@@ -71,7 +70,7 @@ SetUpEncoder(nsIDOMNode *aRoot, const nsACString& aCharset,
   if (charset.IsEmpty()) {
     nsCOMPtr<nsIDocument> doc = do_QueryInterface(domDoc);
     NS_ASSERTION(doc, "Need a document");
-    charset = doc->GetDocumentCharacterSet();
+    doc->GetDocumentCharacterSet()->Name(charset);
   }
   rv = encoder->SetCharset(charset);
   if (NS_FAILED(rv))
@@ -101,7 +100,7 @@ NS_IMETHODIMP
 nsDOMSerializer::SerializeToString(nsIDOMNode *aRoot, nsAString& _retval)
 {
   NS_ENSURE_ARG_POINTER(aRoot);
-  
+
   _retval.Truncate();
 
   if (!nsContentUtils::CanCallerAccess(aRoot)) {
@@ -125,8 +124,8 @@ nsDOMSerializer::SerializeToStream(nsINode& aRoot, nsIOutputStream* aStream,
 }
 
 NS_IMETHODIMP
-nsDOMSerializer::SerializeToStream(nsIDOMNode *aRoot, 
-                                   nsIOutputStream *aStream, 
+nsDOMSerializer::SerializeToStream(nsIDOMNode *aRoot,
+                                   nsIOutputStream *aStream,
                                    const nsACString& aCharset)
 {
   NS_ENSURE_ARG_POINTER(aRoot);

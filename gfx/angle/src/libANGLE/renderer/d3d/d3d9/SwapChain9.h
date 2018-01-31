@@ -24,14 +24,22 @@ class SwapChain9 : public SwapChainD3D
     SwapChain9(Renderer9 *renderer,
                NativeWindow9 *nativeWindow,
                HANDLE shareHandle,
+               IUnknown *d3dTexture,
                GLenum backBufferFormat,
                GLenum depthBufferFormat,
                EGLint orientation);
     virtual ~SwapChain9();
 
-    EGLint resize(EGLint backbufferWidth, EGLint backbufferHeight);
-    virtual EGLint reset(EGLint backbufferWidth, EGLint backbufferHeight, EGLint swapInterval);
-    virtual EGLint swapRect(EGLint x, EGLint y, EGLint width, EGLint height);
+    EGLint resize(const gl::Context *context, EGLint backbufferWidth, EGLint backbufferHeight);
+    virtual EGLint reset(const gl::Context *context,
+                         EGLint backbufferWidth,
+                         EGLint backbufferHeight,
+                         EGLint swapInterval);
+    virtual EGLint swapRect(const gl::Context *context,
+                            EGLint x,
+                            EGLint y,
+                            EGLint width,
+                            EGLint height);
     virtual void recreate();
 
     RenderTargetD3D *getColorRenderTarget() override { return &mColorRenderTarget; }
@@ -45,6 +53,8 @@ class SwapChain9 : public SwapChainD3D
     EGLint getHeight() const { return mHeight; }
 
     void *getKeyedMutex() override;
+
+    egl::Error getSyncValues(EGLuint64KHR *ust, EGLuint64KHR *msc, EGLuint64KHR *sbc) override;
 
   private:
     void release();

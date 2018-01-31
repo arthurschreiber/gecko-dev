@@ -16,10 +16,10 @@ const Ci = Components.interfaces;
 const Cc = Components.classes;
 const Cu = Components.utils;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
 
 // Load Services, for the BatteryManager API
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
+ChromeUtils.defineModuleGetter(this, "Services",
   "resource://gre/modules/Services.jsm");
 
 // Values for the fake battery. See the documentation of Navigator.battery for the meaning of each field.
@@ -28,7 +28,7 @@ var gFakeBattery = {
   chargingTime: 0,
   dischargingTime: Infinity,
   level: 1,
-}
+};
 
 // BackendPass-exported object for toggling spoofing
 this.Debugging = {
@@ -38,10 +38,10 @@ this.Debugging = {
    * for testing or debugging purposes.
    */
   fake: false
-}
+};
 
-this.GetBattery = function () {
-  return new Services.appShell.hiddenDOMWindow.Promise(function (resolve, reject) {
+this.GetBattery = function() {
+  return new Services.appShell.hiddenDOMWindow.Promise(function(resolve, reject) {
     // Return fake values if spoofing is enabled, otherwise fetch the real values from the BatteryManager API
     if (Debugging.fake) {
       resolve(gFakeBattery);
@@ -56,18 +56,18 @@ this.Battery = {};
 for (let k of ["charging", "chargingTime", "dischargingTime", "level"]) {
   let prop = k;
   Object.defineProperty(this.Battery, prop, {
-    get: function() {
+    get() {
       // Return fake value if spoofing is enabled, otherwise fetch the real value from the BatteryManager API
       if (Debugging.fake) {
         return gFakeBattery[prop];
       }
       return Services.appShell.hiddenDOMWindow.navigator.battery[prop];
     },
-    set: function(fakeSetting) {
+    set(fakeSetting) {
       if (!Debugging.fake) {
         throw new Error("Tried to set fake battery value when battery spoofing was disabled");
       }
       gFakeBattery[prop] = fakeSetting;
     }
-  })
+  });
 }

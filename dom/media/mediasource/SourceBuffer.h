@@ -8,6 +8,7 @@
 #define mozilla_dom_SourceBuffer_h_
 
 #include "mozilla/MozPromise.h"
+#include "MediaContainerType.h"
 #include "MediaSource.h"
 #include "js/RootingAPI.h"
 #include "mozilla/Assertions.h"
@@ -22,7 +23,6 @@
 #include "nsCycleCollectionNoteChild.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
-#include "nsString.h"
 #include "nscore.h"
 #include "TrackBuffersManager.h"
 #include "SourceBufferTask.h"
@@ -32,15 +32,20 @@ struct JSContext;
 
 namespace mozilla {
 
+class AbstractThread;
 class ErrorResult;
 class MediaByteBuffer;
 template <typename T> class AsyncEventRunner;
+
+DDLoggedTypeName(dom::SourceBuffer);
 
 namespace dom {
 
 class TimeRanges;
 
-class SourceBuffer final : public DOMEventTargetHelper
+class SourceBuffer final
+  : public DOMEventTargetHelper
+  , public DecoderDoctorLifeLogger<SourceBuffer>
 {
 public:
   /** WebIDL Methods. */
@@ -99,7 +104,7 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(SourceBuffer, DOMEventTargetHelper)
 
-  SourceBuffer(MediaSource* aMediaSource, const nsACString& aType);
+  SourceBuffer(MediaSource* aMediaSource, const MediaContainerType& aType);
 
   MediaSource* GetParentObject() const;
 
@@ -155,7 +160,7 @@ private:
   // Will call endOfStream() with "decode" error if aDecodeError is true.
   // 3.5.3 Append Error Algorithm
   // http://w3c.github.io/media-source/#sourcebuffer-append-error
-  void AppendError(bool aDecoderError);
+  void AppendError(const MediaResult& aDecodeError);
 
   // Implements the "Prepare Append Algorithm". Returns MediaByteBuffer object
   // on success or nullptr (with aRv set) on error.
@@ -163,10 +168,11 @@ private:
                                                   uint32_t aLength,
                                                   ErrorResult& aRv);
 
-  void AppendDataCompletedWithSuccess(SourceBufferTask::AppendBufferResult aResult);
-  void AppendDataErrored(nsresult aError);
+  void AppendDataCompletedWithSuccess(const SourceBufferTask::AppendBufferResult& aResult);
+  void AppendDataErrored(const MediaResult& aError);
 
   RefPtr<MediaSource> mMediaSource;
+  const RefPtr<AbstractThread> mAbstractMainThread;
 
   RefPtr<TrackBuffersManager> mTrackBuffersManager;
   SourceBufferAttributes mCurrentAttributes;
@@ -177,9 +183,11 @@ private:
 
   MozPromiseRequestHolder<SourceBufferTask::AppendPromise> mPendingAppend;
   MozPromiseRequestHolder<SourceBufferTask::RangeRemovalPromise> mPendingRemoval;
-  const nsCString mType;
+  const MediaContainerType mType;
 
   RefPtr<TimeRanges> mBuffered;
+
+  MozPromiseRequestHolder<MediaSource::ActiveCompletionPromise> mCompletionPromise;
 };
 
 } // namespace dom

@@ -387,13 +387,14 @@ class ModuleEnvironmentObject : public EnvironmentObject
     static const uint32_t MODULE_SLOT = 1;
 
     static const ObjectOps objectOps_;
+    static const ClassOps classOps_;
 
   public:
     static const Class class_;
 
     static const uint32_t RESERVED_SLOTS = 2;
 
-    static ModuleEnvironmentObject* create(ExclusiveContext* cx, HandleModuleObject module);
+    static ModuleEnvironmentObject* create(JSContext* cx, HandleModuleObject module);
     ModuleObject& module();
     IndirectBindingMap& importBindings();
 
@@ -408,7 +409,7 @@ class ModuleEnvironmentObject : public EnvironmentObject
 
   private:
     static bool lookupProperty(JSContext* cx, HandleObject obj, HandleId id,
-                               MutableHandleObject objp, MutableHandleShape propp);
+                               MutableHandleObject objp, MutableHandle<PropertyResult> propp);
     static bool hasProperty(JSContext* cx, HandleObject obj, HandleId id, bool* foundp);
     static bool getProperty(JSContext* cx, HandleObject obj, HandleValue receiver, HandleId id,
                             MutableHandleValue vp);
@@ -418,13 +419,57 @@ class ModuleEnvironmentObject : public EnvironmentObject
                                          MutableHandle<PropertyDescriptor> desc);
     static bool deleteProperty(JSContext* cx, HandleObject obj, HandleId id,
                                ObjectOpResult& result);
-    static bool enumerate(JSContext* cx, HandleObject obj, AutoIdVector& properties,
-                          bool enumerableOnly);
+    static bool newEnumerate(JSContext* cx, HandleObject obj, AutoIdVector& properties,
+                             bool enumerableOnly);
 };
 
 typedef Rooted<ModuleEnvironmentObject*> RootedModuleEnvironmentObject;
 typedef Handle<ModuleEnvironmentObject*> HandleModuleEnvironmentObject;
 typedef MutableHandle<ModuleEnvironmentObject*> MutableHandleModuleEnvironmentObject;
+
+class WasmInstanceEnvironmentObject : public EnvironmentObject
+{
+    // Currently WasmInstanceScopes do not use their scopes in a
+    // meaningful way. However, it is an invariant of DebugEnvironments that
+    // environments kept in those maps have live scopes, thus this strong
+    // reference.
+    static const uint32_t SCOPE_SLOT = 1;
+
+  public:
+    static const Class class_;
+
+    static const uint32_t RESERVED_SLOTS = 2;
+
+    static WasmInstanceEnvironmentObject* createHollowForDebug(JSContext* cx,
+                                                               Handle<WasmInstanceScope*> scope);
+    WasmInstanceScope& scope() const {
+        Value v = getReservedSlot(SCOPE_SLOT);
+        MOZ_ASSERT(v.isPrivateGCThing());
+        return *static_cast<WasmInstanceScope*>(v.toGCThing());
+    }
+};
+
+class WasmFunctionCallObject : public EnvironmentObject
+{
+    // Currently WasmFunctionCallObjects do not use their scopes in a
+    // meaningful way. However, it is an invariant of DebugEnvironments that
+    // environments kept in those maps have live scopes, thus this strong
+    // reference.
+    static const uint32_t SCOPE_SLOT = 1;
+
+  public:
+    static const Class class_;
+
+    static const uint32_t RESERVED_SLOTS = 2;
+
+    static WasmFunctionCallObject* createHollowForDebug(JSContext* cx, HandleObject enclosing,
+                                                        Handle<WasmFunctionScope*> scope);
+    WasmFunctionScope& scope() const {
+        Value v = getReservedSlot(SCOPE_SLOT);
+        MOZ_ASSERT(v.isPrivateGCThing());
+        return *static_cast<WasmFunctionScope*>(v.toGCThing());
+    }
+};
 
 class LexicalEnvironmentObject : public EnvironmentObject
 {
@@ -460,15 +505,13 @@ class LexicalEnvironmentObject : public EnvironmentObject
     }
 
   public:
-    static LexicalEnvironmentObject* createTemplateObject(JSContext* cx,
-                                                          Handle<LexicalScope*> scope,
-                                                          HandleObject enclosing,
-                                                          gc::InitialHeap heap);
-
+    static LexicalEnvironmentObject* create(JSContext* cx, Handle<LexicalScope*> scope,
+                                            HandleObject enclosing, gc::InitialHeap heap);
     static LexicalEnvironmentObject* create(JSContext* cx, Handle<LexicalScope*> scope,
                                             AbstractFramePtr frame);
     static LexicalEnvironmentObject* createGlobal(JSContext* cx, Handle<GlobalObject*> global);
-    static LexicalEnvironmentObject* createNonSyntactic(JSContext* cx, HandleObject enclosing);
+    static LexicalEnvironmentObject* createNonSyntactic(JSContext* cx, HandleObject enclosing,
+                                                        HandleObject thisv);
     static LexicalEnvironmentObject* createHollowForDebug(JSContext* cx,
                                                           Handle<LexicalScope*> scope);
 
@@ -515,6 +558,7 @@ class LexicalEnvironmentObject : public EnvironmentObject
 class NamedLambdaObject : public LexicalEnvironmentObject
 {
     static NamedLambdaObject* create(JSContext* cx, HandleFunction callee,
+                                     HandleFunction replacement,
                                      HandleObject enclosing, gc::InitialHeap heap);
 
   public:
@@ -522,6 +566,8 @@ class NamedLambdaObject : public LexicalEnvironmentObject
                                                    gc::InitialHeap heap);
 
     static NamedLambdaObject* create(JSContext* cx, AbstractFramePtr frame);
+    static NamedLambdaObject* create(JSContext* cx, AbstractFramePtr frame,
+                                     HandleFunction replacement);
 
     // For JITs.
     static size_t lambdaSlot();
@@ -657,6 +703,12 @@ class MOZ_RAII EnvironmentIter
     // environment at pc.
     EnvironmentIter(JSContext* cx, AbstractFramePtr frame, jsbytecode* pc
                     MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+
+    // Constructing from an environment, scope and frame. The frame is given
+    // to initialize to proper enclosing environment/scope.
+    EnvironmentIter(JSContext* cx, JSObject* env, Scope* scope, AbstractFramePtr frame
+                    MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+
 
     bool done() const {
         return si_.done();
@@ -844,18 +896,21 @@ class DebugEnvironmentProxy : public ProxyObject
      * The enclosing environment on the dynamic environment chain. This slot is analogous
      * to the ENCLOSING_ENV_SLOT of a EnvironmentObject.
      */
-    static const unsigned ENCLOSING_EXTRA = 0;
+    static const unsigned ENCLOSING_SLOT = 0;
 
     /*
      * NullValue or a dense array holding the unaliased variables of a function
      * frame that has been popped.
      */
-    static const unsigned SNAPSHOT_EXTRA = 1;
+    static const unsigned SNAPSHOT_SLOT = 1;
 
   public:
     static DebugEnvironmentProxy* create(JSContext* cx, EnvironmentObject& env,
                                          HandleObject enclosing);
 
+    // NOTE: The environment may be a debug hollow with invalid
+    // enclosingEnvironment. Always use the enclosingEnvironment accessor on
+    // the DebugEnvironmentProxy in order to walk the environment chain.
     EnvironmentObject& environment() const;
     JSObject& enclosingEnvironment() const;
 
@@ -869,10 +924,11 @@ class DebugEnvironmentProxy : public ProxyObject
 
     // Get a property by 'id', but returns sentinel values instead of throwing
     // on exceptional cases.
-    bool getMaybeSentinelValue(JSContext* cx, HandleId id, MutableHandleValue vp);
+    static bool getMaybeSentinelValue(JSContext* cx, Handle<DebugEnvironmentProxy*> env,
+                                      HandleId id, MutableHandleValue vp);
 
     // Returns true iff this is a function environment with its own this-binding
-    // (all functions except arrow functions and generator expression lambdas).
+    // (all functions except arrow functions).
     bool isFunctionEnvironmentWithThis();
 
     // Does this debug environment not have a real counterpart or was never
@@ -884,6 +940,8 @@ class DebugEnvironmentProxy : public ProxyObject
 /* Maintains per-compartment debug environment bookkeeping information. */
 class DebugEnvironments
 {
+    Zone* zone_;
+
     /* The map from (non-debug) environments to debug environments. */
     ObjectWeakMap proxiedEnvs;
 
@@ -894,7 +952,7 @@ class DebugEnvironments
     typedef HashMap<MissingEnvironmentKey,
                     ReadBarrieredDebugEnvironmentProxy,
                     MissingEnvironmentKey,
-                    RuntimeAllocPolicy> MissingEnvironmentMap;
+                    ZoneAllocPolicy> MissingEnvironmentMap;
     MissingEnvironmentMap missingEnvs;
 
     /*
@@ -908,12 +966,14 @@ class DebugEnvironments
     typedef GCHashMap<ReadBarriered<JSObject*>,
                       LiveEnvironmentVal,
                       MovableCellHasher<ReadBarriered<JSObject*>>,
-                      RuntimeAllocPolicy> LiveEnvironmentMap;
+                      ZoneAllocPolicy> LiveEnvironmentMap;
     LiveEnvironmentMap liveEnvs;
 
   public:
-    explicit DebugEnvironments(JSContext* cx);
+    DebugEnvironments(JSContext* cx, Zone* zone);
     ~DebugEnvironments();
+
+    Zone* zone() const { return zone_; }
 
   private:
     bool init();
@@ -924,8 +984,8 @@ class DebugEnvironments
     static void onPopGeneric(JSContext* cx, const EnvironmentIter& ei);
 
   public:
-    void mark(JSTracer* trc);
-    void sweep(JSRuntime* rt);
+    void trace(JSTracer* trc);
+    void sweep();
     void finish();
 #ifdef JS_GC_ZEAL
     void checkHashTablesAfterMovingGC(JSRuntime* rt);
@@ -933,7 +993,7 @@ class DebugEnvironments
 
     // If a live frame has a synthesized entry in missingEnvs, make sure it's not
     // collected.
-    void markLiveFrame(JSTracer* trc, AbstractFramePtr frame);
+    void traceLiveFrame(JSTracer* trc, AbstractFramePtr frame);
 
     static DebugEnvironmentProxy* hasDebugEnvironment(JSContext* cx, EnvironmentObject& env);
     static bool addDebugEnvironment(JSContext* cx, Handle<EnvironmentObject*> env,
@@ -981,6 +1041,8 @@ JSObject::is<js::EnvironmentObject>() const
     return is<js::CallObject>() ||
            is<js::VarEnvironmentObject>() ||
            is<js::ModuleEnvironmentObject>() ||
+           is<js::WasmInstanceEnvironmentObject>() ||
+           is<js::WasmFunctionCallObject>() ||
            is<js::LexicalEnvironmentObject>() ||
            is<js::WithEnvironmentObject>() ||
            is<js::NonSyntacticVariablesObject>() ||
@@ -1023,6 +1085,22 @@ IsGlobalLexicalEnvironment(JSObject* env)
 {
     return env->is<LexicalEnvironmentObject>() &&
            env->as<LexicalEnvironmentObject>().isGlobal();
+}
+
+inline bool
+IsNSVOLexicalEnvironment(JSObject* env)
+{
+    return env->is<LexicalEnvironmentObject>() &&
+           env->as<LexicalEnvironmentObject>().enclosingEnvironment()
+                                              .is<NonSyntacticVariablesObject>();
+}
+
+inline JSObject*
+MaybeUnwrapWithEnvironment(JSObject* env)
+{
+    if (env->is<WithEnvironmentObject>())
+        return &env->as<WithEnvironmentObject>().object();
+    return env;
 }
 
 template <typename SpecificEnvironment>
@@ -1104,6 +1182,10 @@ InitFunctionEnvironmentObjects(JSContext* cx, AbstractFramePtr frame);
 
 MOZ_MUST_USE bool
 PushVarEnvironmentObject(JSContext* cx, HandleScope scope, AbstractFramePtr frame);
+
+MOZ_MUST_USE bool
+GetFrameEnvironmentAndScope(JSContext* cx, AbstractFramePtr frame, jsbytecode* pc,
+                            MutableHandleObject env, MutableHandleScope scope);
 
 #ifdef DEBUG
 bool

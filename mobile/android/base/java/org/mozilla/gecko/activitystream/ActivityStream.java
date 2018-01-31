@@ -6,19 +6,37 @@
 package org.mozilla.gecko.activitystream;
 
 import android.content.Context;
+import android.content.SharedPreferences;
+import android.net.Uri;
+import android.os.AsyncTask;
+import android.text.TextUtils;
+
+import org.mozilla.gecko.switchboard.SwitchBoard;
 
 import org.mozilla.gecko.AppConstants;
+import org.mozilla.gecko.Experiments;
 import org.mozilla.gecko.GeckoSharedPrefs;
 import org.mozilla.gecko.preferences.GeckoPreferences;
+import org.mozilla.gecko.util.StringUtils;
+import org.mozilla.gecko.util.publicsuffix.PublicSuffix;
+
+import java.util.Arrays;
+import java.util.List;
 
 public class ActivityStream {
+    /**
+     * Is Activity Stream enabled?
+     */
     public static boolean isEnabled(Context context) {
-        if (!AppConstants.MOZ_ANDROID_ACTIVITY_STREAM) {
-            return false;
-        }
-
-        return GeckoSharedPrefs.forApp(context)
-                .getBoolean(GeckoPreferences.PREFS_ACTIVITY_STREAM, false);
+        // Fennec 57+ here we come!
+        //   The only reason this method still exists is so that the old home panel code isn't
+        //   suddenly unused and triggers all kinds of lint errors. However we should clean
+        //   this up soon (Bug 1386725).
+        //
+        // N.B.: this switch can be used to create an old top sites configuration in order to test
+        // the upgrade path. HOWEVER, the old Top Sites code was partially removed in bug 1403755 so
+        // things may not work as expected.
+        return true;
     }
 
     /**

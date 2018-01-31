@@ -1,12 +1,12 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef MOZILLA_GFX_COMPOSITOROGL_H
 #define MOZILLA_GFX_COMPOSITOROGL_H
 
-#include "ContextStateTracker.h"
 #include "gfx2DGlue.h"
 #include "GLContextTypes.h"             // for GLContext, etc
 #include "GLDefs.h"                     // for GLuint, LOCAL_GL_TEXTURE_2D, etc
@@ -20,6 +20,7 @@
 #include "mozilla/gfx/MatrixFwd.h"      // for Matrix4x4
 #include "mozilla/gfx/Point.h"          // for IntSize, Point
 #include "mozilla/gfx/Rect.h"           // for Rect, IntRect
+#include "mozilla/gfx/Triangle.h"       // for Triangle
 #include "mozilla/gfx/Types.h"          // for Float, SurfaceFormat, etc
 #include "mozilla/layers/Compositor.h"  // for SurfaceInitMode, Compositor, etc
 #include "mozilla/layers/CompositorTypes.h"  // for MaskType::MaskType::NumMaskTypes, etc
@@ -31,10 +32,6 @@
 #include "nsThreadUtils.h"              // for nsRunnable
 #include "nsXULAppAPI.h"                // for XRE_GetProcessType
 #include "nscore.h"                     // for NS_IMETHOD
-
-#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 21
-#include "nsTHashtable.h"               // for nsTHashtable
-#endif
 
 class nsIWidget;
 
@@ -50,10 +47,6 @@ class TextureSource;
 struct Effect;
 struct EffectChain;
 class GLBlitTextureImageHelper;
-
-#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 21
-class ImageHostOverlay;
-#endif
 
 /**
  * Interface for pools of temporary gl textures for the compositor.
@@ -113,46 +106,6 @@ protected:
   RefPtr<gl::GLContext> mGL;
 };
 
-/**
- * Reuse gl textures from a pool of textures that haven't yet been
- * used during the current frame.
- * All the textures that are not used at the end of a frame are
- * deleted.
- * This strategy seems to work well with gralloc textures because destroying
- * unused textures which are bound to gralloc buffers let drivers know that it
- * can unlock the gralloc buffers.
- */
-class PerFrameTexturePoolOGL : public CompositorTexturePoolOGL
-{
-public:
-  explicit PerFrameTexturePoolOGL(gl::GLContext* aGL)
-  : mTextureTarget(0) // zero is never a valid texture target
-  , mGL(aGL)
-  {}
-
-  virtual ~PerFrameTexturePoolOGL()
-  {
-    DestroyTextures();
-  }
-
-  virtual void Clear() override
-  {
-    DestroyTextures();
-  }
-
-  virtual GLuint GetTexture(GLenum aTarget, GLenum aUnit) override;
-
-  virtual void EndFrame() override;
-
-protected:
-  void DestroyTextures();
-
-  GLenum mTextureTarget;
-  RefPtr<gl::GLContext> mGL;
-  nsTArray<GLuint> mCreatedTextures;
-  nsTArray<GLuint> mUnusedTextures;
-};
-
 // If you want to make this class not final, first remove calls to virtual
 // methods (Destroy) that are made in the destructor.
 class CompositorOGL final : public Compositor
@@ -188,6 +141,7 @@ public:
       TextureFactoryIdentifier(LayersBackend::LAYERS_OPENGL,
                                XRE_GetProcessType(),
                                GetMaxTextureSize(),
+                               false,
                                mFBOTextureTarget == LOCAL_GL_TEXTURE_2D,
                                SupportsPartialTextureUpdate());
     return result;
@@ -211,8 +165,17 @@ public:
                         const gfx::Matrix4x4& aTransform,
                         const gfx::Rect& aVisibleRect) override;
 
+  virtual void DrawTriangles(const nsTArray<gfx::TexturedTriangle>& aTriangles,
+                             const gfx::Rect& aRect,
+                             const gfx::IntRect& aClipRect,
+                             const EffectChain& aEffectChain,
+                             gfx::Float aOpacity,
+                             const gfx::Matrix4x4& aTransform,
+                             const gfx::Rect& aVisibleRect) override;
+
+  virtual bool SupportsLayerGeometry() const override;
+
   virtual void EndFrame() override;
-  virtual void EndFrameForExternalComposition(const gfx::Matrix& aTransform) override;
 
   virtual bool SupportsPartialTextureUpdate() override;
 
@@ -249,30 +212,9 @@ public:
   virtual void Pause() override;
   virtual bool Resume() override;
 
-  virtual bool HasImageHostOverlays() override
-  {
-#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 21
-    return mImageHostOverlays.Count() > 0;
-#else
-    return false;
-#endif
-  }
-
-  virtual void AddImageHostOverlay(ImageHostOverlay* aOverlay) override
-  {
-#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 21
-    mImageHostOverlays.PutEntry(aOverlay);
-#endif
-  }
-
-  virtual void RemoveImageHostOverlay(ImageHostOverlay* aOverlay) override
-  {
-#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 21
-    mImageHostOverlays.RemoveEntry(aOverlay);
-#endif
-  }
-
   GLContext* gl() const { return mGLContext; }
+  GLContext* GetGLContext() const override { return mGLContext; }
+
   /**
    * Clear the program state. This must be called
    * before operating on the GLContext directly. */
@@ -286,9 +228,7 @@ public:
 
   /**
    * The compositor provides with temporary textures for use with direct
-   * textruing like gralloc texture.
-   * Doing so lets us use gralloc the way it has been designed to be used
-   * (see https://wiki.mozilla.org/Platform/GFX/Gralloc)
+   * textruing.
    */
   GLuint GetTemporaryTexture(GLenum aTarget, GLenum aUnit);
 
@@ -309,6 +249,15 @@ public:
   }
 
 private:
+  template<typename Geometry>
+  void DrawGeometry(const Geometry& aGeometry,
+                    const gfx::Rect& aRect,
+                    const gfx::IntRect& aClipRect,
+                    const EffectChain& aEffectChain,
+                    gfx::Float aOpacity,
+                    const gfx::Matrix4x4& aTransform,
+                    const gfx::Rect& aVisibleRect);
+
   void PrepareViewport(CompositingRenderTargetOGL *aRenderTarget);
 
   /** Widget associated with this compositor */
@@ -338,6 +287,12 @@ private:
    * coords and texcoords.
    */
   GLuint mQuadVBO;
+
+
+  /**
+  * VBO that stores dynamic triangle geometry.
+  */
+  GLuint mTriangleVBO;
 
   bool mHasBGRA;
 
@@ -373,7 +328,20 @@ private:
                                      gfx::CompositionOp aOp = gfx::CompositionOp::OP_OVER,
                                      bool aColorMatrix = false,
                                      bool aDEAAEnabled = false) const;
+
   ShaderProgramOGL* GetShaderProgramFor(const ShaderConfigOGL &aConfig);
+
+  void ApplyPrimitiveConfig(ShaderConfigOGL& aConfig,
+                            const gfx::Rect&)
+  {
+    aConfig.SetDynamicGeometry(false);
+  }
+
+  void ApplyPrimitiveConfig(ShaderConfigOGL& aConfig,
+                            const nsTArray<gfx::TexturedTriangle>&)
+  {
+    aConfig.SetDynamicGeometry(true);
+  }
 
   /**
    * Create a FBO backed by a texture.
@@ -384,30 +352,58 @@ private:
    */
   void CreateFBOWithTexture(const gfx::IntRect& aRect, bool aCopyFromSource,
                             GLuint aSourceFrameBuffer,
-                            GLuint *aFBO, GLuint *aTexture);
-  GLuint CreateTexture(const gfx::IntRect& aRect, bool aCopyFromSource, GLuint aSourceFrameBuffer);
+                            GLuint *aFBO, GLuint *aTexture,
+                            gfx::IntSize* aAllocSize = nullptr);
+
+  GLuint CreateTexture(const gfx::IntRect& aRect, bool aCopyFromSource,
+                       GLuint aSourceFrameBuffer,
+                       gfx::IntSize* aAllocSize = nullptr);
+
+  gfx::Point3D GetLineCoefficients(const gfx::Point& aPoint1,
+                                   const gfx::Point& aPoint2);
+
+  void ActivateProgram(ShaderProgramOGL *aProg);
+
+  void CleanupResources();
 
   void BindAndDrawQuads(ShaderProgramOGL *aProg,
                         int aQuads,
                         const gfx::Rect* aLayerRect,
                         const gfx::Rect* aTextureRect);
+
   void BindAndDrawQuad(ShaderProgramOGL *aProg,
                        const gfx::Rect& aLayerRect,
-                       const gfx::Rect& aTextureRect = gfx::Rect(0.0f, 0.0f, 1.0f, 1.0f)) {
+                       const gfx::Rect& aTextureRect =
+                         gfx::Rect(0.0f, 0.0f, 1.0f, 1.0f))
+  {
     gfx::Rect layerRects[4];
     gfx::Rect textureRects[4];
     layerRects[0] = aLayerRect;
     textureRects[0] = aTextureRect;
     BindAndDrawQuads(aProg, 1, layerRects, textureRects);
   }
-  void BindAndDrawQuadWithTextureRect(ShaderProgramOGL *aProg,
-                                      const gfx::Rect& aRect,
-                                      const gfx::Rect& aTexCoordRect,
-                                      TextureSource *aTexture);
-  gfx::Point3D GetLineCoefficients(const gfx::Point& aPoint1,
-                                   const gfx::Point& aPoint2);
-  void ActivateProgram(ShaderProgramOGL *aProg);
-  void CleanupResources();
+
+  void BindAndDrawGeometry(ShaderProgramOGL* aProgram,
+                           const gfx::Rect& aRect);
+
+  void BindAndDrawGeometry(ShaderProgramOGL* aProgram,
+                           const nsTArray<gfx::TexturedTriangle>& aTriangles);
+
+  void BindAndDrawGeometryWithTextureRect(ShaderProgramOGL *aProg,
+                                          const gfx::Rect& aRect,
+                                          const gfx::Rect& aTexCoordRect,
+                                          TextureSource *aTexture);
+
+  void BindAndDrawGeometryWithTextureRect(ShaderProgramOGL *aProg,
+                                          const nsTArray<gfx::TexturedTriangle>& aTriangles,
+                                          const gfx::Rect& aTexCoordRect,
+                                          TextureSource *aTexture);
+
+  void InitializeVAO(const GLuint aAttribIndex, const GLint aComponents,
+                     const GLsizei aStride, const size_t aOffset);
+
+  gfx::Rect GetTextureCoordinates(gfx::Rect textureRect,
+                                  TextureSource* aTexture);
 
   /**
    * Bind the texture behind the current render target as the backdrop for a
@@ -434,8 +430,6 @@ private:
 
   RefPtr<CompositorTexturePoolOGL> mTexturePool;
 
-  ContextStateTrackerOGL mContextStateTracker;
-
   bool mDestroyed;
 
   /**
@@ -445,11 +439,6 @@ private:
   gfx::IntSize mViewportSize;
 
   ShaderProgramOGL *mCurrentProgram;
-
-#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 21
-  nsTHashtable<nsPtrHashKey<ImageHostOverlay> > mImageHostOverlays;
-#endif
-
 };
 
 } // namespace layers

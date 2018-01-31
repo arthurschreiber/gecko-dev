@@ -290,7 +290,7 @@ BaseWebSocketChannel::GetProtocolFlags(uint32_t *aProtocolFlags)
 {
   LOG(("BaseWebSocketChannel::GetProtocolFlags() %p\n", this));
 
-  *aProtocolFlags = URI_NORELATIVE | URI_NON_PERSISTABLE | ALLOWS_PROXY | 
+  *aProtocolFlags = URI_NORELATIVE | URI_NON_PERSISTABLE | ALLOWS_PROXY |
       ALLOWS_PROXY_HTTP | URI_DOES_NOT_RETURN_DATA | URI_DANGEROUS_TO_LOAD;
   return NS_OK;
 }
@@ -306,13 +306,12 @@ BaseWebSocketChannel::NewURI(const nsACString & aSpec, const char *aOriginCharse
   if (NS_FAILED(rv))
     return rv;
 
-  RefPtr<nsStandardURL> url = new nsStandardURL();
-  rv = url->Init(nsIStandardURL::URLTYPE_AUTHORITY, port, aSpec,
-                aOriginCharset, aBaseURI);
-  if (NS_FAILED(rv))
-    return rv;
-  url.forget(_retval);
-  return NS_OK;
+  return NS_MutateURI(new nsStandardURL::Mutator())
+           .Apply<nsIStandardURLMutator>(&nsIStandardURLMutator::Init,
+                                         nsIStandardURL::URLTYPE_AUTHORITY, port,
+                                         nsCString(aSpec), aOriginCharset, aBaseURI,
+                                         nullptr)
+           .Finalize(_retval);
 }
 
 NS_IMETHODIMP
@@ -359,6 +358,19 @@ BaseWebSocketChannel::RetargetDeliveryTo(nsIEventTarget* aTargetThread)
   return NS_OK;
 }
 
+NS_IMETHODIMP
+BaseWebSocketChannel::GetDeliveryTarget(nsIEventTarget** aTargetThread)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsCOMPtr<nsIEventTarget> target = mTargetThread;
+  if (!target) {
+    target = GetCurrentThreadEventTarget();
+  }
+  target.forget(aTargetThread);
+  return NS_OK;
+}
+
 BaseWebSocketChannel::ListenerAndContextContainer::ListenerAndContextContainer(
                                                nsIWebSocketListener* aListener,
                                                nsISupports* aContext)
@@ -373,8 +385,12 @@ BaseWebSocketChannel::ListenerAndContextContainer::~ListenerAndContextContainer(
 {
   MOZ_ASSERT(mListener);
 
-  NS_ReleaseOnMainThread(mListener.forget());
-  NS_ReleaseOnMainThread(mContext.forget());
+  NS_ReleaseOnMainThreadSystemGroup(
+    "BaseWebSocketChannel::ListenerAndContextContainer::mListener",
+    mListener.forget());
+  NS_ReleaseOnMainThreadSystemGroup(
+    "BaseWebSocketChannel::ListenerAndContextContainer::mContext",
+    mContext.forget());
 }
 
 } // namespace net

@@ -2195,6 +2195,10 @@ SetRequestExts(void *object, CERTCertExtension **exts)
     request->tbsRequest->requestExtensions = exts;
 }
 
+#if defined(__GNUC__) && !defined(NSS_NO_GCC48)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wvarargs"
+#endif
 SECStatus
 CERT_AddOCSPAcceptableResponses(CERTOCSPRequest *request,
                                 SECOidTag responseType0, ...)
@@ -2261,6 +2265,9 @@ loser:
         (void)CERT_FinishExtensions(extHandle);
     return rv;
 }
+#if defined(__GNUC__) && !defined(NSS_NO_GCC48)
+#pragma GCC diagnostic pop
+#endif
 
 /*
  * FUNCTION: CERT_DestroyOCSPRequest
@@ -4121,9 +4128,7 @@ CERT_VerifyOCSPResponseSignature(CERTOCSPResponse *response,
      * Just because we have a cert does not mean it is any good; check
      * it for validity, trust and usage.
      */
-    if (ocsp_CertIsOCSPDefaultResponder(handle, signerCert)) {
-        rv = SECSuccess;
-    } else {
+    if (!ocsp_CertIsOCSPDefaultResponder(handle, signerCert)) {
         SECCertUsage certUsage;
         if (CERT_IsCACert(signerCert, NULL)) {
             certUsage = certUsageAnyCA;

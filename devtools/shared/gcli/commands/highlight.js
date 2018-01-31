@@ -5,15 +5,13 @@
 "use strict";
 
 const l10n = require("gcli/l10n");
-require("devtools/server/actors/inspector");
-const {
-  BoxModelHighlighter,
-  HighlighterEnvironment
-} = require("devtools/server/actors/highlighters");
+require("devtools/server/actors/inspector/inspector-actor");
+const {HighlighterEnvironment}  = require("devtools/server/actors/highlighters");
+const {BoxModelHighlighter} = require("devtools/server/actors/highlighters/box-model");
 
 const {PluralForm} = require("devtools/shared/plural-form");
 const {LocalizationHelper} = require("devtools/shared/l10n");
-const L10N = new LocalizationHelper("devtools-shared/locale/gclicommands.properties");
+const L10N = new LocalizationHelper("devtools/shared/locales/gclicommands.properties");
 
 // How many maximum nodes can be highlighted in parallel
 const MAX_HIGHLIGHTED_ELEMENTS = 100;
@@ -103,7 +101,7 @@ exports.items = [
         ]
       }
     ],
-    exec: function(args, context) {
+    exec: function (args, context) {
       // Remove all existing highlighters unless told otherwise
       if (!args.keep) {
         unhighlightAll();

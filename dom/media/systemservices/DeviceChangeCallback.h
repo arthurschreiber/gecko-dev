@@ -7,6 +7,8 @@
 #ifndef mozilla_DeviceChangeCallback_h
 #define mozilla_DeviceChangeCallback_h
 
+#include "mozilla/Mutex.h"
+
 namespace mozilla {
 
 class DeviceChangeCallback
@@ -32,6 +34,12 @@ public:
   virtual int RemoveDeviceChangeCallback(DeviceChangeCallback* aCallback)
   {
     MutexAutoLock lock(mCallbackMutex);
+    return RemoveDeviceChangeCallbackLocked(aCallback);
+  }
+
+  virtual int RemoveDeviceChangeCallbackLocked(DeviceChangeCallback* aCallback)
+  {
+    mCallbackMutex.AssertCurrentThreadOwns();
     if (mDeviceChangeCallbackList.IndexOf(aCallback) != mDeviceChangeCallbackList.NoIndex)
       mDeviceChangeCallbackList.RemoveElement(aCallback);
     return 0;
@@ -39,12 +47,10 @@ public:
 
   DeviceChangeCallback() : mCallbackMutex("mozilla::media::DeviceChangeCallback::mCallbackMutex")
   {
-    mDeviceChangeCallbackList.Clear();
   }
 
   virtual ~DeviceChangeCallback()
   {
-    mDeviceChangeCallbackList.Clear();
   }
 
 protected:

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,9 +28,6 @@
 #include <algorithm>
 #include "DOMMediaStream.h"
 #include "GeckoProfiler.h"
-#ifdef MOZ_WEBRTC
-#include "AudioOutputObserver.h"
-#endif
 
 using namespace mozilla::layers;
 using namespace mozilla::dom;
@@ -46,8 +42,9 @@ namespace mozilla {
 LazyLogModule gTrackUnionStreamLog("TrackUnionStream");
 #define STREAM_LOG(type, msg) MOZ_LOG(gTrackUnionStreamLog, type, msg)
 
-TrackUnionStream::TrackUnionStream() :
-  ProcessedMediaStream(), mNextAvailableTrackID(1)
+TrackUnionStream::TrackUnionStream()
+  : ProcessedMediaStream()
+  , mNextAvailableTrackID(1)
 {
 }
 
@@ -57,11 +54,13 @@ TrackUnionStream::TrackUnionStream() :
     for (int32_t i = mTrackMap.Length() - 1; i >= 0; --i) {
       if (mTrackMap[i].mInputPort == aPort) {
         STREAM_LOG(LogLevel::Debug, ("TrackUnionStream %p removing trackmap entry %d", this, i));
-        EndTrack(i);
-        for (auto listener : mTrackMap[i].mOwnedDirectListeners) {
+        nsTArray<RefPtr<DirectMediaStreamTrackListener>> listeners(
+          mTrackMap[i].mOwnedDirectListeners);
+        for (auto listener : listeners) {
           // Remove listeners while the entry still exists.
           RemoveDirectTrackListenerImpl(listener, mTrackMap[i].mOutputTrackID);
         }
+        EndTrack(i);
         mTrackMap.RemoveElementAt(i);
       }
     }
@@ -78,10 +77,14 @@ TrackUnionStream::TrackUnionStream() :
       mappedTracksFinished.AppendElement(true);
       mappedTracksWithMatchingInputTracks.AppendElement(false);
     }
-    bool allFinished = !mInputs.IsEmpty();
-    bool allHaveCurrentData = !mInputs.IsEmpty();
-    for (uint32_t i = 0; i < mInputs.Length(); ++i) {
-      MediaStream* stream = mInputs[i]->GetSource();
+
+    AutoTArray<MediaInputPort*, 32> inputs(mInputs);
+    inputs.AppendElements(mSuspendedInputs);
+
+    bool allFinished = !inputs.IsEmpty();
+    bool allHaveCurrentData = !inputs.IsEmpty();
+    for (uint32_t i = 0; i < inputs.Length(); ++i) {
+      MediaStream* stream = inputs[i]->GetSource();
       if (!stream->IsFinishedOnGraphThread()) {
         // XXX we really should check whether 'stream' has finished within time aTo,
         // not just that it's finishing when all its queued data eventually runs
@@ -97,12 +100,12 @@ TrackUnionStream::TrackUnionStream() :
         bool found = false;
         for (uint32_t j = 0; j < mTrackMap.Length(); ++j) {
           TrackMapEntry* map = &mTrackMap[j];
-          if (map->mInputPort == mInputs[i] && map->mInputTrackID == tracks->GetID()) {
+          if (map->mInputPort == inputs[i] && map->mInputTrackID == tracks->GetID()) {
             bool trackFinished = false;
             StreamTracks::Track* outputTrack = mTracks.FindTrack(map->mOutputTrackID);
             found = true;
             if (!outputTrack || outputTrack->IsEnded() ||
-                !mInputs[i]->PassTrackThrough(tracks->GetID())) {
+                !inputs[i]->PassTrackThrough(tracks->GetID())) {
               trackFinished = true;
             } else {
               CopyTrackData(tracks.get(), j, aFrom, aTo, &trackFinished);
@@ -112,10 +115,10 @@ TrackUnionStream::TrackUnionStream() :
             break;
           }
         }
-        if (!found && mInputs[i]->AllowCreationOf(tracks->GetID())) {
+        if (!found && inputs[i]->AllowCreationOf(tracks->GetID())) {
           bool trackFinished = false;
           trackAdded = true;
-          uint32_t mapIndex = AddTrack(mInputs[i], tracks.get(), aFrom);
+          uint32_t mapIndex = AddTrack(inputs[i], tracks.get(), aFrom);
           CopyTrackData(tracks.get(), mapIndex, aFrom, aTo, &trackFinished);
           mappedTracksFinished.AppendElement(trackFinished);
           mappedTracksWithMatchingInputTracks.AppendElement(true);
@@ -167,13 +170,15 @@ TrackUnionStream::TrackUnionStream() :
     TrackID id;
     if (IsTrackIDExplicit(id = aPort->GetDestinationTrackId())) {
       MOZ_ASSERT(id >= mNextAvailableTrackID &&
-                 mUsedTracks.BinaryIndexOf(id) == mUsedTracks.NoIndex,
+                 !mUsedTracks.ContainsSorted(id),
                  "Desired destination id taken. Only provide a destination ID "
                  "if you can assure its availability, or we may not be able "
                  "to bind to the correct DOM-side track.");
 #ifdef DEBUG
-      for (size_t i = 0; mInputs[i] != aPort; ++i) {
-        MOZ_ASSERT(mInputs[i]->GetSourceTrackId() != TRACK_ANY,
+      AutoTArray<MediaInputPort*, 32> inputs(mInputs);
+      inputs.AppendElements(mSuspendedInputs);
+      for (size_t i = 0; inputs[i] != aPort; ++i) {
+        MOZ_ASSERT(inputs[i]->GetSourceTrackId() != TRACK_ANY,
                    "You are adding a MediaInputPort with a track mapping "
                    "while there already exist generic MediaInputPorts for this "
                    "destination stream. This can lead to TrackID collisions!");
@@ -182,7 +187,7 @@ TrackUnionStream::TrackUnionStream() :
       mUsedTracks.InsertElementSorted(id);
     } else if ((id = aTrack->GetID()) &&
                id > mNextAvailableTrackID &&
-               mUsedTracks.BinaryIndexOf(id) == mUsedTracks.NoIndex) {
+               !mUsedTracks.ContainsSorted(id)) {
       // Input id available. Mark it used in mUsedTracks.
       mUsedTracks.InsertElementSorted(id);
     } else {
@@ -302,6 +307,7 @@ TrackUnionStream::TrackUnionStream() :
           aInputTrack->GetEnd() <= inputEnd) {
         inputTrackEndPoint = aInputTrack->GetEnd();
         *aOutputTrackFinished = true;
+        break;
       }
 
       if (interval.mStart >= interval.mEnd) {
@@ -313,7 +319,6 @@ TrackUnionStream::TrackUnionStream() :
       StreamTime outputStart = outputTrack->GetEnd();
 
       if (interval.mInputIsBlocked) {
-        // Maybe the input track ended?
         segment->AppendNullData(ticks);
         STREAM_LOG(LogLevel::Verbose, ("TrackUnionStream %p appending %lld ticks of null data to track %d",
                    this, (long long)ticks, outputTrack->GetID()));

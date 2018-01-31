@@ -1,6 +1,6 @@
 "use strict";
 
-const { Heritage } = require("devtools/client/shared/widgets/view-helpers");
+const { extend } = require("devtools/shared/extend");
 const { AbstractCanvasGraph } = require("devtools/client/shared/widgets/Graphs");
 
 // Bar graph constants.
@@ -8,12 +8,10 @@ const { AbstractCanvasGraph } = require("devtools/client/shared/widgets/Graphs")
 const GRAPH_DAMPEN_VALUES_FACTOR = 0.9;
 
 const GRAPH_BACKGROUND_COLOR = "#ddd";
-// px
-const GRAPH_STROKE_WIDTH = 1;
+const GRAPH_STROKE_WIDTH = 1; // px
 const GRAPH_STROKE_COLOR = "rgba(255,255,255,0.9)";
-// px
-const GRAPH_HELPER_LINES_DASH = [5];
-const GRAPH_HELPER_LINES_WIDTH = 1;
+const GRAPH_HELPER_LINES_DASH = [5]; // px
+const GRAPH_HELPER_LINES_WIDTH = 1; // px
 
 const GRAPH_CLIPHEAD_LINE_COLOR = "#fff";
 const GRAPH_SELECTION_LINE_COLOR = "#fff";
@@ -59,7 +57,7 @@ this.MountainGraphWidget = function (parent, ...args) {
   AbstractCanvasGraph.apply(this, [parent, "mountain-graph", ...args]);
 };
 
-MountainGraphWidget.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
+MountainGraphWidget.prototype = extend(AbstractCanvasGraph.prototype, {
   backgroundColor: GRAPH_BACKGROUND_COLOR,
   strokeColor: GRAPH_STROKE_COLOR,
   strokeWidth: GRAPH_STROKE_WIDTH,

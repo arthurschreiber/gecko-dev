@@ -30,10 +30,12 @@ NS_IMPL_ELEMENT_CLONE(HTMLAudioElement)
 HTMLAudioElement::HTMLAudioElement(already_AddRefed<NodeInfo>& aNodeInfo)
   : HTMLMediaElement(aNodeInfo)
 {
+  DecoderDoctorLogger::LogConstruction(this);
 }
 
 HTMLAudioElement::~HTMLAudioElement()
 {
+  DecoderDoctorLogger::LogDestruction(this);
 }
 
 bool
@@ -58,7 +60,7 @@ HTMLAudioElement::Audio(const GlobalObject& aGlobal,
   already_AddRefed<mozilla::dom::NodeInfo> nodeInfo =
     doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::audio, nullptr,
                                         kNameSpaceID_XHTML,
-                                        nsIDOMNode::ELEMENT_NODE);
+                                        ELEMENT_NODE);
 
   RefPtr<HTMLAudioElement> audio = new HTMLAudioElement(nodeInfo);
   audio->SetHTMLAttr(nsGkAtoms::preload, NS_LITERAL_STRING("auto"), aRv);

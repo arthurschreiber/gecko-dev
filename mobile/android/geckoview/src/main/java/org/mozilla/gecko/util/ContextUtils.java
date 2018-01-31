@@ -18,14 +18,22 @@ public class ContextUtils {
 
     /**
      * @return {@link android.content.pm.PackageInfo#firstInstallTime} for the context's package.
-     * @throws PackageManager.NameNotFoundException Unexpected - we get the package name from the context so
-     *         it's expected to be found.
      */
     public static PackageInfo getCurrentPackageInfo(final Context context) {
         try {
             return context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
         } catch (PackageManager.NameNotFoundException e) {
             throw new AssertionError("Should not happen: Can't get package info of own package");
+        }
+    }
+
+    public static boolean isPackageInstalled(final Context context, String packageName) {
+        try {
+            PackageManager pm = context.getPackageManager();
+            pm.getPackageInfo(packageName, 0);
+            return true;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
         }
     }
 

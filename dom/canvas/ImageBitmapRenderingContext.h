@@ -25,7 +25,7 @@ namespace dom {
 
 /**
  * The purpose of ImageBitmapRenderingContext is to provide a faster and efficient
- * way to display ImageBitmap. Simply call TransferImageBitmap() then we'll transfer
+ * way to display ImageBitmap. Simply call TransferFromImageBitmap() then we'll transfer
  * the surface of ImageBitmap to this context and then to use it to display.
  *
  * See more details in spec: https://wiki.whatwg.org/wiki/OffscreenCanvas
@@ -47,10 +47,11 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(ImageBitmapRenderingContext)
 
   void TransferImageBitmap(ImageBitmap& aImageBitmap);
+  void TransferFromImageBitmap(ImageBitmap& aImageBitmap);
 
   // nsICanvasRenderingContextInternal
-  virtual int32_t GetWidth() const override;
-  virtual int32_t GetHeight() const override;
+  virtual int32_t GetWidth() override { return mWidth; }
+  virtual int32_t GetHeight() override { return mHeight; }
 
   NS_IMETHOD SetDimensions(int32_t aWidth, int32_t aHeight) override;
 
@@ -63,15 +64,14 @@ public:
                             nsIInputStream** aStream) override;
 
   virtual already_AddRefed<mozilla::gfx::SourceSurface>
-  GetSurfaceSnapshot(bool* aPremultAlpha = nullptr) override;
+  GetSurfaceSnapshot(gfxAlphaType* aOutAlphaType) override;
 
-  NS_IMETHOD SetIsOpaque(bool aIsOpaque) override;
+  virtual void SetIsOpaque(bool aIsOpaque) override;
   virtual bool GetIsOpaque() override;
   NS_IMETHOD Reset() override;
   virtual already_AddRefed<Layer> GetCanvasLayer(nsDisplayListBuilder* aBuilder,
                                                  Layer* aOldLayer,
-                                                 LayerManager* aManager,
-                                                 bool aMirror = false) override;
+                                                 LayerManager* aManager) override;
   virtual void MarkContextClean() override;
 
   NS_IMETHOD Redraw(const gfxRect& aDirty) override;

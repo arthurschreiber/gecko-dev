@@ -24,45 +24,42 @@ const SCHEMES = {
 };
 
 var gRunner;
-function run_test()
-{
+function run_test() {
   do_test_pending();
   gRunner = step();
   gRunner.next();
 }
 
-function* step()
-{
+function* step() {
   let history = Cc["@mozilla.org/browser/history;1"]
                   .getService(Ci.mozIAsyncHistory);
 
   for (let scheme in SCHEMES) {
-    do_print("Testing scheme " + scheme);
+    info("Testing scheme " + scheme);
     for (let t in PlacesUtils.history.TRANSITIONS) {
-      do_print("With transition " + t);
+      info("With transition " + t);
       let transition = PlacesUtils.history.TRANSITIONS[t];
 
       let uri = NetUtil.newURI(scheme + "mozilla.org/");
 
       history.isURIVisited(uri, function(aURI, aIsVisited) {
-        do_check_true(uri.equals(aURI));
-        do_check_false(aIsVisited);
+        Assert.ok(uri.equals(aURI));
+        Assert.ok(!aIsVisited);
 
         let callback = {
-          handleError:  function () {},
-          handleResult: function () {},
-          handleCompletion: function () {
-            do_print("Added visit to " + uri.spec);
+          handleError() {},
+          handleResult() {},
+          handleCompletion() {
+            info("Added visit to " + uri.spec);
 
-            history.isURIVisited(uri, function (aURI, aIsVisited) {
-              do_check_true(uri.equals(aURI));
-              let checker = SCHEMES[scheme] ? do_check_true : do_check_false;
-              checker(aIsVisited);
+            history.isURIVisited(uri, function(aURI2, aIsVisited2) {
+              Assert.ok(uri.equals(aURI2));
+              Assert.ok(SCHEMES[scheme] ? aIsVisited2 : !aIsVisited2);
 
-              PlacesTestUtils.clearHistory().then(function () {
-                history.isURIVisited(uri, function(aURI, aIsVisited) {
-                  do_check_true(uri.equals(aURI));
-                  do_check_false(aIsVisited);
+              PlacesTestUtils.clearHistory().then(function() {
+                history.isURIVisited(uri, function(aURI3, aIsVisited3) {
+                  Assert.ok(uri.equals(aURI3));
+                  Assert.ok(!aIsVisited3);
                   gRunner.next();
                 });
               });
@@ -70,9 +67,9 @@ function* step()
           },
         };
 
-        history.updatePlaces({ uri:    uri
-                             , visits: [ { transitionType: transition
-                                         , visitDate:      Date.now() * 1000
+        history.updatePlaces({ uri,
+                               visits: [ { transitionType: transition,
+                                           visitDate:      Date.now() * 1000
                                          } ]
                              }, callback);
       });

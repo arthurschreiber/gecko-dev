@@ -12,8 +12,8 @@ var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 const URI_EXTENSION_BLOCKLIST_DIALOG = "chrome://mozapps/content/extensions/blocklist.xul";
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://testing-common/MockRegistrar.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://testing-common/MockRegistrar.jsm");
 var testserver = new HttpServer();
 testserver.start(-1);
 gPort = testserver.identity.primaryPort;
@@ -26,9 +26,9 @@ profileDir.append("extensions");
 
 // A window watcher to deal with the blocklist UI dialog.
 var WindowWatcher = {
-  openWindow: function(parent, url, name, features, args) {
+  openWindow(parent, url, name, features, args) {
     // Should be called to list the newly blocklisted items
-    do_check_eq(url, URI_EXTENSION_BLOCKLIST_DIALOG);
+    Assert.equal(url, URI_EXTENSION_BLOCKLIST_DIALOG);
 
     // Simulate auto-disabling any softblocks
     var list = args.wrappedJSObject.list;
@@ -37,12 +37,12 @@ var WindowWatcher = {
         aItem.disable = true;
     });
 
-    //run the code after the blocklist is closed
-    Services.obs.notifyObservers(null, "addon-blocklist-closed", null);
+    // run the code after the blocklist is closed
+    Services.obs.notifyObservers(null, "addon-blocklist-closed");
 
   },
 
-  QueryInterface: function(iid) {
+  QueryInterface(iid) {
     if (iid.equals(Ci.nsIWindowWatcher)
      || iid.equals(Ci.nsISupports))
       return this;
@@ -54,11 +54,11 @@ var WindowWatcher = {
 MockRegistrar.register("@mozilla.org/embedcomp/window-watcher;1", WindowWatcher);
 
 function load_blocklist(aFile, aCallback) {
-  Services.obs.addObserver(function() {
-    Services.obs.removeObserver(arguments.callee, "blocklist-updated");
+  Services.obs.addObserver(function observer() {
+    Services.obs.removeObserver(observer, "blocklist-updated");
 
-    do_execute_soon(aCallback);
-  }, "blocklist-updated", false);
+    executeSoon(aCallback);
+  }, "blocklist-updated");
 
   Services.prefs.setCharPref("extensions.blocklist.url", "http://localhost:" +
                              gPort + "/data/" + aFile);
@@ -126,7 +126,7 @@ function run_test() {
 
   AddonManager.getAddonsByIDs(addonIDs, function(addons) {
     for (let addon of addons) {
-      do_check_eq(addon.blocklistState, Ci.nsIBlocklistService.STATE_NOT_BLOCKED);
+      Assert.equal(addon.blocklistState, Ci.nsIBlocklistService.STATE_NOT_BLOCKED);
     }
     run_test_1();
   });
@@ -136,18 +136,15 @@ function run_test_1() {
   load_blocklist("test_bug393285.xml", function() {
     restartManager();
 
-    var blocklist = Cc["@mozilla.org/extensions/blocklist;1"]
-                    .getService(Ci.nsIBlocklistService);
-
     AddonManager.getAddonsByIDs(addonIDs,
                                function([a1, a2, a3, a4]) {
       // No info in blocklist, shouldn't be blocked
-      do_check_false(blocklist.isAddonBlocklisted(a1, null, null));
+      Assert.ok(!Services.blocklist.isAddonBlocklisted(a1, null, null));
 
       // All these should be blocklisted for the current app.
-      do_check_true(blocklist.isAddonBlocklisted(a2, null, null));
-      do_check_true(blocklist.isAddonBlocklisted(a3, null, null));
-      do_check_true(blocklist.isAddonBlocklisted(a4, null, null));
+      Assert.ok(Services.blocklist.isAddonBlocklisted(a2, null, null));
+      Assert.ok(Services.blocklist.isAddonBlocklisted(a3, null, null));
+      Assert.ok(Services.blocklist.isAddonBlocklisted(a4, null, null));
 
       end_test();
     });

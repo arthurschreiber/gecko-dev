@@ -21,7 +21,7 @@ class LDivI : public LBinaryMath<1>
         setTemp(0, temp);
     }
 
-    const char* extraName() const {
+    const char* extraName() const override {
         if (mir()->isTruncated()) {
             if (mir()->canBeNegativeZero()) {
                 return mir()->canBeNegativeOverflow()
@@ -118,7 +118,7 @@ class LModI : public LBinaryMath<1>
         setTemp(0, temp);
     }
 
-    const char* extraName() const {
+    const char* extraName() const override {
         return mir()->isTruncated() ? "Truncated" : nullptr;
     }
 
@@ -147,7 +147,7 @@ class LUDivOrMod : public LBinaryMath<1>
         return getTemp(0);
     }
 
-    const char* extraName() const {
+    const char* extraName() const override {
         return mir()->isTruncated() ? "Truncated" : nullptr;
     }
 
@@ -167,6 +167,12 @@ class LUDivOrMod : public LBinaryMath<1>
             return mir_->toMod()->trapOnError();
         return mir_->toDiv()->trapOnError();
     }
+
+    wasm::BytecodeOffset bytecodeOffset() const {
+        if (mir_->isMod())
+            return mir_->toMod()->bytecodeOffset();
+        return mir_->toDiv()->bytecodeOffset();
+    }
 };
 
 class LUDivOrModConstant : public LInstructionHelper<1, 1, 1>
@@ -177,13 +183,13 @@ class LUDivOrModConstant : public LInstructionHelper<1, 1, 1>
     LIR_HEADER(UDivOrModConstant)
 
     LUDivOrModConstant(const LAllocation &lhs, uint32_t denominator, const LDefinition& temp)
-    : denominator_(denominator)
+      : denominator_(denominator)
     {
         setOperand(0, lhs);
         setTemp(0, temp);
     }
 
-    const LAllocation *numerator() {
+    const LAllocation* numerator() {
         return getOperand(0);
     }
     uint32_t denominator() const {
@@ -202,6 +208,11 @@ class LUDivOrModConstant : public LInstructionHelper<1, 1, 1>
         if (mir_->isMod())
             return mir_->toMod()->trapOnError();
         return mir_->toDiv()->trapOnError();
+    }
+    wasm::BytecodeOffset bytecodeOffset() const {
+        if (mir_->isMod())
+            return mir_->toMod()->bytecodeOffset();
+        return mir_->toDiv()->bytecodeOffset();
     }
 };
 
@@ -330,7 +341,7 @@ class LMulI : public LBinaryMath<0, 1>
         setOperand(2, lhsCopy);
     }
 
-    const char* extraName() const {
+    const char* extraName() const override {
         return (mir()->mode() == MMul::Integer)
                ? "Integer"
                : (mir()->canBeNegativeZero() ? "CanBeNegativeZero" : nullptr);
@@ -385,17 +396,22 @@ class LSimdValueFloat32x4 : public LInstructionHelper<1, 4, 1>
     }
 };
 
-class LInt64ToFloatingPoint : public LInstructionHelper<1, INT64_PIECES, 0>
+class LInt64ToFloatingPoint : public LInstructionHelper<1, INT64_PIECES, 1>
 {
   public:
     LIR_HEADER(Int64ToFloatingPoint);
 
-    explicit LInt64ToFloatingPoint(const LInt64Allocation& in) {
+    explicit LInt64ToFloatingPoint(const LInt64Allocation& in, const LDefinition& temp) {
         setInt64Operand(0, in);
+        setTemp(0, temp);
     }
 
     MInt64ToFloatingPoint* mir() const {
         return mir_->toInt64ToFloatingPoint();
+    }
+
+    const LDefinition* temp() {
+        return getTemp(0);
     }
 };
 

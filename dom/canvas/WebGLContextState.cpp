@@ -8,6 +8,7 @@
 #include "GLContext.h"
 #include "GLScreenBuffer.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
 #include "nsString.h"
 #include "WebGLBuffer.h"
@@ -22,59 +23,33 @@
 namespace mozilla {
 
 void
-WebGLContext::Disable(GLenum cap)
+WebGLContext::SetEnabled(const char* const funcName, const GLenum cap, const bool enabled)
 {
     if (IsContextLost())
         return;
 
-    if (!ValidateCapabilityEnum(cap, "disable"))
+    if (!ValidateCapabilityEnum(cap, funcName))
         return;
 
-    realGLboolean* trackingSlot = GetStateTrackingSlot(cap);
-
-    if (trackingSlot)
-    {
-        *trackingSlot = 0;
+    const auto& slot = GetStateTrackingSlot(cap);
+    if (slot) {
+        *slot = enabled;
     }
 
-    MakeContextCurrent();
-    gl->fDisable(cap);
-}
+    switch (cap) {
+    case LOCAL_GL_DEPTH_TEST:
+    case LOCAL_GL_STENCIL_TEST:
+        break; // Lazily applied, so don't tell GL yet or we will desync.
 
-void
-WebGLContext::Enable(GLenum cap)
-{
-    if (IsContextLost())
-        return;
-
-    if (!ValidateCapabilityEnum(cap, "enable"))
-        return;
-
-    realGLboolean* trackingSlot = GetStateTrackingSlot(cap);
-
-    if (trackingSlot)
-    {
-        *trackingSlot = 1;
+    default:
+        // Non-lazy caps.
+        gl->SetEnabled(cap, enabled);
+        break;
     }
-
-    MakeContextCurrent();
-    gl->fEnable(cap);
-}
-
-static JS::Value
-StringValue(JSContext* cx, const nsAString& str, ErrorResult& rv)
-{
-    JSString* jsStr = JS_NewUCStringCopyN(cx, str.BeginReading(), str.Length());
-    if (!jsStr) {
-        rv.Throw(NS_ERROR_OUT_OF_MEMORY);
-        return JS::NullValue();
-    }
-
-    return JS::StringValue(jsStr);
 }
 
 bool
-WebGLContext::GetStencilBits(GLint* const out_stencilBits)
+WebGLContext::GetStencilBits(GLint* const out_stencilBits) const
 {
     *out_stencilBits = 0;
     if (mBoundDrawFramebuffer) {
@@ -119,11 +94,7 @@ WebGLContext::GetChannelBits(const char* funcName, GLenum pname, GLint* const ou
             break;
 
         case LOCAL_GL_DEPTH_BITS:
-            if (mOptions.depth) {
-                *out_val = gl->Screen()->DepthBits();
-            } else {
-                *out_val = 0;
-            }
+            *out_val = (mOptions.depth ? 24 : 0);
             break;
 
         case LOCAL_GL_STENCIL_BITS:
@@ -191,68 +162,25 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
     if (IsContextLost())
         return JS::NullValue();
 
-    MakeContextCurrent();
-
-    if (MinCapabilityMode()) {
-        switch(pname) {
-            ////////////////////////////
-            // Single-value params
-
-            // int
-            case LOCAL_GL_MAX_VERTEX_ATTRIBS:
-                return JS::Int32Value(MINVALUE_GL_MAX_VERTEX_ATTRIBS);
-
-            case LOCAL_GL_MAX_FRAGMENT_UNIFORM_VECTORS:
-                return JS::Int32Value(MINVALUE_GL_MAX_FRAGMENT_UNIFORM_VECTORS);
-
-            case LOCAL_GL_MAX_VERTEX_UNIFORM_VECTORS:
-                return JS::Int32Value(MINVALUE_GL_MAX_VERTEX_UNIFORM_VECTORS);
-
-            case LOCAL_GL_MAX_VARYING_VECTORS:
-                return JS::Int32Value(MINVALUE_GL_MAX_VARYING_VECTORS);
-
-            case LOCAL_GL_MAX_TEXTURE_SIZE:
-                return JS::Int32Value(MINVALUE_GL_MAX_TEXTURE_SIZE);
-
-            case LOCAL_GL_MAX_CUBE_MAP_TEXTURE_SIZE:
-                return JS::Int32Value(MINVALUE_GL_MAX_CUBE_MAP_TEXTURE_SIZE);
-
-            case LOCAL_GL_MAX_TEXTURE_IMAGE_UNITS:
-                return JS::Int32Value(MINVALUE_GL_MAX_TEXTURE_IMAGE_UNITS);
-
-            case LOCAL_GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS:
-                return JS::Int32Value(MINVALUE_GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS);
-
-            case LOCAL_GL_MAX_RENDERBUFFER_SIZE:
-                return JS::Int32Value(MINVALUE_GL_MAX_RENDERBUFFER_SIZE);
-
-            default:
-                // Return the real value; we're not overriding this one
-                break;
-        }
-    }
-
     if (IsWebGL2() || IsExtensionEnabled(WebGLExtensionID::WEBGL_draw_buffers)) {
         if (pname == LOCAL_GL_MAX_COLOR_ATTACHMENTS) {
-            return JS::Int32Value(mImplMaxColorAttachments);
+            return JS::Int32Value(mGLMaxColorAttachments);
 
         } else if (pname == LOCAL_GL_MAX_DRAW_BUFFERS) {
-            return JS::Int32Value(mImplMaxDrawBuffers);
+            return JS::Int32Value(mGLMaxDrawBuffers);
 
         } else if (pname >= LOCAL_GL_DRAW_BUFFER0 &&
-                   pname < GLenum(LOCAL_GL_DRAW_BUFFER0 + mImplMaxDrawBuffers))
+                   pname < GLenum(LOCAL_GL_DRAW_BUFFER0 + mGLMaxDrawBuffers))
         {
-            GLint iv = 0;
-            gl->fGetIntegerv(pname, &iv);
-
-            if (mBoundDrawFramebuffer)
-                return JS::Int32Value(iv);
-
-            const GLint index = (pname - LOCAL_GL_DRAW_BUFFER0);
-            if (iv == LOCAL_GL_COLOR_ATTACHMENT0 + index)
-                return JS::Int32Value(LOCAL_GL_BACK);
-
-            return JS::Int32Value(LOCAL_GL_NONE);
+            GLint ret = LOCAL_GL_NONE;
+            if (!mBoundDrawFramebuffer) {
+                if (pname == LOCAL_GL_DRAW_BUFFER0) {
+                    ret = mDefaultFB_DrawBuffer0;
+                }
+            } else {
+                gl->fGetIntegerv(pname, &ret);
+            }
+            return JS::Int32Value(ret);
         }
     }
 
@@ -264,24 +192,32 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
         }
     }
 
-    if (IsWebGL2() || IsExtensionEnabled(WebGLExtensionID::EXT_disjoint_timer_query)) {
-        if (pname == LOCAL_GL_TIMESTAMP_EXT) {
-            GLuint64 iv = 0;
-            if (HasTimestampBits()) {
-                gl->fGetInteger64v(pname, (GLint64*)&iv);
-            } else {
-                GenerateWarning("QUERY_COUNTER_BITS_EXT for TIMESTAMP_EXT is 0.");
+    if (IsExtensionEnabled(WebGLExtensionID::EXT_disjoint_timer_query)) {
+        switch (pname) {
+        case LOCAL_GL_TIMESTAMP_EXT:
+            {
+                uint64_t val = 0;
+                if (Has64BitTimestamps()) {
+                    gl->fGetInteger64v(pname, (GLint64*)&val);
+                } else {
+                    gl->fGetIntegerv(pname, (GLint*)&val);
+                }
+                // TODO: JS doesn't support 64-bit integers. Be lossy and
+                // cast to double (53 bits)
+                return JS::NumberValue(val);
             }
-            // TODO: JS doesn't support 64-bit integers. Be lossy and
-            // cast to double (53 bits)
-            return JS::NumberValue(static_cast<double>(iv));
-        } else if (pname == LOCAL_GL_GPU_DISJOINT_EXT) {
-            // When disjoint isn't supported, leave as false.
-            realGLboolean disjoint = LOCAL_GL_FALSE;
-            if (gl->IsExtensionSupported(gl::GLContext::EXT_disjoint_timer_query)) {
-                gl->fGetBooleanv(pname, &disjoint);
+
+        case LOCAL_GL_GPU_DISJOINT_EXT:
+            {
+                realGLboolean val = false; // Not disjoint by default.
+                if (gl->IsExtensionSupported(gl::GLContext::EXT_disjoint_timer_query)) {
+                    gl->fGetBooleanv(pname, &val);
+                }
+                return JS::BooleanValue(val);
             }
-            return JS::BooleanValue(bool(disjoint));
+
+        default:
+            break;
         }
     }
 
@@ -313,7 +249,7 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
 
                 nsAutoString ret;
                 if (overridePref) {
-                    nsresult res = Preferences::GetString(overridePref, &ret);
+                    nsresult res = Preferences::GetString(overridePref, ret);
                     if (NS_SUCCEEDED(res) && ret.Length() > 0)
                         hasRetVal = true;
                 }
@@ -378,49 +314,33 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
         case LOCAL_GL_BLEND_DST_RGB:
         case LOCAL_GL_BLEND_DST_ALPHA:
         case LOCAL_GL_BLEND_EQUATION_RGB:
-        case LOCAL_GL_BLEND_EQUATION_ALPHA:
-        case LOCAL_GL_GENERATE_MIPMAP_HINT: {
+        case LOCAL_GL_BLEND_EQUATION_ALPHA: {
             GLint i = 0;
             gl->fGetIntegerv(pname, &i);
             return JS::NumberValue(uint32_t(i));
         }
+
+        case LOCAL_GL_GENERATE_MIPMAP_HINT:
+            return JS::NumberValue(mGenerateMipmapHint);
+
+        case LOCAL_GL_IMPLEMENTATION_COLOR_READ_FORMAT:
         case LOCAL_GL_IMPLEMENTATION_COLOR_READ_TYPE: {
             const webgl::FormatUsageInfo* usage;
             uint32_t width, height;
-            if (!ValidateCurFBForRead(funcName, &usage, &width, &height))
+            if (!BindCurFBForColorRead(funcName, &usage, &width, &height))
                 return JS::NullValue();
 
-            GLint i = 0;
-            if (gl->IsSupported(gl::GLFeature::ES2_compatibility)) {
-                gl->fGetIntegerv(pname, &i);
+            const auto implPI = ValidImplementationColorReadPI(usage);
+
+            GLenum ret;
+            if (pname == LOCAL_GL_IMPLEMENTATION_COLOR_READ_FORMAT) {
+                ret = implPI.format;
             } else {
-                i = LOCAL_GL_UNSIGNED_BYTE;
+                ret = implPI.type;
             }
-
-            return JS::NumberValue(uint32_t(i));
+            return JS::NumberValue(uint32_t(ret));
         }
-        case LOCAL_GL_IMPLEMENTATION_COLOR_READ_FORMAT: {
-            const webgl::FormatUsageInfo* usage;
-            uint32_t width, height;
-            if (!ValidateCurFBForRead(funcName, &usage, &width, &height))
-                return JS::NullValue();
 
-            GLint i = 0;
-            if (gl->IsSupported(gl::GLFeature::ES2_compatibility)) {
-                gl->fGetIntegerv(pname, &i);
-            } else {
-                i = LOCAL_GL_RGBA;
-            }
-
-            // OpenGL ES 3.0.4 p112 Table 3.2 shows that read format SRGB_ALPHA is
-            // not supported. And if internal format of fbo is SRGB8_ALPHA8, then
-            // IMPLEMENTATION_COLOR_READ_FORMAT is SRGB_ALPHA which is not supported
-            // by ReadPixels. So, just return RGBA here.
-            if (i == LOCAL_GL_SRGB_ALPHA)
-                i = LOCAL_GL_RGBA;
-
-            return JS::NumberValue(uint32_t(i));
-        }
         // int
         case LOCAL_GL_STENCIL_REF:
         case LOCAL_GL_STENCIL_BACK_REF: {
@@ -437,16 +357,34 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
             return JS::Int32Value(refValue & stencilMask);
         }
 
+        case LOCAL_GL_SAMPLE_BUFFERS:
+        case LOCAL_GL_SAMPLES: {
+            const auto& fb = mBoundDrawFramebuffer;
+            auto samples = [&]() -> Maybe<uint32_t> {
+                if (!fb) {
+                    if (!EnsureDefaultFB(funcName))
+                        return Nothing();
+                    return Some(mDefaultFB->mSamples);
+                }
+
+                if (!fb->IsCheckFramebufferStatusComplete(funcName))
+                    return Some(0);
+
+                DoBindFB(fb, LOCAL_GL_FRAMEBUFFER);
+                return Some(gl->GetIntAs<uint32_t>(LOCAL_GL_SAMPLES));
+            }();
+            if (samples && pname == LOCAL_GL_SAMPLE_BUFFERS) {
+                samples = Some(uint32_t(bool(samples.value())));
+            }
+            if (!samples)
+                return JS::NullValue();
+            return JS::NumberValue(samples.value());
+        }
+
         case LOCAL_GL_STENCIL_CLEAR_VALUE:
         case LOCAL_GL_UNPACK_ALIGNMENT:
         case LOCAL_GL_PACK_ALIGNMENT:
-        case LOCAL_GL_SUBPIXEL_BITS:
-        case LOCAL_GL_SAMPLE_BUFFERS:
-        case LOCAL_GL_SAMPLES:
-        case LOCAL_GL_MAX_VERTEX_ATTRIBS:
-        case LOCAL_GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS:
-        case LOCAL_GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS:
-        case LOCAL_GL_MAX_TEXTURE_IMAGE_UNITS: {
+        case LOCAL_GL_SUBPIXEL_BITS: {
             GLint i = 0;
             gl->fGetIntegerv(pname, &i);
             return JS::Int32Value(i);
@@ -467,13 +405,25 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
         }
 
         case LOCAL_GL_MAX_TEXTURE_SIZE:
-            return JS::Int32Value(mImplMaxTextureSize);
+            return JS::Int32Value(mGLMaxTextureSize);
 
         case LOCAL_GL_MAX_CUBE_MAP_TEXTURE_SIZE:
-            return JS::Int32Value(mImplMaxCubeMapTextureSize);
+            return JS::Int32Value(mGLMaxCubeMapTextureSize);
 
         case LOCAL_GL_MAX_RENDERBUFFER_SIZE:
-            return JS::Int32Value(mImplMaxRenderbufferSize);
+            return JS::Int32Value(mGLMaxRenderbufferSize);
+
+        case LOCAL_GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS:
+            return JS::Int32Value(mGLMaxVertexTextureImageUnits);
+
+        case LOCAL_GL_MAX_TEXTURE_IMAGE_UNITS:
+            return JS::Int32Value(mGLMaxFragmentTextureImageUnits);
+
+        case LOCAL_GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS:
+            return JS::Int32Value(mGLMaxCombinedTextureImageUnits);
+
+        case LOCAL_GL_MAX_VERTEX_ATTRIBS:
+            return JS::Int32Value(mGLMaxVertexAttribs);
 
         case LOCAL_GL_MAX_VERTEX_UNIFORM_VECTORS:
             return JS::Int32Value(mGLMaxVertexUniformVectors);
@@ -509,8 +459,10 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
             return JS::DoubleValue(mStencilWriteMaskFront);
 
         // float
-        case LOCAL_GL_DEPTH_CLEAR_VALUE:
         case LOCAL_GL_LINE_WIDTH:
+            return JS::DoubleValue(mLineWidth);
+
+        case LOCAL_GL_DEPTH_CLEAR_VALUE:
         case LOCAL_GL_POLYGON_OFFSET_FACTOR:
         case LOCAL_GL_POLYGON_OFFSET_UNITS:
         case LOCAL_GL_SAMPLE_COVERAGE_VALUE: {
@@ -520,14 +472,19 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
         }
 
         // bool
-        case LOCAL_GL_BLEND:
         case LOCAL_GL_DEPTH_TEST:
+            return JS::BooleanValue(mDepthTestEnabled);
         case LOCAL_GL_STENCIL_TEST:
+            return JS::BooleanValue(mStencilTestEnabled);
+
+        case LOCAL_GL_BLEND:
         case LOCAL_GL_CULL_FACE:
         case LOCAL_GL_DITHER:
         case LOCAL_GL_POLYGON_OFFSET_FILL:
         case LOCAL_GL_SCISSOR_TEST:
         case LOCAL_GL_SAMPLE_COVERAGE_INVERT:
+        case LOCAL_GL_SAMPLE_ALPHA_TO_COVERAGE:
+        case LOCAL_GL_SAMPLE_COVERAGE:
         case LOCAL_GL_DEPTH_WRITEMASK: {
             realGLboolean b = 0;
             gl->fGetBooleanv(pname, &b);
@@ -551,15 +508,21 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
         case LOCAL_GL_DEPTH_RANGE:
         case LOCAL_GL_ALIASED_POINT_SIZE_RANGE:
         case LOCAL_GL_ALIASED_LINE_WIDTH_RANGE: {
-            GLenum driverPName = pname;
-            if (gl->IsCoreProfile() &&
-                driverPName == LOCAL_GL_ALIASED_POINT_SIZE_RANGE)
-            {
-                driverPName = LOCAL_GL_POINT_SIZE_RANGE;
-            }
-
             GLfloat fv[2] = { 0 };
-            gl->fGetFloatv(driverPName, fv);
+            switch (pname) {
+            case LOCAL_GL_ALIASED_POINT_SIZE_RANGE:
+                fv[0] = mGLAliasedPointSizeRange[0];
+                fv[1] = mGLAliasedPointSizeRange[1];
+                break;
+            case LOCAL_GL_ALIASED_LINE_WIDTH_RANGE:
+                fv[0] = mGLAliasedLineWidthRange[0];
+                fv[1] = mGLAliasedLineWidthRange[1];
+                break;
+            // case LOCAL_GL_DEPTH_RANGE:
+            default:
+                gl->fGetFloatv(pname, fv);
+                break;
+            }
             JSObject* obj = dom::Float32Array::Create(cx, this, 2, fv);
             if (!obj) {
                 rv = NS_ERROR_OUT_OF_MEMORY;
@@ -581,8 +544,7 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
 
         // 2 ints
         case LOCAL_GL_MAX_VIEWPORT_DIMS: {
-            GLint iv[2] = { 0 };
-            gl->fGetIntegerv(pname, iv);
+            GLint iv[2] = { GLint(mGLMaxViewportDims[0]), GLint(mGLMaxViewportDims[1]) };
             JSObject* obj = dom::Int32Array::Create(cx, this, 2, iv);
             if (!obj) {
                 rv = NS_ERROR_OUT_OF_MEMORY;
@@ -604,10 +566,10 @@ WebGLContext::GetParameter(JSContext* cx, GLenum pname, ErrorResult& rv)
 
         // 4 bools
         case LOCAL_GL_COLOR_WRITEMASK: {
-            realGLboolean gl_bv[4] = { 0 };
-            gl->fGetBooleanv(pname, gl_bv);
-            bool vals[4] = { bool(gl_bv[0]), bool(gl_bv[1]),
-                             bool(gl_bv[2]), bool(gl_bv[3]) };
+            const bool vals[4] = { bool(mColorWriteMask & (1 << 0)),
+                                   bool(mColorWriteMask & (1 << 1)),
+                                   bool(mColorWriteMask & (1 << 2)),
+                                   bool(mColorWriteMask & (1 << 3)) };
             JS::Rooted<JS::Value> arr(cx);
             if (!dom::ToJSValue(cx, vals, &arr)) {
                 rv = NS_ERROR_OUT_OF_MEMORY;
@@ -661,13 +623,11 @@ WebGLContext::GetParameterIndexed(JSContext* cx, GLenum pname, GLuint index,
         return;
     }
 
-    MakeContextCurrent();
-
     switch (pname) {
         case LOCAL_GL_TRANSFORM_FEEDBACK_BUFFER_BINDING:
         {
             if (index >= mGLMaxTransformFeedbackSeparateAttribs) {
-                ErrorInvalidValue("getParameterIndexed: index should be less than MAX_TRANSFORM_FEEDBACK_SEPARATE_ATTRIBS", index);
+                ErrorInvalidValue("getParameterIndexed: index should be less than MAX_TRANSFORM_FEEDBACK_SEPARATE_ATTRIBS");
                 retval.setNull();
                 return;
             }
@@ -692,7 +652,10 @@ WebGLContext::IsEnabled(GLenum cap)
     if (!ValidateCapabilityEnum(cap, "isEnabled"))
         return false;
 
-    MakeContextCurrent();
+    const auto& slot = GetStateTrackingSlot(cap);
+    if (slot)
+        return *slot;
+
     return gl->fIsEnabled(cap);
 }
 

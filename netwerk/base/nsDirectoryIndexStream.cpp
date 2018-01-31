@@ -22,8 +22,6 @@
 #ifdef THREADSAFE_I18N
 #include "nsCollationCID.h"
 #include "nsICollation.h"
-#include "nsILocale.h"
-#include "nsILocaleService.h"
 #endif
 #include "nsIFile.h"
 #include "nsURLHelper.h"
@@ -91,11 +89,9 @@ nsDirectoryIndexStream::Init(nsIFile* aDir)
         return NS_ERROR_ILLEGAL_VALUE;
 
     if (MOZ_LOG_TEST(gLog, LogLevel::Debug)) {
-        nsAutoCString path;
-        aDir->GetNativePath(path);
         MOZ_LOG(gLog, LogLevel::Debug,
                ("nsDirectoryIndexStream[%p]: initialized on %s",
-                this, path.get()));
+                this, aDir->HumanReadablePath().get()));
     }
 
     // Sigh. We have to allocate on the heap because there are no
@@ -120,20 +116,12 @@ nsDirectoryIndexStream::Init(nsIFile* aDir)
     }
 
 #ifdef THREADSAFE_I18N
-    nsCOMPtr<nsILocaleService> ls = do_GetService(NS_LOCALESERVICE_CONTRACTID,
-                                                  &rv);
-    if (NS_FAILED(rv)) return rv;
-
-    nsCOMPtr<nsILocale> locale;
-    rv = ls->GetApplicationLocale(getter_AddRefs(locale));
-    if (NS_FAILED(rv)) return rv;
-    
     nsCOMPtr<nsICollationFactory> cf = do_CreateInstance(NS_COLLATIONFACTORY_CONTRACTID,
                                                          &rv);
     if (NS_FAILED(rv)) return rv;
 
     nsCOMPtr<nsICollation> coll;
-    rv = cf->CreateCollation(locale, getter_AddRefs(coll));
+    rv = cf->CreateCollation(getter_AddRefs(coll));
     if (NS_FAILED(rv)) return rv;
 
     mArray.Sort(compare, coll);
@@ -238,11 +226,9 @@ nsDirectoryIndexStream::Read(char* aBuf, uint32_t aCount, uint32_t* aReadCount)
             ++mPos;
 
             if (MOZ_LOG_TEST(gLog, LogLevel::Debug)) {
-                nsAutoCString path;
-                current->GetNativePath(path);
                 MOZ_LOG(gLog, LogLevel::Debug,
                        ("nsDirectoryIndexStream[%p]: iterated %s",
-                        this, path.get()));
+                        this, current->HumanReadablePath().get()));
             }
 
             // rjc: don't return hidden files/directories!
@@ -315,14 +301,14 @@ nsDirectoryIndexStream::Read(char* aBuf, uint32_t aCount, uint32_t* aReadCount)
             else {
                 bool isDir;
                 rv = current->IsDirectory(&isDir);
-                if (NS_FAILED(rv)) return rv; 
+                if (NS_FAILED(rv)) return rv;
                 if (isDir) {
                     mBuf.AppendLiteral("DIRECTORY ");
                 }
                 else {
                     bool isLink;
                     rv = current->IsSymlink(&isLink);
-                    if (NS_FAILED(rv)) return rv; 
+                    if (NS_FAILED(rv)) return rv;
                     if (isLink) {
                         mBuf.AppendLiteral("SYMBOLIC-LINK ");
                     }

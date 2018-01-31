@@ -10,25 +10,43 @@ const {
   prepareMessage
 } = require("devtools/client/webconsole/new-console-output/utils/messages");
 const { IdGenerator } = require("devtools/client/webconsole/new-console-output/utils/id-generator");
+const { batchActions } = require("devtools/client/shared/redux/middleware/debounce");
 
 const {
-  MESSAGE_ADD,
+  MESSAGES_ADD,
+  NETWORK_MESSAGE_UPDATE,
+  NETWORK_UPDATE_REQUEST,
   MESSAGES_CLEAR,
   MESSAGE_OPEN,
   MESSAGE_CLOSE,
+  MESSAGE_TYPE,
+  MESSAGE_TABLE_RECEIVE,
 } = require("../constants");
 
 const defaultIdGenerator = new IdGenerator();
 
-function messageAdd(packet, idGenerator = null) {
+function messagesAdd(packets, idGenerator = null) {
   if (idGenerator == null) {
     idGenerator = defaultIdGenerator;
   }
-  let message = prepareMessage(packet, idGenerator);
+  let messages = packets.map(packet => prepareMessage(packet, idGenerator));
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].type === MESSAGE_TYPE.CLEAR) {
+      return batchActions([
+        messagesClear(),
+        {
+          type: MESSAGES_ADD,
+          messages: messages.slice(i),
+        }
+      ]);
+    }
+  }
 
+  // When this is used for non-cached messages then handle clear message and
+  // split up into batches
   return {
-    type: MESSAGE_ADD,
-    message
+    type: MESSAGES_ADD,
+    messages
   };
 }
 
@@ -52,7 +70,65 @@ function messageClose(id) {
   };
 }
 
-exports.messageAdd = messageAdd;
-exports.messagesClear = messagesClear;
-exports.messageOpen = messageOpen;
-exports.messageClose = messageClose;
+function messageTableDataGet(id, client, dataType) {
+  return (dispatch) => {
+    let fetchObjectActorData;
+    if (["Map", "WeakMap", "Set", "WeakSet"].includes(dataType)) {
+      fetchObjectActorData = (cb) => client.enumEntries(cb);
+    } else {
+      fetchObjectActorData = (cb) => client.enumProperties({
+        ignoreNonIndexedProperties: dataType === "Array"
+      }, cb);
+    }
+
+    fetchObjectActorData(enumResponse => {
+      const {iterator} = enumResponse;
+      iterator.slice(0, iterator.count, sliceResponse => {
+        let {ownProperties} = sliceResponse;
+        dispatch(messageTableDataReceive(id, ownProperties));
+      });
+    });
+  };
+}
+
+function messageTableDataReceive(id, data) {
+  return {
+    type: MESSAGE_TABLE_RECEIVE,
+    id,
+    data
+  };
+}
+
+function networkMessageUpdate(packet, idGenerator = null, response) {
+  if (idGenerator == null) {
+    idGenerator = defaultIdGenerator;
+  }
+
+  let message = prepareMessage(packet, idGenerator);
+
+  return {
+    type: NETWORK_MESSAGE_UPDATE,
+    message,
+    response,
+  };
+}
+
+function networkUpdateRequest(id, data) {
+  return {
+    type: NETWORK_UPDATE_REQUEST,
+    id,
+    data,
+  };
+}
+
+module.exports = {
+  messagesAdd,
+  messagesClear,
+  messageOpen,
+  messageClose,
+  messageTableDataGet,
+  networkMessageUpdate,
+  networkUpdateRequest,
+  // for test purpose only.
+  messageTableDataReceive,
+};

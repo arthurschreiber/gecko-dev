@@ -52,14 +52,12 @@ public:
     kIceUfragAttribute,
     kIdentityAttribute,
     kImageattrAttribute,
-    kInactiveAttribute,
     kLabelAttribute,
     kMaxptimeAttribute,
     kMidAttribute,
     kMsidAttribute,
     kMsidSemanticAttribute,
     kPtimeAttribute,
-    kRecvonlyAttribute,
     kRemoteCandidatesAttribute,
     kRidAttribute,
     kRtcpAttribute,
@@ -68,13 +66,13 @@ public:
     kRtcpRsizeAttribute,
     kRtpmapAttribute,
     kSctpmapAttribute,
-    kSendonlyAttribute,
-    kSendrecvAttribute,
     kSetupAttribute,
     kSimulcastAttribute,
     kSsrcAttribute,
     kSsrcGroupAttribute,
-    kLastAttribute = kSsrcGroupAttribute
+    kSctpPortAttribute,
+    kMaxMessageSizeAttribute,
+    kLastAttribute = kMaxMessageSizeAttribute
   };
 
   explicit SdpAttribute(AttributeType type) : mType(type) {}
@@ -219,6 +217,53 @@ inline std::ostream& operator<<(std::ostream& os,
       os << "?";
   }
   return os;
+}
+
+inline SdpDirectionAttribute::Direction
+reverse(SdpDirectionAttribute::Direction d)
+{
+  switch (d) {
+    case SdpDirectionAttribute::Direction::kInactive:
+      return SdpDirectionAttribute::Direction::kInactive;
+    case SdpDirectionAttribute::Direction::kSendonly:
+      return SdpDirectionAttribute::Direction::kRecvonly;
+    case SdpDirectionAttribute::Direction::kRecvonly:
+      return SdpDirectionAttribute::Direction::kSendonly;
+    case SdpDirectionAttribute::Direction::kSendrecv:
+      return SdpDirectionAttribute::Direction::kSendrecv;
+  }
+  MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE("Invalid direction!");
+  MOZ_RELEASE_ASSERT(false);
+}
+
+inline SdpDirectionAttribute::Direction
+operator|(SdpDirectionAttribute::Direction d1,
+          SdpDirectionAttribute::Direction d2)
+{
+  return (SdpDirectionAttribute::Direction)((unsigned)d1 | (unsigned)d2);
+}
+
+inline SdpDirectionAttribute::Direction
+operator&(SdpDirectionAttribute::Direction d1,
+          SdpDirectionAttribute::Direction d2)
+{
+  return (SdpDirectionAttribute::Direction)((unsigned)d1 & (unsigned)d2);
+}
+
+inline SdpDirectionAttribute::Direction
+operator|=(SdpDirectionAttribute::Direction& d1,
+           SdpDirectionAttribute::Direction d2)
+{
+  d1 = d1 | d2;
+  return d1;
+}
+
+inline SdpDirectionAttribute::Direction
+operator&=(SdpDirectionAttribute::Direction& d1,
+           SdpDirectionAttribute::Direction d2)
+{
+  d1 = d1 & d2;
+  return d1;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1087,6 +1132,7 @@ public:
     kH264,
     kRed,
     kUlpfec,
+    kTelephoneEvent,
     kOtherCodec
   };
 
@@ -1171,6 +1217,9 @@ inline std::ostream& operator<<(std::ostream& os,
       break;
     case SdpRtpmapAttributeList::kUlpfec:
       os << "ulpfec";
+      break;
+    case SdpRtpmapAttributeList::kTelephoneEvent:
+      os << "telephone-event";
       break;
     default:
       MOZ_ASSERT(false);
@@ -1367,6 +1416,29 @@ public:
     unsigned int useInBandFec;
   };
 
+  class TelephoneEventParameters : public Parameters
+  {
+  public:
+    TelephoneEventParameters() :
+      Parameters(SdpRtpmapAttributeList::kTelephoneEvent),
+      dtmfTones("0-15")
+    {}
+
+    virtual Parameters*
+    Clone() const override
+    {
+      return new TelephoneEventParameters(*this);
+    }
+
+    void
+    Serialize(std::ostream& os) const override
+    {
+      os << dtmfTones;
+    }
+
+    std::string dtmfTones;
+  };
+
   class Fmtp
   {
   public:
@@ -1428,9 +1500,6 @@ public:
 //      streams      =  1*DIGIT
 //
 // We're going to pretend that there are spaces where they make sense.
-//
-// (draft-06 is not backward compatabile and draft-07 replaced sctpmap's with
-// fmtp maps - we should carefully choose when to upgrade)
 class SdpSctpmapAttributeList : public SdpAttribute
 {
 public:
@@ -1464,14 +1533,9 @@ public:
   }
 
   const Sctpmap&
-  GetEntry(const std::string& pt) const
+  GetFirstEntry() const
   {
-    for (auto it = mSctpmaps.begin(); it != mSctpmaps.end(); ++it) {
-      if (it->pt == pt) {
-        return *it;
-      }
-    }
-    MOZ_CRASH();
+    return mSctpmaps[0];
   }
 
   std::vector<Sctpmap> mSctpmaps;
@@ -1693,7 +1757,7 @@ public:
     mValues.push_back(entry);
   }
 
-  virtual void Serialize(std::ostream& os) const;
+  virtual void Serialize(std::ostream& os) const override;
 
   std::vector<std::string> mValues;
 };
@@ -1714,7 +1778,7 @@ public:
 
   void Load(const std::string& value);
 
-  virtual void Serialize(std::ostream& os) const;
+  virtual void Serialize(std::ostream& os) const override;
 
   std::vector<std::string> mValues;
 };

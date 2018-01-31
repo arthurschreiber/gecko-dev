@@ -4,7 +4,7 @@
 
 // Test the cancellable doing/done/cancelAll API in XPIProvider
 
-var scope = Components.utils.import("resource://gre/modules/addons/XPIProvider.jsm");
+var scope = ChromeUtils.import("resource://gre/modules/addons/XPIProvider.jsm", {});
 var XPIProvider = scope.XPIProvider;
 
 function run_test() {
@@ -14,7 +14,7 @@ function run_test() {
   // Check that a basic object gets cancelled
   let getsCancelled = {
     isCancelled: false,
-    cancel: function () {
+    cancel() {
       if (this.isCancelled)
         do_throw("Already cancelled");
       this.isCancelled = true;
@@ -22,45 +22,45 @@ function run_test() {
   };
   XPIProvider.doing(getsCancelled);
   XPIProvider.cancelAll();
-  do_check_true(getsCancelled.isCancelled);
+  Assert.ok(getsCancelled.isCancelled);
 
   // Check that if we complete a cancellable, it doesn't get cancelled
   let doesntGetCancelled = {
     cancel: () => do_throw("This should not have been cancelled")
   };
   XPIProvider.doing(doesntGetCancelled);
-  do_check_true(XPIProvider.done(doesntGetCancelled));
+  Assert.ok(XPIProvider.done(doesntGetCancelled));
   XPIProvider.cancelAll();
 
   // A cancellable that adds a cancellable
   getsCancelled.isCancelled = false;
   let addsAnother = {
     isCancelled: false,
-    cancel: function () {
+    cancel() {
       if (this.isCancelled)
         do_throw("Already cancelled");
       this.isCancelled = true;
       XPIProvider.doing(getsCancelled);
     }
-  }
+  };
   XPIProvider.doing(addsAnother);
   XPIProvider.cancelAll();
-  do_check_true(addsAnother.isCancelled);
-  do_check_true(getsCancelled.isCancelled);
+  Assert.ok(addsAnother.isCancelled);
+  Assert.ok(getsCancelled.isCancelled);
 
   // A cancellable that removes another. This assumes that Set() iterates in the
   // order that members were added
   let removesAnother = {
     isCancelled: false,
-    cancel: function () {
+    cancel() {
       if (this.isCancelled)
         do_throw("Already cancelled");
       this.isCancelled = true;
       XPIProvider.done(doesntGetCancelled);
     }
-  }
+  };
   XPIProvider.doing(removesAnother);
   XPIProvider.doing(doesntGetCancelled);
   XPIProvider.cancelAll();
-  do_check_true(removesAnother.isCancelled);
+  Assert.ok(removesAnother.isCancelled);
 }

@@ -1,6 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 /**
  * Test that we don't permanently cache source maps across reloads.
  */
@@ -12,17 +14,17 @@ var gTabClient;
 
 const {SourceNode} = require("source-map");
 
-function run_test()
-{
+function run_test() {
   initTestDebuggerServer();
   gDebuggee = addTestGlobal("test-source-map");
   gClient = new DebuggerClient(DebuggerServer.connectPipe());
   gClient.connect().then(function () {
-    attachTestTabAndResume(gClient, "test-source-map", function (aResponse, aTabClient, aThreadClient) {
-      gThreadClient = aThreadClient;
-      gTabClient = aTabClient;
-      setup_code();
-    });
+    attachTestTabAndResume(gClient, "test-source-map",
+                           function (response, tabClient, threadClient) {
+                             gThreadClient = threadClient;
+                             gTabClient = tabClient;
+                             setup_code();
+                           });
   });
   do_test_pending();
 }
@@ -58,10 +60,10 @@ function setup_code() {
 
 function test_initial_sources() {
   gThreadClient.getSources(function ({ error, sources }) {
-    do_check_true(!error);
+    Assert.ok(!error);
     sources = sources.filter(source => source.url);
-    do_check_eq(sources.length, 1);
-    do_check_eq(sources[0].url, getFileUrl(TEMP_FILE_1, true));
+    Assert.equal(sources.length, 1);
+    Assert.equal(sources[0].url, getFileUrl(TEMP_FILE_1, true));
     reload(gTabClient).then(setup_new_code);
   });
 }
@@ -87,13 +89,13 @@ function setup_new_code() {
 
 function test_new_sources() {
   gThreadClient.getSources(function ({ error, sources }) {
-    do_check_true(!error);
+    Assert.ok(!error);
     sources = sources.filter(source => source.url);
 
     // Should now have TEMP_FILE_2 as a source.
-    do_check_eq(sources.length, 1);
-    let s = sources.filter(s => s.url === getFileUrl(TEMP_FILE_2, true))[0];
-    do_check_true(!!s);
+    Assert.equal(sources.length, 1);
+    let s = sources.filter(source => source.url === getFileUrl(TEMP_FILE_2, true))[0];
+    Assert.ok(!!s);
 
     finish_test();
   });

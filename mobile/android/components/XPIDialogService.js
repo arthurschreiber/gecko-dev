@@ -5,10 +5,10 @@
 const Ci = Components.interfaces;
 const Cu = Components.utils;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "AddonManager", "resource://gre/modules/AddonManager.jsm");
+ChromeUtils.defineModuleGetter(this, "AddonManager", "resource://gre/modules/AddonManager.jsm");
 
 // -----------------------------------------------------------------------
 // Web Install Prompt service
@@ -31,7 +31,7 @@ WebInstallPrompt.prototype = {
     aInstalls.forEach(function(install) {
       let message;
       if (install.addon.signedState <= AddonManager.SIGNEDSTATE_MISSING) {
-        title = bundle.GetStringFromName("addonsConfirmInstallUnsigned.title")
+        title = bundle.GetStringFromName("addonsConfirmInstallUnsigned.title");
         message = bundle.GetStringFromName("addonsConfirmInstallUnsigned.message") + "\n\n" + install.name;
       } else {
         message = install.name;

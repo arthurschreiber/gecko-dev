@@ -22,6 +22,10 @@
 #include "nsIFaviconService.h"
 #endif // MOZ_PLACES
 
+#ifdef XP_WIN
+#include <shellapi.h>
+#endif
+
 using namespace mozilla;
 
 using mozilla::dom::ContentChild;
@@ -45,7 +49,7 @@ public:
 
   NS_IMETHOD
   OnComplete(nsIURI *aIconURI, uint32_t aIconSize, const uint8_t *aIconData,
-             const nsACString &aMimeType) override
+             const nsACString &aMimeType, uint16_t aWidth) override
   {
     nsresult rv = NS_ERROR_FAILURE;
     if (aIconSize > 0) {
@@ -107,9 +111,9 @@ ShowWithIconBackend(nsIAlertsService* aBackend, nsIAlertNotification* aAlert,
   nsCOMPtr<nsIFaviconDataCallback> callback =
     new IconCallback(aBackend, aAlert, aAlertListener);
   if (alertsIconData) {
-    return favicons->GetFaviconDataForPage(uri, callback);
+    return favicons->GetFaviconDataForPage(uri, callback, 0);
   }
-  return favicons->GetFaviconURLForPage(uri, callback);
+  return favicons->GetFaviconURLForPage(uri, callback, 0);
 #else
   return NS_ERROR_NOT_IMPLEMENTED;
 #endif // !MOZ_PLACES
@@ -154,26 +158,29 @@ bool nsAlertsService::ShouldShowAlert()
   bool result = true;
 
 #ifdef XP_WIN
-  HMODULE shellDLL = ::LoadLibraryW(L"shell32.dll");
-  if (!shellDLL)
-    return result;
-
-  SHQueryUserNotificationStatePtr pSHQueryUserNotificationState =
-    (SHQueryUserNotificationStatePtr) ::GetProcAddress(shellDLL, "SHQueryUserNotificationState");
-
-  if (pSHQueryUserNotificationState) {
-    MOZ_QUERY_USER_NOTIFICATION_STATE qstate;
-    if (SUCCEEDED(pSHQueryUserNotificationState(&qstate))) {
-      if (qstate != QUNS_ACCEPTS_NOTIFICATIONS) {
-         result = false;
-      }
+  QUERY_USER_NOTIFICATION_STATE qstate;
+  if (SUCCEEDED(SHQueryUserNotificationState(&qstate))) {
+    if (qstate != QUNS_ACCEPTS_NOTIFICATIONS) {
+       result = false;
     }
   }
-
-  ::FreeLibrary(shellDLL);
 #endif
 
   return result;
+}
+
+bool nsAlertsService::ShouldUseSystemBackend()
+{
+  if (!mBackend) {
+    return false;
+  }
+  static bool sAlertsUseSystemBackend;
+  static bool sAlertsUseSystemBackendCached = false;
+  if (!sAlertsUseSystemBackendCached) {
+    sAlertsUseSystemBackendCached = true;
+    Preferences::AddBoolVarCache(&sAlertsUseSystemBackend, "alerts.useSystemBackend", true);
+  }
+  return sAlertsUseSystemBackend;
 }
 
 NS_IMETHODIMP nsAlertsService::ShowAlertNotification(const nsAString & aImageUrl, const nsAString & aAlertTitle,
@@ -185,7 +192,8 @@ NS_IMETHODIMP nsAlertsService::ShowAlertNotification(const nsAString & aImageUrl
                                                      const nsAString & aLang,
                                                      const nsAString & aData,
                                                      nsIPrincipal * aPrincipal,
-                                                     bool aInPrivateBrowsing)
+                                                     bool aInPrivateBrowsing,
+                                                     bool aRequireInteraction)
 {
   nsCOMPtr<nsIAlertNotification> alert =
     do_CreateInstance(ALERT_NOTIFICATION_CONTRACTID);
@@ -193,7 +201,8 @@ NS_IMETHODIMP nsAlertsService::ShowAlertNotification(const nsAString & aImageUrl
   nsresult rv = alert->Init(aAlertName, aImageUrl, aAlertTitle,
                             aAlertText, aAlertTextClickable,
                             aAlertCookie, aBidi, aLang, aData,
-                            aPrincipal, aInPrivateBrowsing);
+                            aPrincipal, aInPrivateBrowsing,
+                            aRequireInteraction);
   NS_ENSURE_SUCCESS(rv, rv);
   return ShowAlert(alert, aAlertListener);
 }
@@ -226,7 +235,7 @@ NS_IMETHODIMP nsAlertsService::ShowPersistentNotification(const nsAString & aPer
   }
 
   // Check if there is an optional service that handles system-level notifications
-  if (mBackend) {
+  if (ShouldUseSystemBackend()) {
     rv = ShowWithBackend(mBackend, aAlert, aAlertListener, aPersistentData);
     if (NS_SUCCEEDED(rv)) {
       return rv;
@@ -260,7 +269,7 @@ NS_IMETHODIMP nsAlertsService::CloseAlert(const nsAString& aAlertName,
 
   nsresult rv;
   // Try the system notification service.
-  if (mBackend) {
+  if (ShouldUseSystemBackend()) {
     rv = mBackend->CloseAlert(aAlertName, aPrincipal);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       // If the system backend failed to close the alert, fall back to XUL for
@@ -307,8 +316,11 @@ NS_IMETHODIMP nsAlertsService::SetManualDoNotDisturb(bool aDoNotDisturb)
 already_AddRefed<nsIAlertsDoNotDisturb>
 nsAlertsService::GetDNDBackend()
 {
+  nsCOMPtr<nsIAlertsService> backend;
   // Try the system notification service.
-  nsCOMPtr<nsIAlertsService> backend = mBackend;
+  if (ShouldUseSystemBackend()) {
+    backend = mBackend;
+  }
   if (!backend) {
     backend = nsXULAlerts::GetInstance();
   }

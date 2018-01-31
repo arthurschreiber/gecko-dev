@@ -2,6 +2,17 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this file,
    - You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// Import globals from the files imported by the .xul files.
+/* import-globals-from subdialogs.js */
+/* import-globals-from main.js */
+/* import-globals-from search.js */
+/* import-globals-from containers.js */
+/* import-globals-from privacy.js */
+/* import-globals-from sync.js */
+/* import-globals-from findInPage.js */
+/* import-globals-from ../../../base/content/utilityOverlay.js */
+/* import-globals-from ../../../../toolkit/content/preferencesBindings.js */
+
 "use strict";
 
 var Cc = Components.classes;
@@ -9,9 +20,21 @@ var Ci = Components.interfaces;
 var Cu = Components.utils;
 var Cr = Components.results;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+
+ChromeUtils.defineModuleGetter(this, "AddonManager",
+                               "resource://gre/modules/AddonManager.jsm");
+ChromeUtils.defineModuleGetter(this, "BrowserUtils",
+                               "resource://gre/modules/BrowserUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "ExtensionSettingsStore",
+                               "resource://gre/modules/ExtensionSettingsStore.jsm");
+ChromeUtils.defineModuleGetter(this, "formAutofillParent",
+                               "resource://formautofill/FormAutofillParent.jsm");
+
+XPCOMUtils.defineLazyPreferenceGetter(this, "trackingprotectionUiEnabled",
+                                      "privacy.trackingprotection.ui.enabled");
 
 var gLastHash = "";
 
@@ -30,30 +53,27 @@ function init_category_if_required(category) {
 function register_module(categoryName, categoryObject) {
   gCategoryInits.set(categoryName, {
     inited: false,
-    init: function() {
+    init() {
       categoryObject.init();
       this.inited = true;
     }
   });
 }
 
-addEventListener("DOMContentLoaded", function onLoad() {
-  removeEventListener("DOMContentLoaded", onLoad);
-  init_all();
-});
+document.addEventListener("DOMContentLoaded", init_all, {once: true});
 
 function init_all() {
-  document.documentElement.instantApply = true;
+  Preferences.forceEnableInstantApply();
 
   gSubDialog.init();
   register_module("paneGeneral", gMainPane);
   register_module("paneSearch", gSearchPane);
   register_module("panePrivacy", gPrivacyPane);
-  register_module("paneAdvanced", gAdvancedPane);
-  register_module("paneApplications", gApplicationsPane);
-  register_module("paneContent", gContentPane);
+  register_module("paneContainers", gContainersPane);
   register_module("paneSync", gSyncPane);
-  register_module("paneSecurity", gSecurityPane);
+  register_module("paneSearchResults", gSearchResultsPane);
+  gSearchResultsPane.init();
+  gMainPane.preInit();
 
   let categories = document.getElementById("categories");
   categories.addEventListener("select", event => gotoPref(event.target.value));
@@ -70,44 +90,29 @@ function init_all() {
   window.addEventListener("hashchange", onHashChange);
   gotoPref();
 
-  init_dynamic_padding();
+  let helpButton = document.querySelector(".help-button > .text-link");
+  let helpUrl = Services.urlFormatter.formatURLPref("app.support.baseURL") + "preferences";
+  helpButton.setAttribute("href", helpUrl);
 
-  var initFinished = new CustomEvent("Initialized", {
-    'bubbles': true,
-    'cancelable': true
-  });
-  document.dispatchEvent(initFinished);
-
-  categories = categories.querySelectorAll("richlistitem.category");
-  for (let category of categories) {
-    let name = internalPrefCategoryNameToFriendlyName(category.value);
-    let helpSelector = `#header-${name} > .help-button`;
-    let helpButton = document.querySelector(helpSelector);
-    helpButton.setAttribute("href", getHelpLinkURL(category.getAttribute("helpTopic")));
-  }
-
-  // Wait until initialization of all preferences are complete before
-  // notifying observers that the UI is now ready.
-  Services.obs.notifyObservers(window, "advanced-pane-loaded", null);
+  document.dispatchEvent(new CustomEvent("Initialized", {
+    "bubbles": true,
+    "cancelable": true
+  }));
 }
 
-// Make the space above the categories list shrink on low window heights
-function init_dynamic_padding() {
-  let categories = document.getElementById("categories");
-  let catPadding = Number.parseInt(getComputedStyle(categories)
-                                     .getPropertyValue('padding-top'));
-  let fullHeight = categories.lastElementChild.getBoundingClientRect().bottom;
-  let mediaRule = `
-  @media (max-height: ${fullHeight}px) {
-    #categories {
-      padding-top: calc(100vh - ${fullHeight - catPadding}px);
-    }
+function telemetryBucketForCategory(category) {
+  category = category.toLowerCase();
+  switch (category) {
+    case "containers":
+    case "general":
+    case "privacy":
+    case "search":
+    case "sync":
+    case "searchresults":
+      return category;
+    default:
+      return "unknown";
   }
-  `;
-  let mediaStyle = document.createElementNS('http://www.w3.org/1999/xhtml', 'html:style');
-  mediaStyle.setAttribute('type', 'text/css');
-  mediaStyle.appendChild(document.createCDATASection(mediaRule));
-  document.documentElement.appendChild(mediaStyle);
 }
 
 function onHashChange() {
@@ -116,19 +121,45 @@ function onHashChange() {
 
 function gotoPref(aCategory) {
   let categories = document.getElementById("categories");
-  const kDefaultCategoryInternalName = categories.firstElementChild.value;
+  const kDefaultCategoryInternalName = "paneGeneral";
+  const kDefaultCategory = "general";
   let hash = document.location.hash;
+
   let category = aCategory || hash.substr(1) || kDefaultCategoryInternalName;
+  let breakIndex = category.indexOf("-");
+  // Subcategories allow for selecting smaller sections of the preferences
+  // until proper search support is enabled (bug 1353954).
+  let subcategory = breakIndex != -1 && category.substring(breakIndex + 1);
+  if (subcategory) {
+    category = category.substring(0, breakIndex);
+  }
   category = friendlyPrefCategoryNameToInternalName(category);
+  if (category != "paneSearchResults") {
+    gSearchResultsPane.query = null;
+    gSearchResultsPane.searchInput.value = "";
+    gSearchResultsPane.getFindSelection(window).removeAllRanges();
+    gSearchResultsPane.removeAllSearchTooltips();
+    gSearchResultsPane.removeAllSearchMenuitemIndicators();
+  } else if (!gSearchResultsPane.searchInput.value) {
+    // Something tried to send us to the search results pane without
+    // a query string. Default to the General pane instead.
+    category = kDefaultCategoryInternalName;
+    document.location.hash = kDefaultCategory;
+    gSearchResultsPane.query = null;
+  }
 
   // Updating the hash (below) or changing the selected category
   // will re-enter gotoPref.
-  if (gLastHash == category)
+  if (gLastHash == category && !subcategory)
     return;
-  let item = categories.querySelector(".category[value=" + category + "]");
-  if (!item) {
-    category = kDefaultCategoryInternalName;
+
+  let item;
+  if (category != "paneSearchResults") {
     item = categories.querySelector(".category[value=" + category + "]");
+    if (!item) {
+      category = kDefaultCategoryInternalName;
+      item = categories.querySelector(".category[value=" + category + "]");
+    }
   }
 
   try {
@@ -138,34 +169,159 @@ function gotoPref(aCategory) {
     throw ex;
   }
 
-  let newHash = internalPrefCategoryNameToFriendlyName(category);
-  if (gLastHash || category != kDefaultCategoryInternalName) {
-    document.location.hash = newHash;
+  let friendlyName = internalPrefCategoryNameToFriendlyName(category);
+  if (gLastHash || category != kDefaultCategoryInternalName || subcategory) {
+    document.location.hash = friendlyName;
   }
   // Need to set the gLastHash before setting categories.selectedItem since
   // the categories 'select' event will re-enter the gotoPref codepath.
   gLastHash = category;
-  categories.selectedItem = item;
+  if (item) {
+    categories.selectedItem = item;
+  } else {
+    categories.clearSelection();
+  }
   window.history.replaceState(category, document.title);
   search(category, "data-category");
+
   let mainContent = document.querySelector(".main-content");
   mainContent.scrollTop = 0;
+
+  spotlight(subcategory);
+
+  Services.telemetry
+          .getHistogramById("FX_PREFERENCES_CATEGORY_OPENED_V2")
+          .add(telemetryBucketForCategory(friendlyName));
 }
 
 function search(aQuery, aAttribute) {
-  let elements = document.getElementById("mainPrefPane").children;
+  let mainPrefPane = document.getElementById("mainPrefPane");
+  let elements = mainPrefPane.children;
   for (let element of elements) {
+    // If the "data-hidden-from-search" is "true", the
+    // element will not get considered during search. This
+    // should only be used when an element is still under
+    // development and should not be shown for any reason.
+    if (element.getAttribute("data-hidden-from-search") != "true" ||
+        element.getAttribute("data-subpanel") == "true") {
+      let attributeValue = element.getAttribute(aAttribute);
+      if (attributeValue == aQuery) {
+        element.hidden = false;
+      } else {
+        element.hidden = true;
+      }
+    }
+    element.classList.remove("visually-hidden");
+  }
+
+  let keysets = mainPrefPane.getElementsByTagName("keyset");
+  for (let element of keysets) {
     let attributeValue = element.getAttribute(aAttribute);
-    element.hidden = (attributeValue != aQuery);
+    if (attributeValue == aQuery)
+      element.removeAttribute("disabled");
+    else
+      element.setAttribute("disabled", true);
   }
 }
 
-function helpButtonCommand() {
-  let pane = history.state;
-  let categories = document.getElementById("categories");
-  let helpTopic = categories.querySelector(".category[value=" + pane + "]")
-                            .getAttribute("helpTopic");
-  openHelpLink(helpTopic);
+async function spotlight(subcategory) {
+  let highlightedElements = document.querySelectorAll(".spotlight");
+  if (highlightedElements.length) {
+    for (let element of highlightedElements) {
+      element.classList.remove("spotlight");
+    }
+  }
+  if (subcategory) {
+    if (!gSearchResultsPane.categoriesInitialized) {
+      await waitForSystemAddonInjectionsFinished([{
+        isGoingToInject: formAutofillParent.initialized,
+        elementId: "formAutofillGroup",
+      }]);
+    }
+    scrollAndHighlight(subcategory);
+  }
+
+  /**
+   * Wait for system addons finished their dom injections.
+   * @param {Array} addons - The system addon information array.
+   * For example, the element is looked like
+   * { isGoingToInject: true, elementId: "formAutofillGroup" }.
+   * The `isGoingToInject` means the system addon will be visible or not,
+   * and the `elementId` means the id of the element will be injected into the dom
+   * if the `isGoingToInject` is true.
+   * @returns {Promise} Will resolve once all injections are finished.
+   */
+  function waitForSystemAddonInjectionsFinished(addons) {
+    return new Promise(resolve => {
+      let elementIdSet = new Set();
+      for (let addon of addons) {
+        if (addon.isGoingToInject) {
+          elementIdSet.add(addon.elementId);
+        }
+      }
+      if (elementIdSet.size) {
+        let observer = new MutationObserver(mutations => {
+          for (let mutation of mutations) {
+            for (let node of mutation.addedNodes) {
+              elementIdSet.delete(node.id);
+              if (elementIdSet.size === 0) {
+                observer.disconnect();
+                resolve();
+              }
+            }
+          }
+        });
+        let mainContent = document.querySelector(".main-content");
+        observer.observe(mainContent, {childList: true, subtree: true});
+        // Disconnect the mutation observer once there is any user input.
+        mainContent.addEventListener("scroll", disconnectMutationObserver);
+        window.addEventListener("mousedown", disconnectMutationObserver);
+        window.addEventListener("keydown", disconnectMutationObserver);
+        function disconnectMutationObserver() {
+          mainContent.removeEventListener("scroll", disconnectMutationObserver);
+          window.removeEventListener("mousedown", disconnectMutationObserver);
+          window.removeEventListener("keydown", disconnectMutationObserver);
+          observer.disconnect();
+        }
+      } else {
+        resolve();
+      }
+    });
+  }
+}
+
+function scrollAndHighlight(subcategory) {
+  let element = document.querySelector(`[data-subcategory="${subcategory}"]`);
+  if (element) {
+    let header = getClosestDisplayedHeader(element);
+    scrollContentTo(header);
+    element.classList.add("spotlight");
+  }
+}
+
+/**
+ * If there is no visible second level header it will return first level header,
+ * otherwise return second level header.
+ * @returns {Element} - The closest displayed header.
+ */
+function getClosestDisplayedHeader(element) {
+  let header = element.closest("groupbox");
+  let searchHeader = header.querySelector("caption.search-header");
+  if (searchHeader && searchHeader.hidden &&
+      header.previousSibling.classList.contains("subcategory")) {
+    header = header.previousSibling;
+  }
+  return header;
+}
+
+function scrollContentTo(element) {
+  const SEARCH_CONTAINER_HEIGHT = document.querySelector(".search-container").clientHeight;
+  let mainContent = document.querySelector(".main-content");
+  let top = element.getBoundingClientRect().top - SEARCH_CONTAINER_HEIGHT;
+  mainContent.scroll({
+    top,
+    behavior: "smooth",
+  });
 }
 
 function friendlyPrefCategoryNameToInternalName(aName) {
@@ -190,7 +346,7 @@ const CONFIRM_RESTART_PROMPT_CANCEL = 1;
 const CONFIRM_RESTART_PROMPT_RESTART_LATER = 2;
 function confirmRestartPrompt(aRestartToEnable, aDefaultButtonIndex,
                               aWantRevertAsCancelButton,
-			      aWantRestartLaterButton) {
+                              aWantRestartLaterButton) {
   let brandName = document.getElementById("bundleBrand").getString("brandShortName");
   let bundle = document.getElementById("bundlePreferences");
   let msg = bundle.getFormattedString(aRestartToEnable ?
@@ -198,7 +354,6 @@ function confirmRestartPrompt(aRestartToEnable, aDefaultButtonIndex,
                                       "featureDisableRequiresRestart",
                                       [brandName]);
   let title = bundle.getFormattedString("shouldRestartTitle", [brandName]);
-  let prompts = Cc["@mozilla.org/embedcomp/prompt-service;1"].getService(Ci.nsIPromptService);
 
   // Set up the first (index 0) button:
   let button0Text = bundle.getFormattedString("okToRestartButton", [brandName]);
@@ -239,8 +394,176 @@ function confirmRestartPrompt(aRestartToEnable, aDefaultButtonIndex,
       break;
   }
 
-  let buttonIndex = prompts.confirmEx(window, title, msg, buttonFlags,
-                                      button0Text, button1Text, button2Text,
-                                      null, {});
+  let buttonIndex = Services.prompt.confirmEx(window, title, msg, buttonFlags,
+                                              button0Text, button1Text, button2Text,
+                                              null, {});
+
+  // If we have the second confirmation dialog for restart, see if the user
+  // cancels out at that point.
+  if (buttonIndex == CONFIRM_RESTART_PROMPT_RESTART_NOW) {
+    let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"]
+                       .createInstance(Ci.nsISupportsPRBool);
+    Services.obs.notifyObservers(cancelQuit, "quit-application-requested",
+                                  "restart");
+    if (cancelQuit.data) {
+      buttonIndex = CONFIRM_RESTART_PROMPT_CANCEL;
+    }
+  }
   return buttonIndex;
+}
+
+// This function is used to append search keywords found
+// in the related subdialog to the button that will activate the subdialog.
+function appendSearchKeywords(aId, keywords) {
+  let element = document.getElementById(aId);
+  let searchKeywords = element.getAttribute("searchkeywords");
+  if (searchKeywords) {
+    keywords.push(searchKeywords);
+  }
+  element.setAttribute("searchkeywords", keywords.join(" "));
+}
+
+const PREF_SETTING_TYPE = "prefs";
+
+let extensionControlledContentIds = {
+  "privacy.containers": "browserContainersExtensionContent",
+  "homepage_override": "browserHomePageExtensionContent",
+  "newTabURL": "browserNewTabExtensionContent",
+  "defaultSearch": "browserDefaultSearchExtensionContent",
+  get "websites.trackingProtectionMode"() {
+    return {
+      button: "trackingProtectionExtensionContentButton",
+      section:
+        trackingprotectionUiEnabled ?
+          "trackingProtectionExtensionContentLabel" :
+          "trackingProtectionPBMExtensionContentLabel",
+    };
+  }
+};
+
+let extensionControlledIds = {};
+
+/**
+  * Check if a pref is being managed by an extension.
+  */
+async function getControllingExtensionInfo(type, settingName) {
+  await ExtensionSettingsStore.initialize();
+  return ExtensionSettingsStore.getSetting(type, settingName);
+}
+
+function getControllingExtensionEls(settingName) {
+  let idInfo = extensionControlledContentIds[settingName];
+  let section = document.getElementById(idInfo.section || idInfo);
+  let button = idInfo.button ?
+    document.getElementById(idInfo.button) :
+    section.querySelector("button");
+  return {
+    section,
+    button,
+    description: section.querySelector("description"),
+  };
+}
+
+async function handleControllingExtension(type, settingName) {
+  let info = await getControllingExtensionInfo(type, settingName);
+  let addon = info && info.id
+    && await AddonManager.getAddonByID(info.id);
+
+  // Sometimes the ExtensionSettingsStore gets in a bad state where it thinks
+  // an extension is controlling a setting but the extension has been uninstalled
+  // outside of the regular lifecycle. If the extension isn't currently installed
+  // then we should treat the setting as not being controlled.
+  // See https://bugzilla.mozilla.org/show_bug.cgi?id=1411046 for an example.
+  if (addon) {
+    extensionControlledIds[settingName] = info.id;
+    showControllingExtension(settingName, addon);
+  } else {
+    let elements = getControllingExtensionEls(settingName);
+    if (extensionControlledIds[settingName]
+        && !document.hidden
+        && elements.button) {
+      showEnableExtensionMessage(settingName);
+    } else {
+      hideControllingExtension(settingName);
+    }
+    delete extensionControlledIds[settingName];
+  }
+
+  return !!addon;
+}
+
+async function showControllingExtension(settingName, addon) {
+  // Tell the user what extension is controlling the setting.
+  let elements = getControllingExtensionEls(settingName);
+
+  elements.section.classList.remove("extension-controlled-disabled");
+  let description = elements.description;
+
+  // Remove the old content from the description.
+  while (description.firstChild) {
+    description.firstChild.remove();
+  }
+
+  // Populate the description.
+  let msg = document.getElementById("bundlePreferences")
+                    .getString(`extensionControlled.${settingName}`);
+  let image = document.createElement("image");
+  const defaultIcon = "chrome://mozapps/skin/extensions/extensionGeneric.svg";
+  image.setAttribute("src", addon.iconURL || defaultIcon);
+  image.classList.add("extension-controlled-icon");
+  let addonBit = document.createDocumentFragment();
+  addonBit.appendChild(image);
+  addonBit.appendChild(document.createTextNode(" " + addon.name));
+  let fragment = BrowserUtils.getLocalizedFragment(document, msg, addonBit);
+  description.appendChild(fragment);
+
+  if (elements.button) {
+    elements.button.hidden = false;
+  }
+
+  // Show the controlling extension row and hide the old label.
+  elements.section.hidden = false;
+}
+
+function hideControllingExtension(settingName) {
+  let elements = getControllingExtensionEls(settingName);
+  elements.section.hidden = true;
+  if (elements.button) {
+    elements.button.hidden = true;
+  }
+}
+
+function showEnableExtensionMessage(settingName) {
+  let elements = getControllingExtensionEls(settingName);
+
+  elements.button.hidden = true;
+  elements.section.classList.add("extension-controlled-disabled");
+  let icon = url => {
+    let img = document.createElement("image");
+    img.src = url;
+    img.className = "extension-controlled-icon";
+    return img;
+  };
+  let addonIcon = icon("chrome://mozapps/skin/extensions/extensionGeneric-16.svg");
+  let toolbarIcon = icon("chrome://browser/skin/menu.svg");
+  let message = document.getElementById("bundlePreferences")
+                        .getString("extensionControlled.enable");
+  let frag = BrowserUtils.getLocalizedFragment(document, message, addonIcon, toolbarIcon);
+  elements.description.innerHTML = "";
+  elements.description.appendChild(frag);
+  let dismissButton = document.createElement("image");
+  dismissButton.setAttribute("class", "extension-controlled-icon close-icon");
+  dismissButton.addEventListener("click", function dismissHandler() {
+    hideControllingExtension(settingName);
+    dismissButton.removeEventListener("click", dismissHandler);
+  });
+  elements.description.appendChild(dismissButton);
+}
+
+function makeDisableControllingExtension(type, settingName) {
+  return async function disableExtension() {
+    let {id} = await getControllingExtensionInfo(type, settingName);
+    let addon = await AddonManager.getAddonByID(id);
+    addon.userDisabled = true;
+  };
 }

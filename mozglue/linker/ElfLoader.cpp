@@ -20,6 +20,7 @@
 
 #if defined(ANDROID)
 #include <sys/syscall.h>
+#include <math.h>
 
 #include <android/api-level.h>
 #if __ANDROID_API__ < 8
@@ -39,6 +40,12 @@ inline int sigaltstack(const stack_t *ss, stack_t *oss) {
 extern "C" MOZ_EXPORT const void *
 __gnu_Unwind_Find_exidx(void *pc, int *pcount) __attribute__((weak));
 #endif
+
+/* Ideally we'd #include <link.h>, but that's a world of pain
+ * Moreover, not all versions of android support it, so we need a weak
+ * reference. */
+extern "C" MOZ_EXPORT int
+dl_iterate_phdr(dl_phdr_cb callback, void *data) __attribute__((weak));
 
 /* Pointer to the PT_DYNAMIC section of the executable or library
  * containing this code. */
@@ -104,22 +111,36 @@ __wrap_dladdr(void *addr, Dl_info *info)
   return 1;
 }
 
-int
-__wrap_dl_iterate_phdr(dl_phdr_cb callback, void *data)
+class DlIteratePhdrHelper
 {
-  if (!ElfLoader::Singleton.dbg)
-    return -1;
+public:
+  DlIteratePhdrHelper()
+  {
+    int pipefd[2];
+    valid_pipe = (pipe(pipefd) == 0);
+    read_fd.reset(pipefd[0]);
+    write_fd.reset(pipefd[1]);
+  }
 
-  int pipefd[2];
-  bool valid_pipe = (pipe(pipefd) == 0);
-  AutoCloseFD read_fd(pipefd[0]);
-  AutoCloseFD write_fd(pipefd[1]);
+  int fill_and_call(dl_phdr_cb callback, const void* l_addr,
+                    const char* l_name, void* data);
 
-  for (ElfLoader::DebuggerHelper::iterator it = ElfLoader::Singleton.dbg.begin();
-       it < ElfLoader::Singleton.dbg.end(); ++it) {
+private:
+  bool valid_pipe;
+  AutoCloseFD read_fd;
+  AutoCloseFD write_fd;
+};
+
+// This function is called for each shared library iterated over by
+// dl_iterate_phdr, and is used to fill a dl_phdr_info which is then
+// sent through to the dl_iterate_phdr callback.
+int
+DlIteratePhdrHelper::fill_and_call(dl_phdr_cb callback, const void* l_addr,
+                                   const char* l_name, void *data)
+{
     dl_phdr_info info;
-    info.dlpi_addr = reinterpret_cast<Elf::Addr>(it->l_addr);
-    info.dlpi_name = it->l_name;
+    info.dlpi_addr = reinterpret_cast<Elf::Addr>(l_addr);
+    info.dlpi_name = l_name;
     info.dlpi_phdr = nullptr;
     info.dlpi_phnum = 0;
 
@@ -146,7 +167,7 @@ __wrap_dl_iterate_phdr(dl_phdr_cb callback, void *data)
       static_assert(sizeof(raw_ehdr) < PIPE_BUF, "PIPE_BUF is too small");
       do {
         // writes are atomic when smaller than PIPE_BUF, per POSIX.1-2008.
-        ret = write(write_fd, it->l_addr, sizeof(raw_ehdr));
+        ret = write(write_fd, l_addr, sizeof(raw_ehdr));
       } while (ret == -1 && errno == EINTR);
       if (ret != sizeof(raw_ehdr)) {
         if (ret == -1 && errno == EFAULT) {
@@ -171,7 +192,7 @@ __wrap_dl_iterate_phdr(dl_phdr_cb callback, void *data)
     }
 
     if (valid_pipe && can_read) {
-      const Elf::Ehdr *ehdr = Elf::Ehdr::validate(it->l_addr);
+      const Elf::Ehdr *ehdr = Elf::Ehdr::validate(l_addr);
       if (ehdr) {
         info.dlpi_phdr = reinterpret_cast<const Elf::Phdr *>(
                          reinterpret_cast<const char *>(ehdr) + ehdr->e_phoff);
@@ -179,7 +200,40 @@ __wrap_dl_iterate_phdr(dl_phdr_cb callback, void *data)
       }
     }
 
-    int ret = callback(&info, sizeof(dl_phdr_info), data);
+    return callback(&info, sizeof(dl_phdr_info), data);
+}
+
+int
+__wrap_dl_iterate_phdr(dl_phdr_cb callback, void *data)
+{
+  DlIteratePhdrHelper helper;
+  AutoLock lock(&ElfLoader::Singleton.handlesMutex);
+
+  if (dl_iterate_phdr) {
+    for (ElfLoader::LibHandleList::reverse_iterator it =
+	   ElfLoader::Singleton.handles.rbegin();
+	 it < ElfLoader::Singleton.handles.rend(); ++it) {
+      BaseElf* elf = (*it)->AsBaseElf();
+      if (!elf) {
+	continue;
+      }
+      int ret = helper.fill_and_call(callback, (*it)->GetBase(),
+				     (*it)->GetPath(), data);
+      if (ret)
+        return ret;
+    }
+    return dl_iterate_phdr(callback, data);
+  }
+
+  /* For versions of Android that don't support dl_iterate_phdr (< 5.0),
+   * we go through the debugger helper data, which is known to be racy, but
+   * there's not much we can do about this :( . */
+  if (!ElfLoader::Singleton.dbg)
+    return -1;
+
+  for (ElfLoader::DebuggerHelper::iterator it = ElfLoader::Singleton.dbg.begin();
+       it < ElfLoader::Singleton.dbg.end(); ++it) {
+    int ret = helper.fill_and_call(callback, it->l_addr, it->l_name, data);
     if (ret)
       return ret;
   }
@@ -282,12 +336,6 @@ LibHandle::MappableMMap(void *addr, size_t length, off_t offset) const
   if (!mappable)
     return MAP_FAILED;
   void* mapped = mappable->mmap(addr, length, PROT_READ, MAP_PRIVATE, offset);
-  if (mapped != MAP_FAILED) {
-    /* Ensure the availability of all pages within the mapping */
-    for (size_t off = 0; off < length; off += PageSize()) {
-      mappable->ensure(reinterpret_cast<char *>(mapped) + off);
-    }
-  }
   return mapped;
 }
 
@@ -404,12 +452,14 @@ ElfLoader::Load(const char *path, int flags, LibHandle *parent)
   /* Search the list of handles we already have for a match. When the given
    * path is not absolute, compare file names, otherwise compare full paths. */
   if (name == path) {
+    AutoLock lock(&handlesMutex);
     for (LibHandleList::iterator it = handles.begin(); it < handles.end(); ++it)
       if ((*it)->GetName() && (strcmp((*it)->GetName(), name) == 0)) {
         handle = *it;
         return handle.forget();
       }
   } else {
+    AutoLock lock(&handlesMutex);
     for (LibHandleList::iterator it = handles.begin(); it < handles.end(); ++it)
       if ((*it)->GetPath() && (strcmp((*it)->GetPath(), path) == 0)) {
         handle = *it;
@@ -458,6 +508,7 @@ ElfLoader::Load(const char *path, int flags, LibHandle *parent)
 already_AddRefed<LibHandle>
 ElfLoader::GetHandleByPtr(void *addr)
 {
+  AutoLock lock(&handlesMutex);
   /* Scan the list of handles we already have for a match */
   for (LibHandleList::iterator it = handles.begin(); it < handles.end(); ++it) {
     if ((*it)->Contains(addr)) {
@@ -479,6 +530,7 @@ ElfLoader::GetMappableFromPath(const char *path)
     char *zip_path = strndup(path, subpath - path);
     while (*(++subpath) == '/') { }
     zip = ZipCollection::GetZip(zip_path);
+    free(zip_path);
     Zip::Stream s;
     if (zip && zip->GetStream(subpath, &s)) {
       /* When the MOZ_LINKER_EXTRACT environment variable is set to "1",
@@ -491,8 +543,6 @@ ElfLoader::GetMappableFromPath(const char *path)
       if (!mappable) {
         if (s.GetType() == Zip::Stream::DEFLATE) {
           mappable = MappableDeflate::Create(name, zip, &s);
-        } else if (s.GetType() == Zip::Stream::STORE) {
-          mappable = MappableSeekableZStream::Create(name, zip, &s);
         }
       }
     }
@@ -507,6 +557,7 @@ ElfLoader::GetMappableFromPath(const char *path)
 void
 ElfLoader::Register(LibHandle *handle)
 {
+  AutoLock lock(&handlesMutex);
   handles.push_back(handle);
 }
 
@@ -525,6 +576,7 @@ ElfLoader::Forget(LibHandle *handle)
   /* Ensure logging is initialized or refresh if environment changed. */
   Logging::Init();
 
+  AutoLock lock(&handlesMutex);
   LibHandleList::iterator it = std::find(handles.begin(), handles.end(), handle);
   if (it != handles.end()) {
     DEBUG_LOG("ElfLoader::Forget(%p [\"%s\"])", reinterpret_cast<void *>(handle),
@@ -559,6 +611,9 @@ ElfLoader::Init()
   if (dladdr(FunctionPtr(syscall), &info) != 0) {
     libc = LoadedElf::Create(info.dli_fname, info.dli_fbase);
   }
+  if (dladdr(FunctionPtr<int (*)(double)>(isnan), &info) != 0) {
+    libm = LoadedElf::Create(info.dli_fname, info.dli_fbase);
+  }
 #endif
 }
 
@@ -574,8 +629,10 @@ ElfLoader::~ElfLoader()
   self_elf = nullptr;
 #if defined(ANDROID)
   libc = nullptr;
+  libm = nullptr;
 #endif
 
+  AutoLock lock(&handlesMutex);
   /* Build up a list of all library handles with direct (external) references.
    * We actually skip system library handles because we want to keep at least
    * some of these open. Most notably, Mozilla codebase keeps a few libgnome
@@ -602,29 +659,19 @@ ElfLoader::~ElfLoader()
          it < list.rend(); ++it) {
       if ((*it)->AsSystemElf()) {
         DEBUG_LOG("ElfLoader::~ElfLoader(): Remaining handle for \"%s\" "
-                  "[%d direct refs, %d refs total]", (*it)->GetPath(),
-                  (*it)->DirectRefCount(), (*it)->refCount());
+                  "[%" PRIdPTR " direct refs, %" PRIdPTR " refs total]",
+                  (*it)->GetPath(), (*it)->DirectRefCount(), (*it)->refCount());
       } else {
         DEBUG_LOG("ElfLoader::~ElfLoader(): Unexpected remaining handle for \"%s\" "
-                  "[%d direct refs, %d refs total]", (*it)->GetPath(),
-                  (*it)->DirectRefCount(), (*it)->refCount());
+                  "[%" PRIdPTR " direct refs, %" PRIdPTR " refs total]",
+                  (*it)->GetPath(), (*it)->DirectRefCount(), (*it)->refCount());
         /* Not removing, since it could have references to other libraries,
          * destroying them as a side effect, and possibly leaving dangling
          * pointers in the handle list we're scanning */
       }
     }
   }
-}
-
-void
-ElfLoader::stats(const char *when)
-{
-  if (MOZ_LIKELY(!Logging::isVerbose()))
-    return;
-
-  for (LibHandleList::iterator it = Singleton.handles.begin();
-       it < Singleton.handles.end(); ++it)
-    (*it)->stats(when);
+  pthread_mutex_destroy(&handlesMutex);
 }
 
 #ifdef __ARM_EABI__
@@ -961,7 +1008,7 @@ ElfLoader::DebuggerHelper::Remove(ElfLoader::link_map *map)
   dbg->r_brk();
 }
 
-#if defined(ANDROID)
+#if defined(ANDROID) && defined(__NR_sigaction)
 /* As some system libraries may be calling signal() or sigaction() to
  * set a SIGSEGV handler, effectively breaking MappableSeekableZStream,
  * or worse, restore our SIGSEGV handler with wrong flags (which using
@@ -1007,8 +1054,9 @@ Divert(T func, T new_func)
   *reinterpret_cast<intptr_t *>(addr + 1) =
     reinterpret_cast<uintptr_t>(new_func) - addr - 5; // target displacement
   return true;
-#elif defined(__arm__)
+#elif defined(__arm__) || defined(__aarch64__)
   const unsigned char trampoline[] = {
+# ifdef __arm__
                             // .thumb
     0x46, 0x04,             // nop
     0x78, 0x47,             // bx pc
@@ -1016,8 +1064,15 @@ Divert(T func, T new_func)
                             // .arm
     0x04, 0xf0, 0x1f, 0xe5, // ldr pc, [pc, #-4]
                             // .word <new_func>
+# else // __aarch64__
+    0x50, 0x00, 0x00, 0x58, // ldr x16, [pc, #8]   ; x16 (aka ip0) is the first
+    0x00, 0x02, 0x1f, 0xd6, // br x16              ; intra-procedure-call
+                            // .word <new_func.lo> ; scratch register.
+                            // .word <new_func.hi>
+# endif
   };
   const unsigned char *start;
+# ifdef __arm__
   if (addr & 0x01) {
     /* Function is thumb, the actual address of the code is without the
      * least significant bit. */
@@ -1031,12 +1086,16 @@ Divert(T func, T new_func)
     /* Function is arm, we only need the arm part of the trampoline */
     start = trampoline + 6;
   }
+# else // __aarch64__
+  start = trampoline;
+#endif
 
   size_t len = sizeof(trampoline) - (start - trampoline);
   EnsureWritable w(reinterpret_cast<void *>(addr), len + sizeof(void *));
   memcpy(reinterpret_cast<void *>(addr), start, len);
   *reinterpret_cast<void **>(addr + len) = FunctionPtr(new_func);
-  cacheflush(addr, addr + len + sizeof(void *), 0);
+  __builtin___clear_cache(reinterpret_cast<char*>(addr),
+                          reinterpret_cast<char*>(addr + len + sizeof(void *)));
   return true;
 #else
   return false;
@@ -1254,20 +1313,6 @@ void SEGVHandler::handler(int signum, siginfo_t *info, void *context)
 {
   //ASSERT(signum == SIGSEGV);
   DEBUG_LOG("Caught segmentation fault @%p", info->si_addr);
-
-  /* Check whether we segfaulted in the address space of a CustomElf. We're
-   * only expecting that to happen as an access error. */
-  if (info->si_code == SEGV_ACCERR) {
-    RefPtr<LibHandle> handle =
-      ElfLoader::Singleton.GetHandleByPtr(info->si_addr);
-    BaseElf *elf;
-    if (handle && (elf = handle->AsBaseElf())) {
-      DEBUG_LOG("Within the address space of %s", handle->GetPath());
-      if (elf->mappable && elf->mappable->ensure(info->si_addr)) {
-        return;
-      }
-    }
-  }
 
   /* Redispatch to the registered handler */
   SEGVHandler &that = ElfLoader::Singleton;

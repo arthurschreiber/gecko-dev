@@ -4,11 +4,11 @@
 
 "use strict";
 
-const { Cc, Ci, Cu } = require("chrome");
+const { Cc, Ci } = require("chrome");
 const Services = require("Services");
 const l10n = require("gcli/l10n");
 const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "DevToolsLoader",
+ChromeUtils.defineModuleGetter(this, "DevToolsLoader",
   "resource://devtools/shared/Loader.jsm");
 
 const BRAND_SHORT_NAME = Cc["@mozilla.org/intl/stringbundle;1"]
@@ -27,7 +27,7 @@ XPCOMUtils.defineLazyGetter(this, "debuggerServer", () => {
   serverLoader.invisibleToDebugger = true;
   let { DebuggerServer: debuggerServer } = serverLoader.require("devtools/server/main");
   debuggerServer.init();
-  debuggerServer.addBrowserActors();
+  debuggerServer.registerAllActors();
   debuggerServer.allowChromeProcess = !l10n.hiddenByChromePref();
   return debuggerServer;
 });
@@ -44,18 +44,45 @@ exports.items = [
         name: "port",
         type: "number",
         get defaultValue() {
-          return Services.prefs.getIntPref("devtools.debugger.chrome-debugging-port");
+          return Services.prefs.getIntPref("devtools.debugger.remote-port");
         },
         description: l10n.lookup("listenPortDesc"),
-      }
+      },
+      {
+        name: "protocol",
+        get defaultValue() {
+          let webSocket = Services.prefs
+                          .getBoolPref("devtools.debugger.remote-websocket");
+          let protocol;
+          if (webSocket === true) {
+            protocol = "websocket";
+          } else {
+            protocol = "mozilla-rdp";
+          }
+          return protocol;
+        },
+        type: {
+          name: "selection",
+          data: [ "mozilla-rdp", "websocket"],
+        },
+        description: l10n.lookup("listenProtocolDesc"),
+      },
     ],
-    exec: function(args, context) {
-      var listener = debuggerServer.createListener();
+    exec: function (args, context) {
+      let listener = debuggerServer.createListener();
       if (!listener) {
         throw new Error(l10n.lookup("listenDisabledOutput"));
       }
 
+      let webSocket = false;
+      if (args.protocol === "websocket") {
+        webSocket = true;
+      } else if (args.protocol === "mozilla-rdp") {
+        webSocket = false;
+      }
+
       listener.portOrPath = args.port;
+      listener.webSocket = webSocket;
       listener.open();
 
       if (debuggerServer.initialized) {
@@ -71,7 +98,7 @@ exports.items = [
     name: "unlisten",
     description: l10n.lookup("unlistenDesc"),
     manual: l10n.lookup("unlistenManual"),
-    exec: function(args, context) {
+    exec: function (args, context) {
       debuggerServer.closeAllListeners();
       return l10n.lookup("unlistenOutput");
     }

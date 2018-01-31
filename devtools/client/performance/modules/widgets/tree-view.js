@@ -9,14 +9,13 @@
  */
 
 const { L10N } = require("devtools/client/performance/modules/global");
-const { Heritage } = require("devtools/client/shared/widgets/view-helpers");
+const { extend } = require("devtools/shared/extend");
 const { AbstractTreeItem } = require("resource://devtools/client/shared/widgets/AbstractTreeItem.jsm");
 
 const URL_LABEL_TOOLTIP = L10N.getStr("table.url.tooltiptext");
 const VIEW_OPTIMIZATIONS_TOOLTIP = L10N.getStr("table.view-optimizations.tooltiptext2");
 
-// px
-const CALL_TREE_INDENTATION = 16;
+const CALL_TREE_INDENTATION = 16; // px
 
 // Used for rendering values in cells
 const FORMATTERS = {
@@ -175,7 +174,7 @@ function CallView({
   this._onUrlClick = this._onUrlClick.bind(this);
 }
 
-CallView.prototype = Heritage.extend(AbstractTreeItem.prototype, {
+CallView.prototype = extend(AbstractTreeItem.prototype, {
   /**
    * Creates the view for this tree node.
    * @param nsIDOMNode document

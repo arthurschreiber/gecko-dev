@@ -35,14 +35,14 @@ function setup() {
 
         teardown();
       }
-    }, false);
+    });
 
     var promise = new Promise(function(aResolve, aReject) {
       document.body.appendChild(iframe);
 
       aResolve(iframe);
     });
-    obs.notifyObservers(promise, "setup-request-promise", null);
+    obs.notifyObservers(promise, "setup-request-promise");
 
     aResolve();
   });
@@ -71,6 +71,7 @@ SpecialPowers.pushPermissions([
                                       ["dom.presentation.controller.enabled", true],
                                       ["dom.presentation.receiver.enabled", true],
                                       ["dom.mozBrowserFramesEnabled", true],
+                                      ["network.disable.ipc.security", true],
                                       ["dom.presentation.session_transport.data_channel.enable", false]]},
                             runTests);
 });

@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,9 +8,10 @@
 #define mozilla_dom_PresentationConnection_h
 
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/dom/TypedArray.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/dom/PresentationConnectionBinding.h"
-#include "mozilla/dom/PresentationConnectionClosedEventBinding.h"
+#include "mozilla/dom/PresentationConnectionCloseEventBinding.h"
 #include "nsIPresentationListener.h"
 #include "nsIRequest.h"
 #include "nsWeakReference.h"
@@ -18,6 +19,7 @@
 namespace mozilla {
 namespace dom {
 
+class Blob;
 class PresentationConnectionList;
 
 class PresentationConnection final : public DOMEventTargetHelper
@@ -52,7 +54,20 @@ public:
 
   PresentationConnectionState State() const;
 
+  PresentationConnectionBinaryType BinaryType() const;
+
+  void SetBinaryType(PresentationConnectionBinaryType aType);
+
   void Send(const nsAString& aData,
+            ErrorResult& aRv);
+
+  void Send(Blob& aData,
+            ErrorResult& aRv);
+
+  void Send(const ArrayBuffer& aData,
+            ErrorResult& aRv);
+
+  void Send(const ArrayBufferView& aData,
             ErrorResult& aRv);
 
   void Close(ErrorResult& aRv);
@@ -82,8 +97,9 @@ private:
 
   nsresult ProcessStateChanged(nsresult aReason);
 
-  nsresult DispatchConnectionClosedEvent(PresentationConnectionClosedReason aReason,
-                                         const nsAString& aMessage);
+  nsresult DispatchConnectionCloseEvent(PresentationConnectionClosedReason aReason,
+                                         const nsAString& aMessage,
+                                         bool aDispatchNow = false);
 
   nsresult DispatchMessageEvent(JS::Handle<JS::Value> aData);
 
@@ -93,12 +109,17 @@ private:
 
   nsresult RemoveFromLoadGroup();
 
+  void AsyncCloseConnectionWithErrorMsg(const nsAString& aMessage);
+
+  nsresult DoReceiveMessage(const nsACString& aData, bool aIsBinary);
+
   nsString mId;
   nsString mUrl;
   uint8_t mRole;
   PresentationConnectionState mState;
   RefPtr<PresentationConnectionList> mOwningConnectionList;
-  nsWeakPtr mWeakLoadGroup;;
+  nsWeakPtr mWeakLoadGroup;
+  PresentationConnectionBinaryType mBinaryType;
 };
 
 } // namespace dom

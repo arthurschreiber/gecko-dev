@@ -19,6 +19,24 @@ function scopedCuImport(path) {
   return scope;
 }
 
+// There are shutdown issues for which multiple rejections are left uncaught.
+// This bug should be fixed, but for the moment devtools are whitelisted.
+//
+// NOTE: Entire directory whitelisting should be kept to a minimum. Normally you
+//       should use "expectUncaughtRejection" to flag individual failures.
+const {PromiseTestUtils} = scopedCuImport("resource://testing-common/PromiseTestUtils.jsm");
+PromiseTestUtils.whitelistRejectionsGlobally(/Component not initialized/);
+PromiseTestUtils.whitelistRejectionsGlobally(/Connection closed/);
+PromiseTestUtils.whitelistRejectionsGlobally(/destroy/);
+PromiseTestUtils.whitelistRejectionsGlobally(/File closed/);
+PromiseTestUtils.whitelistRejectionsGlobally(/is no longer, usable/);
+PromiseTestUtils.whitelistRejectionsGlobally(/NS_ERROR_FAILURE/);
+PromiseTestUtils.whitelistRejectionsGlobally(/this\._urls is null/);
+PromiseTestUtils.whitelistRejectionsGlobally(/this\.tabTarget is null/);
+PromiseTestUtils.whitelistRejectionsGlobally(/this\.toolbox is null/);
+PromiseTestUtils.whitelistRejectionsGlobally(/this\.webConsoleClient is null/);
+PromiseTestUtils.whitelistRejectionsGlobally(/this\.worker is null/);
+
 const {console} = scopedCuImport("resource://gre/modules/Console.jsm");
 const {ScratchpadManager} = scopedCuImport("resource://devtools/client/scratchpad/scratchpad-manager.jsm");
 const {loader, require} = scopedCuImport("resource://devtools/shared/Loader.jsm");
@@ -31,7 +49,7 @@ let promise = require("promise");
 let defer = require("devtools/shared/defer");
 const Services = require("Services");
 const {Task} = require("devtools/shared/task");
-const {KeyShortcuts} = require("devtools/client/shared/key-shortcuts");
+const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
 
 const TEST_DIR = gTestPath.substr(0, gTestPath.lastIndexOf("/"));
 const CHROME_URL_ROOT = TEST_DIR + "/";
@@ -39,6 +57,9 @@ const URL_ROOT = CHROME_URL_ROOT.replace("chrome://mochitests/content/",
                                          "http://example.com/");
 const URL_ROOT_SSL = CHROME_URL_ROOT.replace("chrome://mochitests/content/",
                                              "https://example.com/");
+
+// Force devtools to be initialized so menu items and keyboard shortcuts get installed
+require("devtools/client/framework/devtools-browser");
 
 // All test are asynchronous
 waitForExplicitFinish();
@@ -67,16 +88,33 @@ const ConsoleObserver = {
   observe: function (subject, topic, data) {
     let message = subject.wrappedJSObject.arguments[0];
 
-    if (/Failed propType/.test(message)) {
+    if (message && /Failed propType/.test(message.toString())) {
       ok(false, message);
     }
   }
 };
 
-Services.obs.addObserver(ConsoleObserver, "console-api-log-event", false);
+Services.obs.addObserver(ConsoleObserver, "console-api-log-event");
 registerCleanupFunction(() => {
   Services.obs.removeObserver(ConsoleObserver, "console-api-log-event");
 });
+
+// Print allocation count if DEBUG_DEVTOOLS_ALLOCATIONS is set to "normal",
+// and allocation sites if DEBUG_DEVTOOLS_ALLOCATIONS is set to "verbose".
+const env = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
+const DEBUG_ALLOCATIONS = env.get("DEBUG_DEVTOOLS_ALLOCATIONS");
+if (DEBUG_ALLOCATIONS) {
+  const { allocationTracker } = require("devtools/shared/test-helpers/allocation-tracker");
+  let tracker = allocationTracker();
+  registerCleanupFunction(() => {
+    if (DEBUG_ALLOCATIONS == "normal") {
+      tracker.logCount();
+    } else if (DEBUG_ALLOCATIONS == "verbose") {
+      tracker.logAllocationSites();
+    }
+    tracker.stop();
+  });
+}
 
 var waitForTime = DevToolsUtils.waitForTime;
 
@@ -96,6 +134,8 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.dump.emit");
   Services.prefs.clearUserPref("devtools.toolbox.host");
   Services.prefs.clearUserPref("devtools.toolbox.previousHost");
+  Services.prefs.clearUserPref("devtools.toolbox.splitconsoleEnabled");
+  Services.prefs.clearUserPref("devtools.toolbox.splitconsoleHeight");
 });
 
 registerCleanupFunction(function* cleanup() {
@@ -107,13 +147,26 @@ registerCleanupFunction(function* cleanup() {
 /**
  * Add a new test tab in the browser and load the given url.
  * @param {String} url The url to be loaded in the new tab
+ * @param {Object} options Object with various optional fields:
+ *   - {Boolean} background If true, open the tab in background
+ *   - {ChromeWindow} window Firefox top level window we should use to open the tab
+ *   - {Number} userContextId The userContextId of the tab.
+ *   - {String} preferredRemoteType
  * @return a promise that resolves to the tab object when the url is loaded
  */
-var addTab = Task.async(function* (url) {
+var addTab = Task.async(function* (url, options = { background: false, window: window }) {
   info("Adding a new tab with URL: " + url);
 
-  let tab = gBrowser.selectedTab = gBrowser.addTab(url);
-  yield once(gBrowser.selectedBrowser, "load", true);
+  let { background } = options;
+  let { gBrowser } = options.window ? options.window : window;
+  let { userContextId } = options;
+
+  let tab = BrowserTestUtils.addTab(gBrowser, url,
+    {userContextId, preferredRemoteType: options.preferredRemoteType});
+  if (!background) {
+    gBrowser.selectedTab = tab;
+  }
+  yield BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   info("Tab added and finished loading");
 
@@ -128,6 +181,7 @@ var addTab = Task.async(function* (url) {
 var removeTab = Task.async(function* (tab) {
   info("Removing tab.");
 
+  let { gBrowser } = tab.ownerDocument.defaultView;
   let onClose = once(gBrowser.tabContainer, "TabClose");
   gBrowser.removeTab(tab);
   yield onClose;
@@ -136,17 +190,17 @@ var removeTab = Task.async(function* (tab) {
 });
 
 /**
- * Refresh the given tab.
- * @param {Object} tab The tab to be refreshed.
+ * Refresh the provided tab.
+ * @param {Object} tab The tab to be refreshed. Defaults to the currently selected tab.
  * @return Promise<undefined> resolved when the tab is successfully refreshed.
  */
-var refreshTab = Task.async(function*(tab) {
+var refreshTab = async function (tab = gBrowser.selectedTab) {
   info("Refreshing tab.");
-  const finished = once(gBrowser.selectedBrowser, "load", true);
-  gBrowser.reloadTab(gBrowser.selectedTab);
-  yield finished;
+  const finished = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+  gBrowser.reloadTab(tab);
+  await finished;
   info("Tab finished refreshing.");
-});
+};
 
 /**
  * Simulate a key event from a <key> element.
@@ -191,15 +245,18 @@ function synthesizeKeyShortcut(key, target) {
   // parseElectronKey requires any window, just to access `KeyboardEvent`
   let window = Services.appShell.hiddenDOMWindow;
   let shortcut = KeyShortcuts.parseElectronKey(window, key);
-
-  info("Synthesizing key shortcut: " + key);
-  EventUtils.synthesizeKey(shortcut.key || "", {
-    keyCode: shortcut.keyCode,
+  let keyEvent = {
     altKey: shortcut.alt,
     ctrlKey: shortcut.ctrl,
     metaKey: shortcut.meta,
     shiftKey: shortcut.shift
-  }, target);
+  };
+  if (shortcut.keyCode) {
+    keyEvent.keyCode = shortcut.keyCode;
+  }
+
+  info("Synthesizing key shortcut: " + key);
+  EventUtils.synthesizeKey(shortcut.key || "", keyEvent, target);
 }
 
 /**
@@ -239,6 +296,41 @@ function waitForNEvents(target, eventName, numTimes, useCapture = false) {
   }
 
   return deferred.promise;
+}
+
+/**
+ * Wait for DOM change on target.
+ *
+ * @param {Object} target
+ *        The Node on which to observe DOM mutations.
+ * @param {String} selector
+ *        Given a selector to watch whether the expected element is changed
+ *        on target.
+ * @param {Number} expectedLength
+ *        Optional, default set to 1
+ *        There may be more than one element match an array match the selector,
+ *        give an expected length to wait for more elements.
+ * @return A promise that resolves when the event has been handled
+ */
+function waitForDOM(target, selector, expectedLength = 1) {
+  return new Promise((resolve) => {
+    let observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        let elements = mutation.target.querySelectorAll(selector);
+
+        if (elements.length === expectedLength) {
+          observer.disconnect();
+          resolve(elements);
+        }
+      });
+    });
+
+    observer.observe(target, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
+  });
 }
 
 /**
@@ -291,9 +383,7 @@ function waitForTick() {
  * @return A promise that resolves when the time is passed
  */
 function wait(ms) {
-  let def = defer();
-  content.setTimeout(def.resolve, ms);
-  return def.promise;
+  return new promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
@@ -452,11 +542,14 @@ function waitForContextMenu(popup, button, onShown, onHidden) {
   popup.addEventListener("popupshown", onPopupShown);
 
   info("wait for the context menu to open");
-  button.scrollIntoView();
-  let eventDetails = {type: "contextmenu", button: 2};
-  EventUtils.synthesizeMouse(button, 5, 2, eventDetails,
-                             button.ownerDocument.defaultView);
+  synthesizeContextMenuEvent(button);
   return deferred.promise;
+}
+
+function synthesizeContextMenuEvent(el) {
+  el.scrollIntoView();
+  let eventDetails = {type: "contextmenu", button: 2};
+  EventUtils.synthesizeMouse(el, 5, 2, eventDetails, el.ownerDocument.defaultView);
 }
 
 /**
@@ -530,6 +623,8 @@ function loadTelemetryAndRecordLogs() {
       this.telemetryInfo[histogramId].push(value);
     }
   };
+  Telemetry.prototype._oldlogScalar = Telemetry.prototype.logScalar;
+  Telemetry.prototype.logScalar = Telemetry.prototype.log;
   Telemetry.prototype._oldlogKeyed = Telemetry.prototype.logKeyed;
   Telemetry.prototype.logKeyed = function (histogramId, key, value) {
     this.log(`${histogramId}|${key}`, value);
@@ -546,8 +641,116 @@ function loadTelemetryAndRecordLogs() {
 function stopRecordingTelemetryLogs(Telemetry) {
   info("Stopping Telemetry");
   Telemetry.prototype.log = Telemetry.prototype._oldlog;
+  Telemetry.prototype.logScalar = Telemetry.prototype._oldlogScalar;
   Telemetry.prototype.logKeyed = Telemetry.prototype._oldlogKeyed;
   delete Telemetry.prototype._oldlog;
+  delete Telemetry.prototype._oldlogScalar;
   delete Telemetry.prototype._oldlogKeyed;
   delete Telemetry.prototype.telemetryInfo;
+}
+
+/**
+ * Clean the logical clipboard content. This method only clears the OS clipboard on
+ * Windows (see Bug 666254).
+ */
+function emptyClipboard() {
+  let clipboard = Cc["@mozilla.org/widget/clipboard;1"]
+    .getService(SpecialPowers.Ci.nsIClipboard);
+  clipboard.emptyClipboard(clipboard.kGlobalClipboard);
+}
+
+/**
+ * Check if the current operating system is Windows.
+ */
+function isWindows() {
+  return Services.appinfo.OS === "WINNT";
+}
+
+/**
+ * Wait for a given toolbox to get its title updated.
+ */
+function waitForTitleChange(toolbox) {
+  let deferred = defer();
+  toolbox.win.parent.addEventListener("message", function onmessage(event) {
+    if (event.data.name == "set-host-title") {
+      toolbox.win.parent.removeEventListener("message", onmessage);
+      deferred.resolve();
+    }
+  });
+  return deferred.promise;
+}
+
+/**
+ * Create an HTTP server that can be used to simulate custom requests within
+ * a test.  It is automatically cleaned up when the test ends, so no need to
+ * call `destroy`.
+ *
+ * See https://developer.mozilla.org/en-US/docs/Httpd.js/HTTP_server_for_unit_tests
+ * for more information about how to register handlers.
+ *
+ * The server can be accessed like:
+ *
+ *   const server = createTestHTTPServer();
+ *   let url = "http://localhost: " + server.identity.primaryPort + "/path";
+ *
+ * @returns {HttpServer}
+ */
+function createTestHTTPServer() {
+  const {HttpServer} = Cu.import("resource://testing-common/httpd.js", {});
+  let server = new HttpServer();
+
+  registerCleanupFunction(function* cleanup() {
+    let destroyed = defer();
+    server.stop(() => {
+      destroyed.resolve();
+    });
+    yield destroyed.promise;
+  });
+
+  server.start(-1);
+  return server;
+}
+
+/**
+ * Inject `EventUtils` helpers into ContentTask scope.
+ *
+ * This helper is automatically exposed to mochitest browser tests,
+ * but is missing from content task scope.
+ * You should call this method only once per <browser> tag
+ *
+ * @param {xul:browser} browser
+ *        Reference to the browser in which we load content task
+ */
+async function injectEventUtilsInContentTask(browser) {
+  await ContentTask.spawn(browser, {}, function* () {
+    if ("EventUtils" in this) {
+      return;
+    }
+
+    let EventUtils = this.EventUtils = {};
+
+    EventUtils.window = {};
+    EventUtils.parent = EventUtils.window;
+    /* eslint-disable camelcase */
+    EventUtils._EU_Ci = Components.interfaces;
+    EventUtils._EU_Cc = Components.classes;
+    /* eslint-enable camelcase */
+    // EventUtils' `sendChar` function relies on the navigator to synthetize events.
+    EventUtils.navigator = content.navigator;
+    EventUtils.KeyboardEvent = content.KeyboardEvent;
+
+    EventUtils.synthesizeClick = element => new Promise(resolve => {
+      element.addEventListener("click", function () {
+        resolve();
+      }, {once: true});
+
+      EventUtils.synthesizeMouseAtCenter(element,
+        { type: "mousedown", isSynthesized: false }, content);
+      EventUtils.synthesizeMouseAtCenter(element,
+        { type: "mouseup", isSynthesized: false }, content);
+    });
+
+    Services.scriptloader.loadSubScript(
+      "chrome://mochikit/content/tests/SimpleTest/EventUtils.js", EventUtils);
+  });
 }

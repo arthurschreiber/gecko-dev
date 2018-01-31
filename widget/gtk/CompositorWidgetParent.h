@@ -6,7 +6,7 @@
 #ifndef widget_gtk_CompositorWidgetParent_h
 #define widget_gtk_CompositorWidgetParent_h
 
-#include "X11CompositorWidget.h"
+#include "GtkCompositorWidget.h"
 #include "mozilla/widget/PCompositorWidgetParent.h"
 
 namespace mozilla {
@@ -14,10 +14,11 @@ namespace widget {
 
 class CompositorWidgetParent final
  : public PCompositorWidgetParent,
-   public X11CompositorWidget
+   public GtkCompositorWidget
 {
 public:
-  explicit CompositorWidgetParent(const CompositorWidgetInitData& aInitData);
+  explicit CompositorWidgetParent(const CompositorWidgetInitData& aInitData,
+                                  const layers::CompositorOptions& aOptions);
   ~CompositorWidgetParent() override;
 
   void ActorDestroy(ActorDestroyReason aWhy) override { }
@@ -25,7 +26,7 @@ public:
   void ObserveVsync(VsyncObserver* aObserver) override;
   RefPtr<VsyncObserver> GetVsyncObserver() const override;
 
-  bool RecvNotifyClientSizeChanged(const LayoutDeviceIntSize& aClientSize) override;
+  mozilla::ipc::IPCResult RecvNotifyClientSizeChanged(const LayoutDeviceIntSize& aClientSize) override;
 
 private:
   RefPtr<VsyncObserver> mVsyncObserver;

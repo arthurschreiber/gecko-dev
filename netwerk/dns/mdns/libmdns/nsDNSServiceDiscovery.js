@@ -5,16 +5,14 @@
 
 const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
 
-Cu.import("resource://gre/modules/ExtensionUtils.jsm");
-Cu.import('resource://gre/modules/Services.jsm');
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import('resource://gre/modules/Services.jsm');
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-let { PlatformInfo } = ExtensionUtils;
-
-if (PlatformInfo.os == "android" && !Services.prefs.getBoolPref("network.mdns.use_js_fallback")) {
-  Cu.import("resource://gre/modules/MulticastDNSAndroid.jsm");
+if (AppConstants.platform == "android" && !Services.prefs.getBoolPref("network.mdns.use_js_fallback")) {
+  ChromeUtils.import("resource://gre/modules/MulticastDNSAndroid.jsm");
 } else {
-  Cu.import("resource://gre/modules/MulticastDNS.jsm");
+  ChromeUtils.import("resource://gre/modules/MulticastDNS.jsm");
 }
 
 const DNSSERVICEDISCOVERY_CID = Components.ID("{f9346d98-f27a-4e89-b744-493843416480}");

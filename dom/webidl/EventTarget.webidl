@@ -23,7 +23,8 @@ dictionary AddEventListenerOptions : EventListenerOptions {
   boolean once = false;
 };
 
-[Exposed=(Window,Worker,WorkerDebugger,System)]
+[Constructor,
+ Exposed=(Window,Worker,WorkerDebugger,System)]
 interface EventTarget {
   /* Passing null for wantsUntrusted means "default behavior", which
      differs in content and chrome.  In content that default boolean
@@ -38,7 +39,7 @@ interface EventTarget {
   void removeEventListener(DOMString type,
                            EventListener? listener,
                            optional (EventListenerOptions or boolean) options);
-  [Throws]
+  [Throws, NeedsCallerType]
   boolean dispatchEvent(Event event);
 };
 

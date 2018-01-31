@@ -16,11 +16,61 @@ try {
   dump('TEST DEVICES: Using media devices:\n');
   dump('audio: ' + audioDevice + '\nvideo: ' + videoDevice + '\n');
   FAKE_ENABLED = false;
-  TEST_AUDIO_FREQ = 440;
+  // It will be updated to 440 when/if DefaultLoopbackTone is instantiated.
+  TEST_AUDIO_FREQ = -1;
 } catch (e) {
   dump('TEST DEVICES: No test devices found (in media.{audio,video}_loopback_dev, using fake streams.\n');
   FAKE_ENABLED = true;
 }
+
+/**
+ *  Global flag to skip LoopbackTone
+ */
+var DISABLE_LOOPBACK_TONE = false
+/**
+ * Helper class to setup a sine tone of a given frequency.
+ */
+class LoopbackTone {
+  constructor(audioContext, frequency) {
+    if (!audioContext) {
+      throw new Error("You must provide a valid AudioContext");
+    }
+    this.oscNode = audioContext.createOscillator();
+    var gainNode = audioContext.createGain();
+    gainNode.gain.value = 0.5;
+    this.oscNode.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    this.changeFrequency(frequency);
+  }
+
+  // Method should be used when FAKE_ENABLED is false.
+  start() {
+    if (!this.oscNode) {
+      throw new Error("Attempt to start a stopped LoopbackTone");
+    }
+    info(`Start loopback tone at ${this.oscNode.frequency.value}`);
+    this.oscNode.start();
+  }
+
+  // Change the frequency of the tone. It can be used after start.
+  // Frequency will change on the fly. No need to stop and create a new instance.
+  changeFrequency(frequency) {
+    if (!this.oscNode) {
+      throw new Error("Attempt to change frequency on a stopped LoopbackTone");
+    }
+    this.oscNode.frequency.value = frequency;
+  }
+
+  stop() {
+    if (!this.oscNode) {
+      throw new Error("Attempt to stop a stopped LoopbackTone");
+    }
+    this.oscNode.stop();
+    this.oscNode = null;
+  }
+};
+// Object that holds the default loopback tone.
+var DefaultLoopbackTone = null;
 
 /**
  * This class provides helpers around analysing the audio content in a stream
@@ -66,7 +116,8 @@ AudioStreamAnalyser.prototype = {
    */
   enableDebugCanvas: function() {
     var cvs = this.debugCanvas = document.createElement("canvas");
-    document.getElementById("content").appendChild(cvs);
+    const content = document.getElementById("content");
+    content.insertBefore(cvs, content.children[0]);
 
     // Easy: 1px per bin
     cvs.width = this.analyser.frequencyBinCount;
@@ -118,26 +169,29 @@ AudioStreamAnalyser.prototype = {
   /**
    * Return a Promise, that will be resolved when the function passed as
    * argument, when called, returns true (meaning the analysis was a
-   * success).
+   * success). The promise is rejected if the cancel promise resolves first.
    *
    * @param {function} analysisFunction
-   *        A fonction that performs an analysis, and returns true if the
+   *        A function that performs an analysis, and resolves with true if the
    *        analysis was a success (i.e. it found what it was looking for)
+   * @param {promise} cancel
+   *        A promise that on resolving will reject the promise we returned.
    */
-  waitForAnalysisSuccess: function(analysisFunction) {
-    var self = this;
-    return new Promise((resolve, reject) => {
-      function analysisLoop() {
-        var success = analysisFunction(self.getByteFrequencyData());
-        if (success) {
-          resolve();
-          return;
-        }
-        // else, we need more time
-        requestAnimationFrame(analysisLoop);
+  waitForAnalysisSuccess: async function(analysisFunction,
+                                         cancel = wait(60000, new Error("Audio analysis timed out"))) {
+    let aborted = false;
+    cancel.then(() => aborted = true);
+
+    // We need to give the Analyser some time to start gathering data.
+    await wait(200);
+
+    do {
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      if (aborted) {
+        throw await cancel;
       }
-      analysisLoop();
-    });
+    }
+    while (!analysisFunction(this.getByteFrequencyData()));
   },
 
   /**
@@ -231,43 +285,56 @@ function realCreateHTML(meta) {
   document.body.appendChild(content);
 }
 
-function getMediaElement(label, direction, streamId) {
-  var id = label + '_' + direction + '_' + streamId;
-  return document.getElementById(id);
-}
-
 /**
- * Create the HTML element if it doesn't exist yet and attach
- * it to the content node.
+ * Creates an element of the given type, assigns the given id, sets the controls
+ * and autoplay attributes and adds it to the content node.
  *
- * @param {string} label
- *        Prefix to use for the element
- * @param {direction} "local" or "remote"
- * @param {stream} A MediaStream id.
- * @param {audioOnly} Use <audio> element instead of <video>
- * @return {HTMLMediaElement} The created HTML media element
+ * @param {string} type
+ *        Defining if we should create an "audio" or "video" element
+ * @param {string} id
+ *        A string to use as the element id.
  */
-function createMediaElement(label, direction, streamId, audioOnly) {
-  var id = label + '_' + direction + '_' + streamId;
-  var element = document.getElementById(id);
-
-  // Sanity check that we haven't created the element already
-  if (element) {
-    return element;
-  }
-
-  if (!audioOnly) {
-    // Even if this is just audio now, we might add video later.
-    element = document.createElement('video');
-  } else {
-    element = document.createElement('audio');
-  }
+function createMediaElement(type, id) {
+  const element = document.createElement(type);
   element.setAttribute('id', id);
   element.setAttribute('height', 100);
   element.setAttribute('width', 150);
   element.setAttribute('controls', 'controls');
   element.setAttribute('autoplay', 'autoplay');
+  element.setAttribute('muted', 'muted');
+  element.muted = true;
   document.getElementById('content').appendChild(element);
+
+  return element;
+}
+
+/**
+ * Returns an existing element for the given track with the given idPrefix,
+ * as it was added by createMediaElementForTrack().
+ *
+ * @param {MediaStreamTrack} track
+ *        Track used as the element's source.
+ * @param {string} idPrefix
+ *        A string to use as the element id. The track id will also be appended.
+ */
+function getMediaElementForTrack(track, idPrefix) {
+  return document.getElementById(idPrefix + '_' + track.id);
+}
+
+/**
+ * Create a media element with a track as source and attach it to the content
+ * node.
+ *
+ * @param {MediaStreamTrack} track
+ *        Track for use as source.
+ * @param {string} idPrefix
+ *        A string to use as the element id. The track id will also be appended.
+ * @return {HTMLMediaElement} The created HTML media element
+ */
+function createMediaElementForTrack(track, idPrefix) {
+  const id = idPrefix + '_' + track.id;
+  const element = createMediaElement(track.kind, id);
+  element.srcObject = new MediaStream([track]);
 
   return element;
 }
@@ -281,6 +348,23 @@ function createMediaElement(label, direction, streamId, audioOnly) {
  *        The constraints for this mozGetUserMedia callback
  */
 function getUserMedia(constraints) {
+  if (!FAKE_ENABLED
+      && !constraints.fake
+      && constraints.audio
+      && !DISABLE_LOOPBACK_TONE) {
+    // Loopback device is configured, start the default loopback tone
+    if (!DefaultLoopbackTone) {
+      TEST_AUDIO_FREQ = 440;
+      DefaultLoopbackTone = new LoopbackTone(new AudioContext, TEST_AUDIO_FREQ);
+      DefaultLoopbackTone.start();
+    }
+    // Disable input processing mode when it's not explicity enabled.
+    // This is to avoid distortion of the loopback tone
+    constraints.audio = Object.assign({}, {autoGainControl: false}
+                                        , {echoCancellation: false}
+                                        , {noiseSuppression: false}
+                                        , constraints.audio);
+  }
   info("Call getUserMedia for " + JSON.stringify(constraints));
   return navigator.mediaDevices.getUserMedia(constraints)
     .then(stream => (checkMediaStreamTracks(constraints, stream), stream));
@@ -304,14 +388,21 @@ function setupEnvironment() {
       ['media.peerconnection.identity.timeout', 120000],
       ['media.peerconnection.ice.stun_client_maximum_transmits', 14],
       ['media.peerconnection.ice.trickle_grace_period', 30000],
+      ['media.peerconnection.remoteTrackId.enabled', true],
+      ['media.peerconnection.rtpsourcesapi.enabled', true],
       ['media.navigator.permission.disabled', true],
       ['media.navigator.streams.fake', FAKE_ENABLED],
       ['media.getusermedia.screensharing.enabled', true],
-      ['media.getusermedia.screensharing.allowed_domains', "mochi.test"],
       ['media.getusermedia.audiocapture.enabled', true],
       ['media.recorder.audio_node.enabled', true]
     ]
   };
+
+  if (!FAKE_ENABLED) {
+    defaultMochitestPrefs.set.push(
+      ["media.volume_scale", "1"],
+    );
+  }
 
   const isAndroid = !!navigator.userAgent.includes("Android");
 
@@ -366,7 +457,7 @@ function runTestWhenReady(testFunc) {
 
 /**
  * Checks that the media stream tracks have the expected amount of tracks
- * with the correct kind and id based on the type and constraints given.
+ * with the correct attributes based on the type and constraints given.
  *
  * @param {Object} constraints specifies whether the stream should have
  *                             audio, video, or both
@@ -381,6 +472,7 @@ function checkMediaStreamTracksByType(constraints, type, mediaStreamTracks) {
     if (mediaStreamTracks.length) {
       is(mediaStreamTracks[0].kind, type, 'Track kind should be ' + type);
       ok(mediaStreamTracks[0].id, 'Track id should be defined');
+      ok(!mediaStreamTracks[0].muted, 'Track should not be muted');
     }
   } else {
     is(mediaStreamTracks.length, 0, 'No ' + type + ' tracks shall be present');
@@ -428,6 +520,8 @@ function checkMediaStreamCloneAgainstOriginal(clone, original) {
      "All audio tracks should get cloned");
   is(clone.getVideoTracks().length, original.getVideoTracks().length,
      "All video tracks should get cloned");
+  is(clone.active, original.active,
+     "Active state should be preserved");
   original.getTracks()
           .forEach(t => ok(!clone.getTrackById(t.id),
                            "The clone's tracks should be originals"));
@@ -444,6 +538,10 @@ function checkMediaStreamTrackCloneAgainstOriginal(clone, original) {
      "Track clone's kind should be same as the original's");
   is(clone.enabled, original.enabled,
      "Track clone's kind should be same as the original's");
+  is(clone.readyState, original.readyState,
+     "Track clone's readyState should be same as the original's");
+  is(clone.muted, original.muted,
+     "Track clone's muted state should be same as the original's");
 }
 
 /*** Utility methods */
@@ -493,10 +591,10 @@ var listenUntil = (target, eventName, onFire) => {
                                                         function callback(event) {
     var result = onFire(event);
     if (result) {
-      target.removeEventListener(eventName, callback, false);
+      target.removeEventListener(eventName, callback);
       resolve(result);
     }
-  }, false));
+  }));
 };
 
 /* Test that a function throws the right error */
@@ -509,6 +607,20 @@ function mustThrowWith(msg, reason, f) {
   }
 };
 
+/* Get a dummy audio track */
+function getSilentTrack() {
+  let ctx = new AudioContext(), oscillator = ctx.createOscillator();
+  let dst = oscillator.connect(ctx.createMediaStreamDestination());
+  oscillator.start();
+  return Object.assign(dst.stream.getAudioTracks()[0], {enabled: false});
+}
+
+function getBlackTrack({width = 640, height = 480} = {}) {
+  let canvas = Object.assign(document.createElement("canvas"), {width, height});
+  canvas.getContext('2d').fillRect(0, 0, width, height);
+  let stream = canvas.captureStream();
+  return Object.assign(stream.getVideoTracks()[0], {enabled: false});
+}
 
 /*** Test control flow methods */
 
@@ -601,7 +713,7 @@ function createOneShotEventWrapper(wrapper, obj, event) {
 /**
  * Returns a promise that resolves when `target` has raised an event with the
  * given name the given number of times. Cancel the returned promise by passing
- * in a `cancelPromise` and resolve it.
+ * in a `cancel` promise and resolving it.
  *
  * @param {object} target
  *        The target on which the event should occur.
@@ -609,16 +721,16 @@ function createOneShotEventWrapper(wrapper, obj, event) {
  *        The name of the event that should occur.
  * @param {integer} count
  *        Optional number of times the event should be raised before resolving.
- * @param {promise} cancelPromise
+ * @param {promise} cancel
  *        Optional promise that on resolving rejects the returned promise,
  *        so we can avoid logging results after a test has finished.
  * @returns {promise} A promise that resolves to the last of the seen events.
  */
-function haveEvents(target, name, count, cancelPromise) {
+function haveEvents(target, name, count, cancel) {
   var listener;
   var counter = count || 1;
   return Promise.race([
-    (cancelPromise || new Promise(() => {})).then(e => Promise.reject(e)),
+    (cancel || new Promise(() => {})).then(e => Promise.reject(e)),
     new Promise(resolve =>
         target.addEventListener(name, listener = e => (--counter < 1 && resolve(e))))
   ])
@@ -627,20 +739,20 @@ function haveEvents(target, name, count, cancelPromise) {
 
 /**
  * Returns a promise that resolves when `target` has raised an event with the
- * given name. Cancel the returned promise by passing in a `cancelPromise` and
- * resolve it.
+ * given name. Cancel the returned promise by passing in a `cancel` promise and
+ * resolving it.
  *
  * @param {object} target
  *        The target on which the event should occur.
  * @param {string} name
  *        The name of the event that should occur.
- * @param {promise} cancelPromise
+ * @param {promise} cancel
  *        Optional promise that on resolving rejects the returned promise,
  *        so we can avoid logging results after a test has finished.
  * @returns {promise} A promise that resolves to the seen event.
  */
-function haveEvent(target, name, cancelPromise) {
-  return haveEvents(target, name, 1, cancelPromise);
+function haveEvent(target, name, cancel) {
+  return haveEvents(target, name, 1, cancel);
 };
 
 /**
@@ -673,13 +785,13 @@ function haveNoEvent(target, name, timeoutPromise) {
  *        The name of the event that should occur.
  * @param {integer} count
  *        Optional number of times the event should be raised before resolving.
- * @param {promise} cancelPromise
+ * @param {promise} cancel
  *        Optional promise that on resolving rejects the returned promise,
  *        so we can avoid logging results after a test has finished.
  * @returns {promise} A promise that resolves to the last of the seen events.
  */
-function haveEventsButNoMore(target, name, count, cancelPromise) {
-  return haveEvents(target, name, count, cancelPromise)
+function haveEventsButNoMore(target, name, count, cancel) {
+  return haveEvents(target, name, count, cancel)
     .then(e => haveNoEvent(target, name).then(() => e));
 };
 
@@ -877,55 +989,122 @@ AudioStreamHelper.prototype = {
   }
 }
 
-function VideoStreamHelper() {
-  this._helper = new CaptureStreamTestHelper2D(50,50);
-  this._canvas = this._helper.createAndAppendElement('canvas', 'source_canvas');
-  // Make sure this is initted
-  this._helper.drawColor(this._canvas, this._helper.green);
-  this._stream = this._canvas.captureStream(10);
-}
+class VideoFrameEmitter {
+  constructor(color1, color2, size) {
+    if (!size) {
+      size = 50;
+    }
+    this._helper = new CaptureStreamTestHelper2D(size, size);
+    this._canvas = this._helper.createAndAppendElement('canvas', 'source_canvas');
+    this._color1 = color1 ? color1 : this._helper.green;
+    this._color2 = color2 ? color2 : this._helper.red;
+    // Make sure this is initted
+    this._helper.drawColor(this._canvas, this._color1);
+    this._stream = this._canvas.captureStream();
+    this._started = false;
+  }
 
-VideoStreamHelper.prototype = {
-  stream: function() {
+  stream() {
     return this._stream;
-  },
+  }
 
-  startCapturingFrames: function() {
-    var i = 0;
-    var helper = this;
-    return setInterval(function() {
+  helper() {
+    return this._helper;
+  }
+
+  colors(color1, color2) {
+    this._color1 = color1 ? color1 : this._helper.green;
+    this._color2 = color2 ? color2 : this._helper.red;
+    try {
+      this._helper.drawColor(this._canvas, this._color1);
+    } catch (e) {
+      // ignore; stream might have shut down
+    }
+  }
+
+  start() {
+    if (this._started) {
+      info("*** emitter already started");
+      return;
+    }
+
+    let i = 0;
+    this._started = true;
+    this._intervalId = setInterval(() => {
       try {
-        helper._helper.drawColor(helper._canvas,
-                                 i ? helper._helper.green : helper._helper.red);
+        this._helper.drawColor(this._canvas, i ? this._color1: this._color2);
         i = 1 - i;
-        helper._stream.requestFrame();
       } catch (e) {
         // ignore; stream might have shut down, and we don't bother clearing
         // the setInterval.
       }
     }, 500);
-  },
+  }
 
-  waitForFrames: function(canvas, timeout_value) {
-    var intervalId = this.startCapturingFrames();
-    timeout_value = timeout_value || 8000;
+  stop() {
+    if (this._started) {
+      clearInterval(this._intervalId);
+      this._started = false;
+    }
+  }
+}
 
-    return addFinallyToPromise(timeout(
-      Promise.all([
-        this._helper.waitForPixelColor(canvas, this._helper.green, 128,
-                                       canvas.id + " should become green"),
-        this._helper.waitForPixelColor(canvas, this._helper.red, 128,
-                                       canvas.id + " should become red")
-      ]),
-      timeout_value,
-      "Timed out waiting for frames")).finally(() => clearInterval(intervalId));
-  },
+class VideoStreamHelper {
+  constructor() {
+    this._helper = new CaptureStreamTestHelper2D(50,50);
+  }
 
-  verifyNoFrames: function(canvas) {
-    return this.waitForFrames(canvas).then(
-      () => ok(false, "Color should not change"),
-      () => ok(true, "Color should not change")
-    );
+  async checkHasFrame(video, { offsetX, offsetY, threshold } = {}) {
+    const h = this._helper;
+    await h.waitForPixel(video, px => {
+      let result = h.isOpaquePixelNot(px, h.black, threshold);
+      info("Checking that we have a frame, got [" +
+           Array.slice(px) + "]. Ref=[" +
+           Array.slice(h.black.data) + "]. Threshold=" + threshold +
+           ". Pass=" + result);
+      return result;
+    }, { offsetX, offsetY });
+  }
+
+  async checkVideoPlaying(video, { offsetX = 10, offsetY = 10,
+                                   threshold = 16,
+                                 } = {}) {
+    const h = this._helper;
+    await this.checkHasFrame(video, { offsetX, offsetY, threshold });
+    let startPixel = {
+      data: h.getPixel(video, offsetX, offsetY),
+      name: "startcolor",
+    };
+    await h.waitForPixel(video, px => {
+      let result = h.isPixelNot(px, startPixel, threshold);
+      info("Checking playing, [" +
+           Array.slice(px) + "] vs [" + Array.slice(startPixel.data) +
+           "]. Threshold=" + threshold + " Pass=" + result);
+      return result;
+    }, { offsetX, offsetY });
+  }
+
+  async checkVideoPaused(video, { offsetX = 10, offsetY = 10,
+                                  threshold = 16, time = 5000,
+                                }={}) {
+    const h = this._helper;
+    await this.checkHasFrame(video, { offsetX, offsetY, threshold });
+    let startPixel = {
+      data: h.getPixel(video, offsetX, offsetY),
+      name: "startcolor",
+    };
+    try {
+      await h.waitForPixel(video, px => {
+          let result = h.isOpaquePixelNot(px, startPixel, threshold);
+          info("Checking paused, [" +
+               Array.slice(px) + "] vs [" + Array.slice(startPixel.data) +
+               "]. Threshold=" + threshold + " Pass=" + result);
+          return result;
+        }, { offsetX, offsetY, cancel: wait(time, "timeout") });
+      ok(false, "Frame changed within " + time/1000 + " seconds");
+    } catch (e) {
+      is(e, "timeout", "Frame shouldn't change for " + time/1000 + " seconds");
+    }
   }
 }
 

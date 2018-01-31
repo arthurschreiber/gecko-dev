@@ -59,7 +59,6 @@ public:
   bool mDestroyPending;
 
   static NPObject* GetNewOrUsed(NPP npp, JS::Handle<JSObject*> obj);
-  static bool HasOwnProperty(NPObject* npobj, NPIdentifier npid);
 
   void trace(JSTracer* trc) {
       JS::TraceEdge(trc, &mJSObj, "nsJSObjWrapper");
@@ -102,7 +101,7 @@ public:
 };
 
 bool
-JSValToNPVariant(NPP npp, JSContext *cx, JS::Value val, NPVariant *variant);
+JSValToNPVariant(NPP npp, JSContext *cx, const JS::Value& val, NPVariant *variant);
 
 
 #endif // nsJSNPRuntime_h_

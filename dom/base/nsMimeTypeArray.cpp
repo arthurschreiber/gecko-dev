@@ -8,12 +8,11 @@
 
 #include "mozilla/dom/MimeTypeArrayBinding.h"
 #include "mozilla/dom/MimeTypeBinding.h"
-#include "nsIDOMNavigator.h"
 #include "nsPIDOMWindow.h"
 #include "nsPluginArray.h"
 #include "nsIMIMEService.h"
 #include "nsIMIMEInfo.h"
-#include "Navigator.h"
+#include "mozilla/dom/Navigator.h"
 #include "nsServiceManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsPluginTags.h"
@@ -42,12 +41,6 @@ nsMimeTypeArray::~nsMimeTypeArray()
 {
 }
 
-static bool
-ResistFingerprinting() {
-  return !nsContentUtils::ThreadsafeIsCallerChrome() &&
-         nsContentUtils::ResistFingerprinting();
-}
-
 JSObject*
 nsMimeTypeArray::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 {
@@ -69,25 +62,26 @@ nsMimeTypeArray::GetParentObject() const
 }
 
 nsMimeType*
-nsMimeTypeArray::Item(uint32_t aIndex)
+nsMimeTypeArray::Item(uint32_t aIndex, CallerType aCallerType)
 {
   bool unused;
-  return IndexedGetter(aIndex, unused);
+  return IndexedGetter(aIndex, unused, aCallerType);
 }
 
 nsMimeType*
-nsMimeTypeArray::NamedItem(const nsAString& aName)
+nsMimeTypeArray::NamedItem(const nsAString& aName, CallerType aCallerType)
 {
   bool unused;
-  return NamedGetter(aName, unused);
+  return NamedGetter(aName, unused, aCallerType);
 }
 
 nsMimeType*
-nsMimeTypeArray::IndexedGetter(uint32_t aIndex, bool &aFound)
+nsMimeTypeArray::IndexedGetter(uint32_t aIndex, bool &aFound,
+                               CallerType aCallerType)
 {
   aFound = false;
 
-  if (ResistFingerprinting()) {
+  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
     return nullptr;
   }
 
@@ -117,11 +111,12 @@ FindMimeType(const nsTArray<RefPtr<nsMimeType>>& aMimeTypes,
 }
 
 nsMimeType*
-nsMimeTypeArray::NamedGetter(const nsAString& aName, bool &aFound)
+nsMimeTypeArray::NamedGetter(const nsAString& aName, bool &aFound,
+                             CallerType aCallerType)
 {
   aFound = false;
 
-  if (ResistFingerprinting()) {
+  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
     return nullptr;
   }
 
@@ -144,9 +139,9 @@ nsMimeTypeArray::NamedGetter(const nsAString& aName, bool &aFound)
 }
 
 uint32_t
-nsMimeTypeArray::Length()
+nsMimeTypeArray::Length(CallerType aCallerType)
 {
-  if (ResistFingerprinting()) {
+  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
     return 0;
   }
 
@@ -156,8 +151,13 @@ nsMimeTypeArray::Length()
 }
 
 void
-nsMimeTypeArray::GetSupportedNames(nsTArray<nsString>& aRetval)
+nsMimeTypeArray::GetSupportedNames(nsTArray<nsString>& aRetval,
+                                   CallerType aCallerType)
 {
+  if (nsContentUtils::ResistFingerprinting(aCallerType)) {
+    return;
+  }
+
   EnsurePluginMimeTypes();
 
   for (uint32_t i = 0; i < mMimeTypes.Length(); ++i) {
@@ -172,15 +172,10 @@ nsMimeTypeArray::EnsurePluginMimeTypes()
     return;
   }
 
-  nsCOMPtr<nsIDOMNavigator> navigator = mWindow->GetNavigator();
+  RefPtr<Navigator> navigator = mWindow->Navigator();
 
-  if (!navigator) {
-    return;
-  }
-
-  ErrorResult rv;
-  nsPluginArray *pluginArray =
-    static_cast<Navigator*>(navigator.get())->GetPlugins(rv);
+  IgnoredErrorResult rv;
+  nsPluginArray *pluginArray = navigator->GetPlugins(rv);
   if (!pluginArray) {
     return;
   }

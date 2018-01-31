@@ -6,7 +6,7 @@
 </head>
 <body>
 <pre id="test">
-<script type="application/javascript;version=1.8">
+<script type="application/javascript">
 createHTML({
   bug: "1219711",
   title: "Disabling locally should be reflected remotely, individually for clones"
@@ -26,7 +26,7 @@ runNetworkTest(() => {
       return getUserMedia(test.pcLocal.constraints[0]).then(stream => {
         originalStream = stream;
         localVideoOriginal =
-          createMediaElement("audiovideo", "local-original");
+          createMediaElement("video", "local-original");
         localVideoOriginal.srcObject = stream;
         test.pcLocal.attachLocalStream(originalStream.clone());
       });
@@ -34,9 +34,9 @@ runNetworkTest(() => {
   ]);
   test.chain.append([
     function CHECK_ASSUMPTIONS() {
-      is(test.pcLocal.localMediaElements.length, 1,
+      is(test.pcLocal.localMediaElements.length, 2,
          "pcLocal should have one media element");
-      is(test.pcRemote.remoteMediaElements.length, 1,
+      is(test.pcRemote.remoteMediaElements.length, 2,
          "pcRemote should have one media element");
       is(test.pcLocal._pc.getLocalStreams().length, 1,
          "pcLocal should have one stream");
@@ -46,8 +46,10 @@ runNetworkTest(() => {
     function CHECK_VIDEO() {
       info("Checking video");
       var h = new CaptureStreamTestHelper2D();
-      var localVideoClone = test.pcLocal.localMediaElements[0];
-      var remoteVideoClone = test.pcRemote.remoteMediaElements[0];
+      var localVideoClone = test.pcLocal.localMediaElements
+        .find(e => e instanceof HTMLVideoElement);
+      var remoteVideoClone = test.pcRemote.remoteMediaElements
+        .find(e => e instanceof HTMLVideoElement);
 
       // We check a pixel somewhere away from the top left corner since
       // MediaEngineDefault puts semi-transparent time indicators there.
@@ -58,12 +60,14 @@ runNetworkTest(() => {
 
       // We're regarding black as disabled here, and we're setting the alpha
       // channel of the pixel to 255 to disregard alpha when testing.
-      var checkVideoEnabled = video =>
-        h.waitForPixel(video, offsetX, offsetY,
-                       px => (px[3] = 255, h.isPixelNot(px, h.black, threshold)));
-      var checkVideoDisabled = video =>
-        h.waitForPixel(video, offsetX, offsetY,
-                       px => (px[3] = 255, h.isPixel(px, h.black, threshold)));
+      var checkVideoEnabled = video => h.waitForPixel(video,
+        px => (px[3] = 255, h.isPixelNot(px, h.black, threshold)),
+        { offsetX, offsetY }
+      );
+      var checkVideoDisabled = video => h.waitForPixel(video,
+        px => (px[3] = 255, h.isPixel(px, h.black, threshold)),
+        { offsetX, offsetY }
+      );
 
       return Promise.resolve()
         .then(() => info("Checking local original enabled"))

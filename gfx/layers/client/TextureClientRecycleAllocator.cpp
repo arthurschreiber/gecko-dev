@@ -1,13 +1,14 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
-* This Source Code Form is subject to the terms of the Mozilla Public
-* License, v. 2.0. If a copy of the MPL was not distributed with this
-* file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gfxPlatform.h"
 #include "ImageContainer.h"
 #include "mozilla/layers/BufferTexture.h"
 #include "mozilla/layers/ISurfaceAllocator.h"
-#include "mozilla/layers/CompositableForwarder.h"
+#include "mozilla/layers/TextureForwarder.h"
 #include "TextureClientRecycleAllocator.h"
 
 namespace mozilla {
@@ -72,7 +73,7 @@ public:
     return true;
   }
 
-  already_AddRefed<TextureClient> Allocate(CompositableForwarder* aAllocator) override
+  already_AddRefed<TextureClient> Allocate(KnowsCompositor* aAllocator) override
   {
     return mAllocator->Allocate(mFormat,
                                 mSize,
@@ -106,6 +107,10 @@ YCbCrTextureClientAllocationHelper::IsCompatible(TextureClient* aTextureClient)
       aTextureClient->GetSize() != mData.mYSize ||
       bufferData->GetCbCrSize().isNothing() ||
       bufferData->GetCbCrSize().ref() != mData.mCbCrSize ||
+      bufferData->GetYUVColorSpace().isNothing() ||
+      bufferData->GetYUVColorSpace().ref() != mData.mYUVColorSpace ||
+      bufferData->GetBitDepth().isNothing() ||
+      bufferData->GetBitDepth().ref() != mData.mBitDepth ||
       bufferData->GetStereoMode().isNothing() ||
       bufferData->GetStereoMode().ref() != mData.mStereoMode) {
     return false;
@@ -114,15 +119,18 @@ YCbCrTextureClientAllocationHelper::IsCompatible(TextureClient* aTextureClient)
 }
 
 already_AddRefed<TextureClient>
-YCbCrTextureClientAllocationHelper::Allocate(CompositableForwarder* aAllocator)
+YCbCrTextureClientAllocationHelper::Allocate(KnowsCompositor* aAllocator)
 {
   return TextureClient::CreateForYCbCr(aAllocator,
-                                       mData.mYSize, mData.mCbCrSize,
+                                       mData.mYSize, mData.mYStride,
+                                       mData.mCbCrSize, mData.mCbCrStride,
                                        mData.mStereoMode,
+                                       mData.mYUVColorSpace,
+                                       mData.mBitDepth,
                                        mTextureFlags);
 }
 
-TextureClientRecycleAllocator::TextureClientRecycleAllocator(CompositableForwarder* aAllocator)
+TextureClientRecycleAllocator::TextureClientRecycleAllocator(KnowsCompositor* aAllocator)
   : mSurfaceAllocator(aAllocator)
   , mMaxPooledSize(kMaxPooledSized)
   , mLock("TextureClientRecycleAllocatorImp.mLock")
@@ -165,12 +173,6 @@ TextureClientRecycleAllocator::CreateOrRecycle(gfx::SurfaceFormat aFormat,
 already_AddRefed<TextureClient>
 TextureClientRecycleAllocator::CreateOrRecycle(ITextureClientAllocationHelper& aHelper)
 {
-  // TextureAllocationFlags is actually used only by ContentClient.
-  // This class does not handle ContentClient's TextureClient allocation.
-  MOZ_ASSERT(aHelper.mAllocationFlags == TextureAllocationFlags::ALLOC_DEFAULT ||
-             aHelper.mAllocationFlags == TextureAllocationFlags::ALLOC_DISALLOW_BUFFERTEXTURECLIENT ||
-             aHelper.mAllocationFlags == TextureAllocationFlags::ALLOC_FOR_OUT_OF_BAND_CONTENT ||
-             aHelper.mAllocationFlags == TextureAllocationFlags::ALLOC_MANUAL_SYNCHRONIZATION);
   MOZ_ASSERT(aHelper.mTextureFlags & TextureFlags::RECYCLE);
 
   RefPtr<TextureClientHolder> textureHolder;
@@ -183,13 +185,15 @@ TextureClientRecycleAllocator::CreateOrRecycle(ITextureClientAllocationHelper& a
     if (!mPooledClients.empty()) {
       textureHolder = mPooledClients.top();
       mPooledClients.pop();
-      // If a pooled TextureClient is not compatible, release it.
-      if (!aHelper.IsCompatible(textureHolder->GetTextureClient())) {
+      // If the texture's allocator is not open or a pooled TextureClient is
+      // not compatible, release it.
+      if (!textureHolder->GetTextureClient()->GetAllocator()->IPCOpen() ||
+          !aHelper.IsCompatible(textureHolder->GetTextureClient())) {
         // Release TextureClient.
         RefPtr<Runnable> task = new TextureClientReleaseTask(textureHolder->GetTextureClient());
         textureHolder->ClearTextureClient();
         textureHolder = nullptr;
-        mSurfaceAllocator->GetMessageLoop()->PostTask(task.forget());
+        mSurfaceAllocator->GetTextureForwarder()->GetMessageLoop()->PostTask(task.forget());
       } else {
         textureHolder->GetTextureClient()->RecycleTexture(aHelper.mTextureFlags);
       }
@@ -226,8 +230,8 @@ TextureClientRecycleAllocator::Allocate(gfx::SurfaceFormat aFormat,
                                         TextureFlags aTextureFlags,
                                         TextureAllocationFlags aAllocFlags)
 {
-  return TextureClient::CreateForDrawing(mSurfaceAllocator, aFormat, aSize, aSelector,
-                                         aTextureFlags, aAllocFlags);
+  return TextureClient::CreateForDrawing(mSurfaceAllocator, aFormat, aSize,
+                                         aSelector, aTextureFlags, aAllocFlags);
 }
 
 void

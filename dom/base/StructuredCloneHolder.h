@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,15 +7,20 @@
 #ifndef mozilla_dom_StructuredCloneHolder_h
 #define mozilla_dom_StructuredCloneHolder_h
 
+#include "jsapi.h"
 #include "js/StructuredClone.h"
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/Move.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "nsISupports.h"
 #include "nsTArray.h"
 
 #ifdef DEBUG
 #include "nsIThread.h"
 #endif
+
+class nsIInputStream;
 
 namespace mozilla {
 class ErrorResult;
@@ -89,10 +95,12 @@ public:
   bool Write(JSContext* aCx,
              JS::Handle<JS::Value> aValue);
 
-  // Like Write() but it supports the transferring of objects.
+  // Like Write() but it supports the transferring of objects and handling
+  // of cloning policy.
   bool Write(JSContext* aCx,
              JS::Handle<JS::Value> aValue,
-             JS::Handle<JS::Value> aTransfer);
+             JS::Handle<JS::Value> aTransfer,
+             JS::CloneDataPolicy cloneDataPolicy);
 
   // If Write() has been called, this method retrieves data and stores it into
   // aValue.
@@ -108,6 +116,15 @@ public:
   {
     MOZ_ASSERT(mBuffer, "Write() has never been called.");
     return mBuffer->data();
+  }
+
+  size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf)
+  {
+    size_t size = 0;
+    if (HasData()) {
+      size += mBuffer->sizeOfIncludingThis(aMallocSizeOf);
+    }
+    return size;
   }
 
 protected:
@@ -163,6 +180,7 @@ public:
   void Write(JSContext* aCx,
              JS::Handle<JS::Value> aValue,
              JS::Handle<JS::Value> aTransfer,
+             JS::CloneDataPolicy cloneDataPolicy,
              ErrorResult &aRv);
 
   void Read(nsISupports* aParent,
@@ -174,13 +192,27 @@ public:
   bool HasClonedDOMObjects() const
   {
     return !mBlobImplArray.IsEmpty() ||
-           !mClonedSurfaces.IsEmpty();
+           !mWasmModuleArray.IsEmpty() ||
+           !mClonedSurfaces.IsEmpty() ||
+           !mInputStreamArray.IsEmpty();
   }
 
   nsTArray<RefPtr<BlobImpl>>& BlobImpls()
   {
     MOZ_ASSERT(mSupportsCloning, "Blobs cannot be taken/set if cloning is not supported.");
     return mBlobImplArray;
+  }
+
+  nsTArray<RefPtr<JS::WasmModule>>& WasmModules()
+  {
+    MOZ_ASSERT(mSupportsCloning, "WasmModules cannot be taken/set if cloning is not supported.");
+    return mWasmModuleArray;
+  }
+
+  nsTArray<nsCOMPtr<nsIInputStream>>& InputStreams()
+  {
+    MOZ_ASSERT(mSupportsCloning, "InputStreams cannot be taken/set if cloning is not supported.");
+    return mInputStreamArray;
   }
 
   StructuredCloneScope CloneScope() const
@@ -203,6 +235,11 @@ public:
     MOZ_ASSERT(mSupportsTransferring);
     return Move(mTransferredPorts);
   }
+
+  // This method uses TakeTransferredPorts() to populate a sequence of
+  // MessagePorts for WebIDL binding classes.
+  bool
+  TakeTransferredPortsAsSequence(Sequence<OwningNonNull<mozilla::dom::MessagePort>>& aPorts);
 
   nsTArray<MessagePortIdentifier>& PortIdentifiers() const
   {
@@ -280,8 +317,20 @@ protected:
   bool mSupportsCloning;
   bool mSupportsTransferring;
 
+  // SizeOfExcludingThis is inherited from StructuredCloneHolderBase. It doesn't
+  // account for objects in the following arrays because a) they're not expected
+  // to be stored in long-lived StructuredCloneHolder objects, and b) in the
+  // case of BlobImpl objects, MemoryBlobImpls have their own memory reporters,
+  // and the other types do not hold significant amounts of memory alive.
+
   // Used for cloning blobs in the structured cloning algorithm.
   nsTArray<RefPtr<BlobImpl>> mBlobImplArray;
+
+  // Used for cloning JS::WasmModules in the structured cloning algorithm.
+  nsTArray<RefPtr<JS::WasmModule>> mWasmModuleArray;
+
+  // Used for cloning InputStream in the structured cloning algorithm.
+  nsTArray<nsCOMPtr<nsIInputStream>> mInputStreamArray;
 
   // This is used for sharing the backend of ImageBitmaps.
   // The DataSourceSurface object must be thread-safely reference-counted.
@@ -302,7 +351,7 @@ protected:
   mutable nsTArray<MessagePortIdentifier> mPortIdentifiers;
 
 #ifdef DEBUG
-  nsCOMPtr<nsIThread> mCreationThread;
+  nsCOMPtr<nsIEventTarget> mCreationEventTarget;
 #endif
 };
 

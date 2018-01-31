@@ -12,6 +12,8 @@
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/UniquePtr.h"
+#include "gfxTypes.h" // for gfxAlphaType
 #include "nsCycleCollectionParticipant.h"
 
 struct JSContext;
@@ -51,18 +53,19 @@ class File;
 class HTMLCanvasElement;
 class HTMLImageElement;
 class HTMLVideoElement;
-enum class ImageBitmapFormat : uint32_t;
+enum class ImageBitmapFormat : uint8_t;
 class ImageData;
 class ImageUtils;
 template<typename T> class MapDataIntoBufferSource;
 class Promise;
 class PostMessageEvent; // For StructuredClone between windows.
+class ImageBitmapShutdownObserver;
 
 struct ImageBitmapCloneData final
 {
   RefPtr<gfx::DataSourceSurface> mSurface;
   gfx::IntRect mPictureRect;
-  bool mIsPremultipliedAlpha;
+  gfxAlphaType mAlphaType;
   bool mIsCroppingAreaOutSideOfSourceImage;
 };
 
@@ -115,8 +118,8 @@ public:
   already_AddRefed<layers::Image>
   TransferAsImage();
 
-  ImageBitmapCloneData*
-  ToCloneData();
+  UniquePtr<ImageBitmapCloneData>
+  ToCloneData() const;
 
   static already_AddRefed<ImageBitmap>
   CreateFromCloneData(nsIGlobalObject* aGlobal, ImageBitmapCloneData* aData);
@@ -150,9 +153,6 @@ public:
                        nsTArray<RefPtr<gfx::DataSourceSurface>>& aClonedSurfaces,
                        ImageBitmap* aImageBitmap);
 
-  // Mozilla Extensions
-  static bool ExtensionsEnabled(JSContext* aCx, JSObject* aObj);
-
   friend CreateImageBitmapFromBlob;
   friend CreateImageBitmapFromBlobTask;
   friend CreateImageBitmapFromBlobWorkerTask;
@@ -173,6 +173,10 @@ public:
               ImageBitmapFormat aFormat,
               const ArrayBufferViewOrArrayBuffer& aBuffer,
               int32_t aOffset, ErrorResult& aRv);
+
+  size_t GetAllocatedSize() const;
+
+  void OnShutdown();
 
 protected:
 
@@ -196,7 +200,7 @@ protected:
    * CreateInternal(from ImageData) method.
    */
   ImageBitmap(nsIGlobalObject* aGlobal, layers::Image* aData,
-              bool aIsPremultipliedAlpha = true);
+              gfxAlphaType aAlphaType = gfxAlphaType::Premult);
 
   virtual ~ImageBitmap();
 
@@ -268,7 +272,9 @@ protected:
    */
   gfx::IntRect mPictureRect;
 
-  const bool mIsPremultipliedAlpha;
+  const gfxAlphaType mAlphaType;
+
+  RefPtr<ImageBitmapShutdownObserver> mShutdownObserver;
 
   /*
    * Set mIsCroppingAreaOutSideOfSourceImage if image bitmap was cropped to the
@@ -279,6 +285,10 @@ protected:
    */
   bool mIsCroppingAreaOutSideOfSourceImage;
 
+  /*
+   * Whether this object allocated allocated and owns the image data.
+   */
+  bool mAllocatedImageData;
 };
 
 } // namespace dom

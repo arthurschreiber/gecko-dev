@@ -5,7 +5,7 @@
 import sys
 
 from ipdl.cgen import CodePrinter
-from ipdl.cxx.ast import TypeArray, Visitor
+from ipdl.cxx.ast import MethodSpec, TypeArray, Visitor
 
 class CxxCodeGen(CodePrinter, Visitor):
     def __init__(self, outf=sys.stdout, indentCols=4):
@@ -38,8 +38,18 @@ class CxxCodeGen(CodePrinter, Visitor):
 
         if t.T is not None:
             self.write('<')
-            t.T.accept(self)
+            if type(t.T) is list:
+                t.T[0].accept(self)
+                for tt in t.T[1:]:
+                    self.write(', ')
+                    tt.accept(self)
+            else:
+                t.T.accept(self)
             self.write('>')
+
+        if t.inner is not None:
+            self.write('::')
+            t.inner.accept(self)
 
         ts = ''
         if t.ptr:            ts += '*'
@@ -84,6 +94,12 @@ class CxxCodeGen(CodePrinter, Visitor):
 
         self.printdent('}')
 
+    def visitTypeFunction(self, fn):
+        self.write('std::function<')
+        fn.ret.accept(self)
+        self.write('(')
+        self.writeDeclList(fn.params)
+        self.write(')>')
 
     def visitTypedef(self, td):
         if td.templateargs:
@@ -175,8 +191,6 @@ class CxxCodeGen(CodePrinter, Visitor):
 
 
     def visitMethodDecl(self, md):
-        assert not (md.static and md.virtual)
-
         if md.T:
             self.write('template<')
             self.write('typename ')
@@ -186,14 +200,13 @@ class CxxCodeGen(CodePrinter, Visitor):
 
         if md.warn_unused:
             self.write('MOZ_MUST_USE ')
-        if md.inline:
-            self.write('inline ')
-        if md.never_inline:
-            self.write('MOZ_NEVER_INLINE ')
-        if md.static:
+
+        if md.methodspec == MethodSpec.STATIC:
             self.write('static ')
-        if md.virtual:
+        elif md.methodspec == MethodSpec.VIRTUAL or \
+             md.methodspec == MethodSpec.PURE:
             self.write('virtual ')
+
         if md.ret:
             if md.only_for_definition:
                 self.write('auto ')
@@ -216,12 +229,15 @@ class CxxCodeGen(CodePrinter, Visitor):
         if md.ret and md.only_for_definition:
             self.write(' -> ')
             md.ret.accept(self)
-        if md.pure:
+
+        if md.methodspec == MethodSpec.OVERRIDE:
+            self.write(' override')
+        elif md.methodspec == MethodSpec.PURE:
             self.write(' = 0')
 
 
     def visitMethodDefn(self, md):
-        if md.decl.pure:
+        if md.decl.methodspec == MethodSpec.PURE:
             return
 
         self.printdent()
@@ -267,9 +283,7 @@ class CxxCodeGen(CodePrinter, Visitor):
 
 
     def visitDestructorDecl(self, dd):
-        if dd.inline:
-            self.write('inline ')
-        if dd.virtual:
+        if dd.methodspec == MethodSpec.VIRTUAL:
             self.write('virtual ')
 
         # hack alert
@@ -345,7 +359,8 @@ class CxxCodeGen(CodePrinter, Visitor):
         self.write('(')
         es.obj.accept(self)
         self.write(')')
-        self.write(es.op + es.field)
+        self.write(es.op)
+        es.field.accept(self)
 
     def visitExprAssn(self, ea):
         ea.lhs.accept(self)
@@ -377,6 +392,24 @@ class CxxCodeGen(CodePrinter, Visitor):
         self.write('delete ')
         ed.obj.accept(self)
 
+    def visitExprLambda(self, l):
+        self.write('[')
+        ncaptures = len(l.captures)
+        for i, c in enumerate(l.captures):
+            c.accept(self)
+            if i != (ncaptures-1):
+                self.write(', ')
+        self.write('](')
+        self.writeDeclList(l.params)
+        self.write(')')
+        if l.ret:
+            self.write(' -> ')
+            l.ret.accept(self)
+        self.println(' {')
+        self.indent()
+        self.visitBlock(l)
+        self.dedent()
+        self.printdent('}')
 
     def visitStmtBlock(self, b):
         self.printdentln('{')

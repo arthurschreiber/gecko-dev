@@ -39,7 +39,7 @@ function* testCopyToClipboard(inspector, view) {
 
   ok(menuitemCopyColor.visible, "Copy color is visible");
 
-  yield waitForClipboard(() => menuitemCopyColor.click(),
+  yield waitForClipboardPromise(() => menuitemCopyColor.click(),
     "#123ABC");
 
   EventUtils.synthesizeKey("VK_ESCAPE", { });
@@ -80,7 +80,7 @@ function* testColorPickerEdit(inspector, view) {
     .querySelector(".ruleview-colorswatch");
 
   info("Opening the color picker");
-  let picker = view.tooltips.colorPicker;
+  let picker = view.tooltips.getTooltip("colorPicker");
   let onColorPickerReady = picker.once("ready");
   swatchElement.click();
   yield onColorPickerReady;

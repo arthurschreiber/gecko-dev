@@ -17,6 +17,57 @@
 class nsRange;
 class nsINode;
 
+namespace mozilla {
+class TextEditor;
+} // namespace mozilla
+
+struct NodeOffset
+{
+  nsINode* mNode;
+  int32_t  mOffset;
+
+  NodeOffset(): mNode(nullptr), mOffset(0) {}
+  NodeOffset(nsINode* aNode, int32_t aOffset)
+    : mNode(aNode), mOffset(aOffset) {}
+
+  bool operator==(const NodeOffset& aOther) const
+  {
+    return mNode == aOther.mNode && mOffset == aOther.mOffset;
+  }
+
+  bool operator!=(const NodeOffset& aOther) const
+  {
+    return !(*this == aOther);
+  }
+};
+
+class NodeOffsetRange
+{
+private:
+  NodeOffset mBegin;
+  NodeOffset mEnd;
+  bool mEmpty;
+public:
+  NodeOffsetRange() : mEmpty(true) {}
+  NodeOffsetRange(NodeOffset b, NodeOffset e)
+    : mBegin(b), mEnd(e), mEmpty(false) {}
+
+  NodeOffset Begin()
+  {
+    return mBegin;
+  }
+
+  NodeOffset End()
+  {
+    return mEnd;
+  }
+
+  bool Empty()
+  {
+    return mEmpty;
+  }
+};
+
 /**
  *    This class extracts text from the DOM and builds it into a single string.
  *    The string includes whitespace breaks whereever non-inline elements begin
@@ -40,28 +91,12 @@ class nsINode;
 class mozInlineSpellWordUtil
 {
 public:
-  struct NodeOffset {
-    nsINode* mNode;
-    int32_t  mOffset;
-    
-    NodeOffset(nsINode* aNode, int32_t aOffset) :
-      mNode(aNode), mOffset(aOffset) {}
-
-    bool operator==(const NodeOffset& aOther) const {
-      return mNode == aOther.mNode && mOffset == aOther.mOffset;
-    }
-
-    bool operator!=(const NodeOffset& aOther) const {
-      return !(*this == aOther);
-    }
-  };
-
   mozInlineSpellWordUtil()
     : mRootNode(nullptr),
       mSoftBegin(nullptr, 0), mSoftEnd(nullptr, 0),
       mNextWordIndex(-1), mSoftTextValid(false) {}
 
-  nsresult Init(nsWeakPtr aWeakEditor);
+  nsresult Init(mozilla::TextEditor* aTextEditor);
 
   nsresult SetEnd(nsINode* aEndNode, int32_t aEndOffset);
 
@@ -81,21 +116,25 @@ public:
   nsresult GetRangeForWord(nsIDOMNode* aWordNode, int32_t aWordOffset,
                            nsRange** aRange);
 
+  // Convenience functions, object must be initialized
+  nsresult MakeRange(NodeOffset aBegin, NodeOffset aEnd, nsRange** aRange);
+
   // Moves to the the next word in the range, and retrieves it's text and range.
   // An empty word and a nullptr range are returned when we are done checking.
   // aSkipChecking will be set if the word is "special" and shouldn't be
   // checked (e.g., an email address).
-  nsresult GetNextWord(nsAString& aText, nsRange** aRange,
+  nsresult GetNextWord(nsAString& aText,
+                       NodeOffsetRange* aNodeOffsetRange,
                        bool* aSkipChecking);
 
   // Call to normalize some punctuation. This function takes an autostring
   // so we can access characters directly.
-  static void NormalizeWord(nsSubstring& aWord);
+  static void NormalizeWord(nsAString& aWord);
 
   nsIDOMDocument* GetDOMDocument() const { return mDOMDocument; }
   nsIDocument* GetDocument() const { return mDocument; }
   nsINode* GetRootNode() { return mRootNode; }
-  
+
 private:
 
   // cached stuff for the editor, set by Init
@@ -115,19 +154,19 @@ private:
     NodeOffset mNodeOffset;
     int32_t    mSoftTextOffset;
     int32_t    mLength;
-    
+
     DOMTextMapping(NodeOffset aNodeOffset, int32_t aSoftTextOffset, int32_t aLength)
       : mNodeOffset(aNodeOffset), mSoftTextOffset(aSoftTextOffset),
         mLength(aLength) {}
   };
   nsTArray<DOMTextMapping> mSoftTextDOMMapping;
-  
+
   // A list of the "real words" in mSoftText, ordered by mSoftTextOffset
   struct RealWord {
     int32_t      mSoftTextOffset;
     uint32_t      mLength : 31;
     uint32_t mCheckableWord : 1;
-    
+
     RealWord(int32_t aOffset, uint32_t aLength, bool aCheckable)
       : mSoftTextOffset(aOffset), mLength(aLength), mCheckableWord(aCheckable)
     {
@@ -144,7 +183,7 @@ private:
 
   void InvalidateWords() { mSoftTextValid = false; }
   nsresult EnsureWords();
-  
+
   int32_t MapDOMPositionToSoftTextOffset(NodeOffset aNodeOffset);
   // Map an offset into mSoftText to a DOM position. Note that two DOM positions
   // can map to the same mSoftText offset, e.g. given nodes A=aaaa and B=bbbb
@@ -163,7 +202,7 @@ private:
   // position, search forward until we do find a word and return that (if found).
   int32_t FindRealWordContaining(int32_t aSoftTextOffset, DOMMapHint aHint,
                                  bool aSearchForward);
-    
+
   // build mSoftText and mSoftTextDOMMapping
   void BuildSoftText();
   // Build mRealWords array
@@ -171,9 +210,9 @@ private:
 
   nsresult SplitDOMWord(int32_t aStart, int32_t aEnd);
 
-  // Convenience functions, object must be initialized
-  nsresult MakeRange(NodeOffset aBegin, NodeOffset aEnd, nsRange** aRange);
   nsresult MakeRangeForWord(const RealWord& aWord, nsRange** aRange);
+  void MakeNodeOffsetRangeForWord(const RealWord& aWord,
+                                  NodeOffsetRange* aNodeOffsetRange);
 };
 
 #endif

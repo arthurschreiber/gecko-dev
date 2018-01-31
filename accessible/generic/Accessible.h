@@ -24,7 +24,7 @@ struct nsRoleMapEntry;
 
 struct nsRect;
 class nsIFrame;
-class nsIAtom;
+class nsAtom;
 class nsIPersistentProperties;
 
 namespace mozilla {
@@ -179,7 +179,7 @@ public:
    * Return node type information of DOM node associated with the accessible.
    */
   bool IsContent() const
-    { return GetNode() && GetNode()->IsNodeOfType(nsINode::eCONTENT); }
+    { return GetNode() && GetNode()->IsContent(); }
 
   /**
    * Return the unique identifier of the accessible.
@@ -232,7 +232,7 @@ public:
    * Return true if ARIA role is specified on the element.
    */
   bool HasARIARole() const;
-  bool IsARIARole(nsIAtom* aARIARole) const;
+  bool IsARIARole(nsAtom* aARIARole) const;
   bool HasStrongARIARole() const;
 
   /**
@@ -249,7 +249,7 @@ public:
   /**
    * Return a landmark role if applied.
    */
-  virtual nsIAtom* LandmarkRole() const;
+  virtual nsAtom* LandmarkRole() const;
 
   /**
    * Returns enumerated accessible role from native markup (see constants in
@@ -498,7 +498,7 @@ public:
    * Return true if the accessible is an acceptable child.
    */
   virtual bool IsAcceptableChild(nsIContent* aEl) const
-    { return true; }
+    { return aEl && !aEl->IsAnyOfHTMLElements(nsGkAtoms::option, nsGkAtoms::optgroup); }
 
   /**
    * Returns text of accessible if accessible has text role otherwise empty
@@ -900,19 +900,6 @@ public:
     { return !(mStateFlags & eIgnoreDOMUIEvent); }
 
   /**
-   * Get/set survivingInUpdate bit on child indicating that parent recollects
-   * its children.
-   */
-  bool IsSurvivingInUpdate() const { return mStateFlags & eSurvivingInUpdate; }
-  void SetSurvivingInUpdate(bool aIsSurviving)
-  {
-    if (aIsSurviving)
-      mStateFlags |= eSurvivingInUpdate;
-    else
-      mStateFlags &= ~eSurvivingInUpdate;
-  }
-
-  /**
    * Get/set repositioned bit indicating that the accessible was moved in
    * the accessible tree, i.e. the accessible tree structure differs from DOM.
    */
@@ -955,6 +942,36 @@ public:
    * Return true if the element is inside an alert.
    */
   bool IsInsideAlert() const { return mContextFlags & eInsideAlert; }
+
+  /**
+   * Return true if there is a pending reorder event for this accessible.
+   */
+  bool ReorderEventTarget() const { return mReorderEventTarget; }
+
+  /**
+   * Return true if there is a pending show event for this accessible.
+   */
+  bool ShowEventTarget() const { return mShowEventTarget; }
+
+  /**
+   * Return true if there is a pending hide event for this accessible.
+   */
+  bool HideEventTarget() const { return mHideEventTarget; }
+
+  /**
+   * Set if there is a pending reorder event for this accessible.
+   */
+  void SetReorderEventTarget(bool aTarget) { mReorderEventTarget = aTarget; }
+
+  /**
+   * Set if this accessible is a show event target.
+   */
+  void SetShowEventTarget(bool aTarget) { mShowEventTarget = aTarget; }
+
+  /**
+   * Set if this accessible is a hide event target.
+   */
+  void SetHideEventTarget(bool aTarget) { mHideEventTarget = aTarget; }
 
 protected:
   virtual ~Accessible();
@@ -1009,11 +1026,10 @@ protected:
     eGroupInfoDirty = 1 << 5, // accessible needs to update group info
     eKidsMutating = 1 << 6, // subtree is being mutated
     eIgnoreDOMUIEvent = 1 << 7, // don't process DOM UI events for a11y events
-    eSurvivingInUpdate = 1 << 8, // parent drops children to recollect them
-    eRelocated = 1 << 9, // accessible was moved in tree
-    eNoXBLKids = 1 << 10, // accessible don't allows XBL children
-    eNoKidsFromDOM = 1 << 11, // accessible doesn't allow children from DOM
-    eHasTextKids = 1 << 12, // accessible have a text leaf in children
+    eRelocated = 1 << 8, // accessible was moved in tree
+    eNoXBLKids = 1 << 9, // accessible don't allows XBL children
+    eNoKidsFromDOM = 1 << 10, // accessible doesn't allow children from DOM
+    eHasTextKids = 1 << 11, // accessible have a text leaf in children
 
     eLastStateFlag = eNoKidsFromDOM
   };
@@ -1093,7 +1109,7 @@ protected:
    * @param aARIAProperty  [in] the ARIA property we're using
    * @return  a numeric value
    */
-  double AttrNumericValue(nsIAtom* aARIAAttr) const;
+  double AttrNumericValue(nsAtom* aARIAAttr) const;
 
   /**
    * Return the action rule based on ARIA enum constants EActionRule
@@ -1108,13 +1124,13 @@ protected:
 
   // Data Members
   nsCOMPtr<nsIContent> mContent;
-  DocAccessible* mDoc;
+  RefPtr<DocAccessible> mDoc;
 
   Accessible* mParent;
   nsTArray<Accessible*> mChildren;
   int32_t mIndexInParent;
 
-  static const uint8_t kStateFlagsBits = 13;
+  static const uint8_t kStateFlagsBits = 12;
   static const uint8_t kContextFlagsBits = 3;
   static const uint8_t kTypeBits = 6;
   static const uint8_t kGenericTypesBits = 16;
@@ -1132,6 +1148,9 @@ protected:
   uint32_t mContextFlags : kContextFlagsBits;
   uint32_t mType : kTypeBits;
   uint32_t mGenericTypes : kGenericTypesBits;
+  uint32_t mReorderEventTarget : 1;
+  uint32_t mShowEventTarget : 1;
+  uint32_t mHideEventTarget : 1;
 
   void StaticAsserts() const;
 

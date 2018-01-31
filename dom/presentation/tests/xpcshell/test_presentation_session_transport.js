@@ -9,8 +9,8 @@ const ServerSocket = CC("@mozilla.org/network/server-socket;1",
                         "nsIServerSocket",
                         "init");
 
-Cu.import('resource://gre/modules/XPCOMUtils.jsm');
-Cu.import('resource://gre/modules/Services.jsm');
+ChromeUtils.import('resource://gre/modules/XPCOMUtils.jsm');
+ChromeUtils.import('resource://gre/modules/Services.jsm');
 
 var testServer = null;
 var clientTransport = null;
@@ -26,7 +26,7 @@ const address = Cc["@mozilla.org/supports-cstring;1"]
                   .createInstance(Ci.nsISupportsCString);
 address.data = "127.0.0.1";
 const addresses = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
-addresses.appendElement(address, false);
+addresses.appendElement(address);
 
 const serverChannelDescription = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationChannelDescription]),

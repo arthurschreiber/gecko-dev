@@ -3,7 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
- * http://dxr.mozilla.org/mozilla-central/source/dom/interfaces/core/nsIDOMDocument.idl
+ * https://dom.spec.whatwg.org/#interface-document
+ * https://html.spec.whatwg.org/multipage/dom.html#the-document-object
  */
 
 interface WindowProxy;
@@ -12,21 +13,24 @@ interface URI;
 interface nsIDocShell;
 interface nsILoadGroup;
 
-enum VisibilityState { "hidden", "visible", "prerender" };
+enum VisibilityState { "hidden", "visible" };
 
 /* https://dom.spec.whatwg.org/#dictdef-elementcreationoptions */
 dictionary ElementCreationOptions {
   DOMString is;
+
+  [ChromeOnly]
+  DOMString pseudo;
 };
 
-/* http://dom.spec.whatwg.org/#interface-document */
+/* https://dom.spec.whatwg.org/#interface-document */
 [Constructor]
 interface Document : Node {
   [Throws]
   readonly attribute DOMImplementation implementation;
-  [Pure]
+  [Pure, Throws, BinaryName="documentURIFromJS", NeedsCallerType]
   readonly attribute DOMString URL;
-  [Pure]
+  [Pure, Throws, BinaryName="documentURIFromJS", NeedsCallerType]
   readonly attribute DOMString documentURI;
   [Pure]
   readonly attribute DOMString compatMode;
@@ -52,10 +56,10 @@ interface Document : Node {
   [Pure]
   Element? getElementById(DOMString elementId);
 
-  [NewObject, Throws]
+  [CEReactions, NewObject, Throws]
   Element createElement(DOMString localName, optional (ElementCreationOptions or DOMString) options);
-  [NewObject, Throws]
-  Element createElementNS(DOMString? namespace, DOMString qualifiedName, optional ElementCreationOptions options);
+  [CEReactions, NewObject, Throws]
+  Element createElementNS(DOMString? namespace, DOMString qualifiedName, optional (ElementCreationOptions or DOMString) options);
   [NewObject]
   DocumentFragment createDocumentFragment();
   [NewObject]
@@ -65,12 +69,12 @@ interface Document : Node {
   [NewObject, Throws]
   ProcessingInstruction createProcessingInstruction(DOMString target, DOMString data);
 
-  [Throws]
+  [CEReactions, Throws]
   Node importNode(Node node, optional boolean deep = false);
-  [Throws]
+  [CEReactions, Throws]
   Node adoptNode(Node node);
 
-  [NewObject, Throws]
+  [NewObject, Throws, NeedsCallerType]
   Event createEvent(DOMString interface);
 
   [NewObject, Throws]
@@ -95,9 +99,14 @@ interface Document : Node {
   Attr createAttribute(DOMString name);
   [NewObject, Throws]
   Attr createAttributeNS(DOMString? namespace, DOMString name);
+
+  // Allows setting innerHTML without automatic sanitization.
+  // Do not use this.
+  [ChromeOnly]
+  attribute boolean allowUnsafeHTML;
 };
 
-// http://www.whatwg.org/specs/web-apps/current-work/#the-document-object
+// https://html.spec.whatwg.org/multipage/dom.html#the-document-object
 partial interface Document {
   [PutForwards=href, Unforgeable] readonly attribute Location? location;
   //(HTML only)         attribute DOMString domain;
@@ -108,11 +117,12 @@ partial interface Document {
 
   // DOM tree accessors
   //(Not proxy yet)getter object (DOMString name);
-  [SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure]
            attribute DOMString title;
-  [Pure]
+  [CEReactions, Pure]
            attribute DOMString dir;
-  //(HTML only)         attribute HTMLElement? body;
+  [CEReactions, Pure, SetterThrows]
+           attribute HTMLElement? body;
   //(HTML only)readonly attribute HTMLHeadElement? head;
   //(HTML only)readonly attribute HTMLCollection images;
   //(HTML only)readonly attribute HTMLCollection embeds;
@@ -120,7 +130,8 @@ partial interface Document {
   //(HTML only)readonly attribute HTMLCollection links;
   //(HTML only)readonly attribute HTMLCollection forms;
   //(HTML only)readonly attribute HTMLCollection scripts;
-  //(HTML only)NodeList getElementsByName(DOMString elementName);
+  [Pure]
+  NodeList getElementsByName(DOMString elementName);
   //(Not implemented)readonly attribute DOMElementMap cssElementMap;
 
   // dynamic markup insertion
@@ -133,7 +144,6 @@ partial interface Document {
   // user interaction
   [Pure]
   readonly attribute WindowProxy? defaultView;
-  readonly attribute Element? activeElement;
   [Throws]
   boolean hasFocus();
   //(HTML only)         attribute DOMString designMode;
@@ -151,10 +161,6 @@ partial interface Document {
   [LenientThis] attribute EventHandler onreadystatechange;
 
   // Gecko extensions?
-                attribute EventHandler onwheel;
-                attribute EventHandler oncopy;
-                attribute EventHandler oncut;
-                attribute EventHandler onpaste;
                 attribute EventHandler onbeforescriptexecute;
                 attribute EventHandler onafterscriptexecute;
 
@@ -232,9 +238,9 @@ partial interface Document {
   readonly attribute boolean fullscreen;
   [BinaryName="fullscreen"]
   readonly attribute boolean mozFullScreen;
-  [LenientSetter, Func="nsDocument::IsUnprefixedFullscreenEnabled"]
+  [LenientSetter, Func="nsDocument::IsUnprefixedFullscreenEnabled", NeedsCallerType]
   readonly attribute boolean fullscreenEnabled;
-  [BinaryName="fullscreenEnabled"]
+  [BinaryName="fullscreenEnabled", NeedsCallerType]
   readonly attribute boolean mozFullScreenEnabled;
   [LenientSetter, Func="nsDocument::IsUnprefixedFullscreenEnabled"]
   readonly attribute Element? fullscreenElement;
@@ -257,36 +263,23 @@ partial interface Document {
 // https://w3c.github.io/pointerlock/#extensions-to-the-documentorshadowroot-mixin
 partial interface Document {
   readonly attribute Element? pointerLockElement;
-  [BinaryName="pointerLockElement", Pref="pointer-lock-api.prefixed.enabled"]
-  readonly attribute Element? mozPointerLockElement;
   void exitPointerLock();
-  [BinaryName="exitPointerLock", Pref="pointer-lock-api.prefixed.enabled"]
-  void mozExitPointerLock();
 
   // Event handlers
   attribute EventHandler onpointerlockchange;
   attribute EventHandler onpointerlockerror;
 };
 
-//http://dvcs.w3.org/hg/webcomponents/raw-file/tip/spec/custom/index.html#dfn-document-register
-partial interface Document {
-    // this is deprecated from CustomElements v0
-    [Throws, Func="CustomElementsRegistry::IsCustomElementsEnabled"]
-    object registerElement(DOMString name, optional ElementRegistrationOptions options);
-};
-
 // http://dvcs.w3.org/hg/webperf/raw-file/tip/specs/PageVisibility/Overview.html#sec-document-interface
+// https://w3c.github.io/page-visibility/#extensions-to-the-document-interface
 partial interface Document {
   readonly attribute boolean hidden;
-  readonly attribute boolean mozHidden;
   readonly attribute VisibilityState visibilityState;
-  readonly attribute VisibilityState mozVisibilityState;
+           attribute EventHandler onvisibilitychange;
 };
 
 // http://dev.w3.org/csswg/cssom/#extensions-to-the-document-interface
 partial interface Document {
-    [Constant]
-    readonly attribute StyleSheetList styleSheets;
     attribute DOMString? selectedStyleSheetSet;
     readonly attribute DOMString? lastStyleSheetSet;
     readonly attribute DOMString? preferredStyleSheetSet;
@@ -304,12 +297,6 @@ partial interface Document {
     readonly attribute Element? scrollingElement;
 };
 
-// http://dvcs.w3.org/hg/undomanager/raw-file/tip/undomanager.html
-partial interface Document {
-    [Pref="dom.undo_manager.enabled"]
-    readonly attribute UndoManager? undoManager;
-};
-
 // http://dev.w3.org/2006/webapi/selectors-api2/#interface-definitions
 partial interface Document {
   [Throws, Pure]
@@ -321,12 +308,18 @@ partial interface Document {
   //(Not implemented)NodeList  findAll(DOMString selectors, optional (Element or sequence<Node>)? refNodes);
 };
 
-// http://w3c.github.io/web-animations/#extensions-to-the-document-interface
+// https://drafts.csswg.org/web-animations/#extensions-to-the-document-interface
 partial interface Document {
   [Func="nsDocument::IsWebAnimationsEnabled"]
   readonly attribute DocumentTimeline timeline;
   [Func="nsDocument::IsWebAnimationsEnabled"]
   sequence<Animation> getAnimations();
+};
+
+// https://svgwg.org/svg2-draft/struct.html#InterfaceDocumentExtensions
+partial interface Document {
+  [BinaryName="SVGRootElement"]
+  readonly attribute SVGSVGElement? rootElement;
 };
 
 //  Mozilla extensions of various sorts
@@ -340,7 +333,7 @@ partial interface Document {
                                           DOMString attrValue);
   [Func="IsChromeOrXBL"]
   Element? getBindingParent(Node node);
-  [Throws, Func="IsChromeOrXBL"]
+  [Throws, Func="IsChromeOrXBL", NeedsSubjectPrincipal]
   void loadBindingDocument(DOMString documentURL);
 
   // nsIDOMDocumentTouch
@@ -388,9 +381,22 @@ partial interface Document {
 
   [ChromeOnly] readonly attribute nsILoadGroup? documentLoadGroup;
 
+  // Blocks the initial document parser until the given promise is settled.
+  [ChromeOnly, Throws]
+  Promise<any> blockParsing(Promise<any> promise,
+                            optional BlockParsingOptions options);
+
   // like documentURI, except that for error pages, it returns the URI we were
   // trying to load when we hit an error, rather than the error page's own URI.
   [ChromeOnly] readonly attribute URI? mozDocumentURIIfNotForErrorPages;
+};
+
+dictionary BlockParsingOptions {
+  /**
+   * If true, blocks script-created parsers (created via document.open()) in
+   * addition to network-created parsers.
+   */
+  boolean blockScriptCreated = true;
 };
 
 // Extension to give chrome JS the ability to determine when a document was
@@ -431,22 +437,53 @@ partial interface Document {
   void removeAnonymousContent(AnonymousContent aContent);
 };
 
+// http://w3c.github.io/selection-api/#extensions-to-document-interface
+partial interface Document {
+  [Throws]
+  Selection? getSelection();
+};
+
 // Extension to give chrome JS the ability to determine whether
 // the user has interacted with the document or not.
 partial interface Document {
   [ChromeOnly] readonly attribute boolean userHasInteracted;
 };
 
+// Extension to give chrome JS the ability to simulate activate the docuement
+// by user gesture.
+partial interface Document {
+  [ChromeOnly]
+  void notifyUserActivation();
+};
+
 // Extension to give chrome and XBL JS the ability to determine whether
-// the document is sandboxed without permission to run scripts.
+// the document is sandboxed without permission to run scripts
+// and whether inline scripts are blocked by the document's CSP.
 partial interface Document {
   [Func="IsChromeOrXBL"] readonly attribute boolean hasScriptsBlockedBySandbox;
+  [Func="IsChromeOrXBL"] readonly attribute boolean inlineScriptAllowedByCSP;
+};
+
+// For more information on Flash classification, see
+// toolkit/components/url-classifier/flash-block-lists.rst
+enum FlashClassification {
+  "unclassified",   // Denotes a classification that has not yet been computed.
+                    // Allows for lazy classification.
+  "unknown",        // Site is not on the whitelist or blacklist
+  "allowed",        // Site is on the Flash whitelist
+  "denied"          // Site is on the Flash blacklist
+};
+partial interface Document {
+  [ChromeOnly]
+  readonly attribute FlashClassification documentFlashClassification;
 };
 
 Document implements XPathEvaluator;
 Document implements GlobalEventHandlers;
+Document implements DocumentAndElementEventHandlers;
 Document implements TouchEventHandlers;
 Document implements ParentNode;
 Document implements OnErrorEventHandlerForNodes;
 Document implements GeometryUtils;
 Document implements FontFaceSource;
+Document implements DocumentOrShadowRoot;

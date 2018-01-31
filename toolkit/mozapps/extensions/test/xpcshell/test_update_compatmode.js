@@ -9,7 +9,7 @@
 // The test extension uses an insecure update url.
 Services.prefs.setBoolPref(PREF_EM_CHECK_UPDATE_SECURITY, false);
 
-Components.utils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://testing-common/httpd.js");
 var testserver = new HttpServer();
 testserver.start(-1);
 gPort = testserver.identity.primaryPort;
@@ -85,24 +85,24 @@ function end_test() {
 
 // Strict compatibility checking disabled.
 function run_test_1() {
-  do_print("Testing with strict compatibility checking disabled");
+  info("Testing with strict compatibility checking disabled");
   Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, false);
   AddonManager.getAddonByID("compatmode-normal@tests.mozilla.org", function(addon) {
-    do_check_neq(addon, null);
+    Assert.notEqual(addon, null);
     addon.findUpdates({
-      onCompatibilityUpdateAvailable: function() {
+      onCompatibilityUpdateAvailable() {
         do_throw("Should have not have seen compatibility information");
       },
 
-      onNoUpdateAvailable: function() {
+      onNoUpdateAvailable() {
         do_throw("Should have seen an available update");
       },
 
-      onUpdateAvailable: function(addon, install) {
-        do_check_eq(install.version, "2.0")
+      onUpdateAvailable(unused, install) {
+        Assert.equal(install.version, "2.0");
       },
 
-      onUpdateFinished: function() {
+      onUpdateFinished() {
         run_test_2();
       }
     }, AddonManager.UPDATE_WHEN_USER_REQUESTED);
@@ -111,24 +111,24 @@ function run_test_1() {
 
 // Strict compatibility checking enabled.
 function run_test_2() {
-  do_print("Testing with strict compatibility checking enabled");
+  info("Testing with strict compatibility checking enabled");
   Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, true);
   AddonManager.getAddonByID("compatmode-strict@tests.mozilla.org", function(addon) {
-    do_check_neq(addon, null);
+    Assert.notEqual(addon, null);
     addon.findUpdates({
-      onCompatibilityUpdateAvailable: function() {
+      onCompatibilityUpdateAvailable() {
         do_throw("Should have not have seen compatibility information");
       },
 
-      onNoUpdateAvailable: function() {
+      onNoUpdateAvailable() {
         do_throw("Should have seen an available update");
       },
 
-      onUpdateAvailable: function(addon, install) {
-        do_check_eq(install.version, "2.0")
+      onUpdateAvailable(unused, install) {
+        Assert.equal(install.version, "2.0");
       },
 
-      onUpdateFinished: function() {
+      onUpdateFinished() {
         run_test_3();
       }
     }, AddonManager.UPDATE_WHEN_USER_REQUESTED);
@@ -137,20 +137,20 @@ function run_test_2() {
 
 // Strict compatibility checking opt-in.
 function run_test_3() {
-  do_print("Testing with strict compatibility disabled, but addon opt-in");
+  info("Testing with strict compatibility disabled, but addon opt-in");
   Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, false);
   AddonManager.getAddonByID("compatmode-strict-optin@tests.mozilla.org", function(addon) {
-    do_check_neq(addon, null);
+    Assert.notEqual(addon, null);
     addon.findUpdates({
-      onCompatibilityUpdateAvailable: function() {
+      onCompatibilityUpdateAvailable() {
         do_throw("Should have not have seen compatibility information");
       },
 
-      onUpdateAvailable: function(addon, install) {
+      onUpdateAvailable() {
         do_throw("Should not have seen an available update");
       },
 
-      onUpdateFinished: function() {
+      onUpdateFinished() {
         run_test_4();
       }
     }, AddonManager.UPDATE_WHEN_USER_REQUESTED);
@@ -159,24 +159,24 @@ function run_test_3() {
 
 // Compatibility checking disabled.
 function run_test_4() {
-  do_print("Testing with all compatibility checking disabled");
+  info("Testing with all compatibility checking disabled");
   AddonManager.checkCompatibility = false;
   AddonManager.getAddonByID("compatmode-ignore@tests.mozilla.org", function(addon) {
-    do_check_neq(addon, null);
+    Assert.notEqual(addon, null);
     addon.findUpdates({
-      onCompatibilityUpdateAvailable: function() {
+      onCompatibilityUpdateAvailable() {
         do_throw("Should have not have seen compatibility information");
       },
 
-      onNoUpdateAvailable: function() {
+      onNoUpdateAvailable() {
         do_throw("Should have seen an available update");
       },
 
-      onUpdateAvailable: function(addon, install) {
-        do_check_eq(install.version, "2.0")
+      onUpdateAvailable(unused, install) {
+        Assert.equal(install.version, "2.0");
       },
 
-      onUpdateFinished: function() {
+      onUpdateFinished() {
         end_test();
       }
     }, AddonManager.UPDATE_WHEN_USER_REQUESTED);

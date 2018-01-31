@@ -4,7 +4,7 @@
 
 // This verifies that add-ons URIs can be mapped to add-on IDs
 //
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Enable loading extensions from the user scopes
 Services.prefs.setIntPref("extensions.enabledScopes",
@@ -25,11 +25,11 @@ function TestProvider(result) {
   this.result = result;
 }
 TestProvider.prototype = {
-  uri: Services.io.newURI("hellow://world", null, null),
+  uri: Services.io.newURI("hellow://world"),
   id: "valid@id",
-  startup: function() {},
-  shutdown: function() {},
-  mapURIToAddonID: function(aURI) {
+  startup() {},
+  shutdown() {},
+  mapURIToAddonID(aURI) {
     if (aURI.spec === this.uri.spec) {
       return this.id;
     }
@@ -39,21 +39,17 @@ TestProvider.prototype = {
 
 function TestProviderNoMap() {}
 TestProviderNoMap.prototype = {
-  startup: function() {},
-  shutdown: function() {}
+  startup() {},
+  shutdown() {}
 };
 
 function check_mapping(uri, id) {
-  do_check_eq(AddonManager.mapURIToAddonID(uri), id);
+  Assert.equal(AddonManager.mapURIToAddonID(uri), id);
   let svc = Components.classes["@mozilla.org/addons/integration;1"].
             getService(Components.interfaces.amIAddonManager);
   let val = {};
-  do_check_true(svc.mapURIToAddonID(uri, val));
-  do_check_eq(val.value, id);
-}
-
-function getActiveVersion() {
-  return Services.prefs.getIntPref("bootstraptest.active_version");
+  Assert.ok(svc.mapURIToAddonID(uri, val));
+  Assert.equal(val.value, id);
 }
 
 function run_test() {
@@ -79,21 +75,21 @@ function run_test_early() {
       // See bug 957089
 
       // First force-initialize the XPIProvider.
-      let s = Components.utils.import(
+      let s = ChromeUtils.import(
         "resource://gre/modules/addons/XPIProvider.jsm", {});
 
       // Make the early API call.
       // AddonManager still misses its provider and so doesn't work yet.
-      do_check_null(AddonManager.mapURIToAddonID(uri));
+      Assert.equal(null, AddonManager.mapURIToAddonID(uri));
       // But calling XPIProvider directly works immediately
-      do_check_eq(s.XPIProvider.mapURIToAddonID(uri), id);
+      Assert.equal(s.XPIProvider.mapURIToAddonID(uri), id);
 
       // Actually start up the manager.
       startupManager(false);
 
       // Check that the mapping is there now.
       check_mapping(uri, id);
-      do_check_eq(s.XPIProvider.mapURIToAddonID(uri), id);
+      Assert.equal(s.XPIProvider.mapURIToAddonID(uri), id);
 
       run_test_nomapping();
     });
@@ -101,14 +97,13 @@ function run_test_early() {
 }
 
 function run_test_nomapping() {
-  do_check_eq(AddonManager.mapURIToAddonID(TestProvider.prototype.uri), null);
+  Assert.equal(AddonManager.mapURIToAddonID(TestProvider.prototype.uri), null);
   try {
     let svc = Components.classes["@mozilla.org/addons/integration;1"].
               getService(Components.interfaces.amIAddonManager);
     let val = {};
-    do_check_false(svc.mapURIToAddonID(TestProvider.prototype.uri, val));
-  }
-  catch (ex) {
+    Assert.ok(!svc.mapURIToAddonID(TestProvider.prototype.uri, val));
+  } catch (ex) {
     do_throw(ex);
   }
 
@@ -161,10 +156,10 @@ function run_test_2(uri) {
     ensure_test_completed();
 
     AddonManager.getAddonByID("bootstrap1@tests.mozilla.org", function(newb1) {
-      do_check_true(newb1.userDisabled);
+      Assert.ok(newb1.userDisabled);
       check_mapping(uri, newb1.id);
 
-      do_execute_soon(() => run_test_3(uri));
+      executeSoon(() => run_test_3(uri));
     });
   });
 }
@@ -198,7 +193,7 @@ function run_test_4() {
       let uri = newb1.getResourceURI(".");
       check_mapping(uri, newb1.id);
 
-      do_execute_soon(run_test_5);
+      executeSoon(run_test_5);
     });
   });
 }
@@ -211,7 +206,7 @@ function run_test_5() {
     let uri = b1.getResourceURI(".");
     check_mapping(uri, b1.id);
 
-    do_execute_soon(run_test_6);
+    executeSoon(run_test_6);
   });
 }
 
@@ -232,7 +227,7 @@ function run_test_6() {
     check_mapping(uri, b1.id);
 
     restartManager();
-    do_execute_soon(run_test_7);
+    executeSoon(run_test_7);
   });
 }
 
@@ -248,7 +243,7 @@ function run_test_7() {
     let uri = b1.getResourceURI(".");
     check_mapping(uri, b1.id);
 
-    do_execute_soon(run_test_8);
+    executeSoon(run_test_8);
   });
 }
 
@@ -277,7 +272,7 @@ function run_test_8() {
 
     check_mapping(uri, b2.id);
 
-    do_execute_soon(run_test_invalidarg);
+    executeSoon(run_test_invalidarg);
   });
   AddonManager.installTemporaryAddon(do_get_addon("test_bootstrap2_1"));
 }
@@ -298,10 +293,9 @@ function run_test_invalidarg() {
     try {
       AddonManager.mapURIToAddonID(test);
       throw new Error("Shouldn't be able to map the URI in question");
-    }
-    catch (ex) {
+    } catch (ex) {
       if (ex.result) {
-        do_check_eq(ex.result, Components.results.NS_ERROR_INVALID_ARG);
+        Assert.equal(ex.result, Components.results.NS_ERROR_INVALID_ARG);
       } else {
         do_throw(ex);
       }
@@ -321,8 +315,8 @@ function run_test_provider() {
   check_mapping(provider.uri, provider.id);
 
   let u2 = provider.uri.clone();
-  u2.path = "notmapped";
-  do_check_eq(AddonManager.mapURIToAddonID(u2), null);
+  u2.pathQueryRef = "notmapped";
+  Assert.equal(AddonManager.mapURIToAddonID(u2), null);
 
   AddonManagerPrivate.unregisterProvider(provider);
 
@@ -337,7 +331,7 @@ function run_test_provider_nomap() {
   const provider = new TestProviderNoMap();
   AddonManagerPrivate.registerProvider(provider);
 
-  do_check_eq(AddonManager.mapURIToAddonID(TestProvider.prototype.uri), null);
+  Assert.equal(AddonManager.mapURIToAddonID(TestProvider.prototype.uri), null);
 
   AddonManagerPrivate.unregisterProvider(provider);
 

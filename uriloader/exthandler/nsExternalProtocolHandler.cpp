@@ -8,7 +8,7 @@
 #include "nsIURI.h"
 #include "nsIURL.h"
 #include "nsExternalProtocolHandler.h"
-#include "nsXPIDLString.h"
+#include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -19,6 +19,7 @@
 #include "nsIStringBundle.h"
 #include "nsIPrefService.h"
 #include "nsIPrompt.h"
+#include "nsIURIMutator.h"
 #include "nsNetUtil.h"
 #include "nsContentSecurityManager.h"
 #include "nsExternalHelperAppService.h"
@@ -71,6 +72,7 @@ private:
     nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
     nsCOMPtr<nsILoadGroup> mLoadGroup;
     nsCOMPtr<nsILoadInfo> mLoadInfo;
+    nsCOMPtr<nsIStreamListener> mListener;
 };
 
 NS_IMPL_ADDREF(nsExtProtocolChannel)
@@ -91,6 +93,7 @@ nsExtProtocolChannel::nsExtProtocolChannel(nsIURI* aURI,
   : mUrl(aURI)
   , mOriginalURI(aURI)
   , mStatus(NS_OK)
+  , mLoadFlags(nsIRequest::LOAD_NORMAL)
   , mWasOpened(false)
   , mConnectedParent(false)
   , mLoadInfo(aLoadInfo)
@@ -174,16 +177,25 @@ nsresult nsExtProtocolChannel::OpenURL()
     }
                                                 
     rv = extProtService->LoadURI(mUrl, aggCallbacks);
-    if (NS_SUCCEEDED(rv)) {
-        // despite success, we need to abort this channel, at the very least 
-        // to make it clear to the caller that no on{Start,Stop}Request
-        // should be expected.
-        rv = NS_ERROR_NO_CONTENT;
+
+    if (NS_SUCCEEDED(rv) && mListener) {
+      Cancel(NS_ERROR_NO_CONTENT);
+
+      RefPtr<nsExtProtocolChannel> self = this;
+      nsCOMPtr<nsIStreamListener> listener = mListener;
+      MessageLoop::current()->PostTask(
+        NS_NewRunnableFunction(
+          "nsExtProtocolChannel::OpenURL",
+          [self, listener]() {
+            listener->OnStartRequest(self, nullptr);
+            listener->OnStopRequest(self, nullptr, self->mStatus);
+          }));
     }
   }
 
 finish:
-  mCallbacks = 0;
+  mCallbacks = nullptr;
+  mListener = nullptr;
   return rv;
 }
 
@@ -217,6 +229,7 @@ NS_IMETHODIMP nsExtProtocolChannel::AsyncOpen(nsIStreamListener *listener, nsISu
   NS_ENSURE_TRUE(!mWasOpened, NS_ERROR_ALREADY_OPENED);
 
   mWasOpened = true;
+  mListener = listener;
 
   return OpenURL();
 }
@@ -225,7 +238,10 @@ NS_IMETHODIMP nsExtProtocolChannel::AsyncOpen2(nsIStreamListener *aListener)
 {
   nsCOMPtr<nsIStreamListener> listener = aListener;
   nsresult rv = nsContentSecurityManager::doContentSecurityCheck(this, listener);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_FAILED(rv)) {
+    mCallbacks = nullptr;
+    return rv;
+  }
   return AsyncOpen(listener, nullptr);
 }
 
@@ -239,6 +255,11 @@ NS_IMETHODIMP nsExtProtocolChannel::SetLoadFlags(nsLoadFlags aLoadFlags)
 {
   mLoadFlags = aLoadFlags;
   return NS_OK;
+}
+
+NS_IMETHODIMP nsExtProtocolChannel::GetIsDocument(bool *aIsDocument)
+{
+  return NS_GetIsDocumentChannel(this, aIsDocument);
 }
 
 NS_IMETHODIMP nsExtProtocolChannel::GetContentType(nsACString &aContentType)
@@ -401,6 +422,20 @@ NS_IMETHODIMP nsExtProtocolChannel::NotifyTrackingProtectionDisabled()
   return NS_OK;
 }
 
+NS_IMETHODIMP nsExtProtocolChannel::SetClassifierMatchedInfo(const nsACString& aList,
+                                                             const nsACString& aProvider,
+                                                             const nsACString& aFullHash)
+{
+  // nothing to do
+  return NS_OK;
+}
+
+NS_IMETHODIMP nsExtProtocolChannel::NotifyTrackingResource()
+{
+  // nothing to do
+  return NS_OK;
+}
+
 NS_IMETHODIMP nsExtProtocolChannel::Delete()
 {
   // nothing to do
@@ -507,15 +542,9 @@ NS_IMETHODIMP nsExternalProtocolHandler::NewURI(const nsACString &aSpec,
                                                 nsIURI *aBaseURI,
                                                 nsIURI **_retval)
 {
-  nsresult rv;
-  nsCOMPtr<nsIURI> uri = do_CreateInstance(NS_SIMPLEURI_CONTRACTID, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-  
-  rv = uri->SetSpec(aSpec);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  NS_ADDREF(*_retval = uri);
-  return NS_OK;
+  return NS_MutateURI(NS_SIMPLEURIMUTATOR_CONTRACTID)
+           .SetSpec(aSpec)
+           .Finalize(_retval);
 }
 
 NS_IMETHODIMP

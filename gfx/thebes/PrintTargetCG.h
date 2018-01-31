@@ -14,23 +14,38 @@ namespace gfx {
 
 /**
  * CoreGraphics printing target.
- *
- * Note that a CGContextRef obtained from PMSessionGetCGGraphicsContext is
- * valid only for the current page.  As a consequence instances of this class
- * should only be used to print a single page.
  */
 class PrintTargetCG final : public PrintTarget
 {
 public:
   static already_AddRefed<PrintTargetCG>
-  CreateOrNull(const IntSize& aSize, gfxImageFormat aFormat);
+  CreateOrNull(PMPrintSession aPrintSession,
+               PMPageFormat aPageFormat,
+               PMPrintSettings aPrintSettings,
+               const IntSize& aSize);
 
-  static already_AddRefed<PrintTargetCG>
-  CreateOrNull(CGContextRef aContext, const IntSize& aSize);
+  virtual nsresult BeginPrinting(const nsAString& aTitle,
+                                 const nsAString& aPrintToFileName,
+                                 int32_t aStartPage,
+                                 int32_t aEndPage) final override;
+  virtual nsresult EndPrinting() final override;
+  virtual nsresult AbortPrinting() final override;
+  virtual nsresult BeginPage() final override;
+  virtual nsresult EndPage() final override;
+
+  virtual already_AddRefed<DrawTarget>
+  GetReferenceDrawTarget(DrawEventRecorder* aRecorder) final override;
 
 private:
-  PrintTargetCG(cairo_surface_t* aCairoSurface,
+  PrintTargetCG(PMPrintSession aPrintSession,
+                PMPageFormat aPageFormat,
+                PMPrintSettings aPrintSettings,
                 const IntSize& aSize);
+  ~PrintTargetCG();
+
+  PMPrintSession mPrintSession;
+  PMPageFormat mPageFormat;
+  PMPrintSettings mPrintSettings;
 };
 
 } // namespace gfx

@@ -24,22 +24,24 @@
 #include "nsXULAppAPI.h"
 
 #ifdef MOZ_X11
+# include "nsX11ErrorHandler.h"
 # include "mozilla/X11Util.h"
 #endif
+
+#include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/plugins/PluginInstanceChild.h"
 #include "mozilla/plugins/StreamNotifyChild.h"
 #include "mozilla/plugins/BrowserStreamChild.h"
-#include "mozilla/plugins/PluginStreamChild.h"
-#include "mozilla/dom/CrashReporterChild.h"
+#include "mozilla/Sprintf.h"
 #include "mozilla/Unused.h"
 
 #include "nsNPAPIPlugin.h"
+#include "FunctionHook.h"
+#include "FunctionBrokerChild.h"
 
 #ifdef XP_WIN
-#include "nsWindowsDllInterceptor.h"
 #include "mozilla/widget/AudioSession.h"
-#include "WinUtils.h"
 #include <knownfolders.h>
 #endif
 
@@ -48,18 +50,17 @@
 #include "PluginUtilsOSX.h"
 #endif
 
-#include "GeckoProfiler.h"
+#ifdef MOZ_GECKO_PROFILER
+#include "ChildProfilerController.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::ipc;
 using namespace mozilla::plugins;
 using namespace mozilla::widget;
-using mozilla::dom::CrashReporterChild;
-using mozilla::dom::PCrashReporterChild;
 
 #if defined(XP_WIN)
 const wchar_t * kFlashFullscreenClass = L"ShockwaveFlashFullScreen";
-const wchar_t * kMozillaWindowClass = L"MozillaWindowClass";
 #endif
 
 namespace {
@@ -68,45 +69,16 @@ PluginModuleChild* gChromeInstance = nullptr;
 } // namespace
 
 #ifdef XP_WIN
-// Hooking CreateFileW for protected-mode magic
-static WindowsDllInterceptor sKernel32Intercept;
-typedef HANDLE (WINAPI *CreateFileWPtr)(LPCWSTR fname, DWORD access,
-                                        DWORD share,
-                                        LPSECURITY_ATTRIBUTES security,
-                                        DWORD creation, DWORD flags,
-                                        HANDLE ftemplate);
-static CreateFileWPtr sCreateFileWStub = nullptr;
-typedef HANDLE (WINAPI *CreateFileAPtr)(LPCSTR fname, DWORD access,
-                                        DWORD share,
-                                        LPSECURITY_ATTRIBUTES security,
-                                        DWORD creation, DWORD flags,
-                                        HANDLE ftemplate);
-static CreateFileAPtr sCreateFileAStub = nullptr;
-
 // Used with fix for flash fullscreen window loosing focus.
 static bool gDelayFlashFocusReplyUntilEval = false;
-// Used to fix GetWindowInfo problems with internal flash settings dialogs
-static WindowsDllInterceptor sUser32Intercept;
-typedef BOOL (WINAPI *GetWindowInfoPtr)(HWND hwnd, PWINDOWINFO pwi);
-static GetWindowInfoPtr sGetWindowInfoPtrStub = nullptr;
-static HWND sBrowserHwnd = nullptr;
-// sandbox process doesn't get current key states.  So we need get it on chrome.
-typedef SHORT (WINAPI *GetKeyStatePtr)(int);
-static GetKeyStatePtr sGetKeyStatePtrStub = nullptr;
 #endif
 
 /* static */
-PluginModuleChild*
-PluginModuleChild::CreateForContentProcess(mozilla::ipc::Transport* aTransport,
-                                           base::ProcessId aOtherPid)
+bool
+PluginModuleChild::CreateForContentProcess(Endpoint<PPluginModuleChild>&& aEndpoint)
 {
-    PluginModuleChild* child = new PluginModuleChild(false);
-
-    if (!child->InitForContent(aOtherPid, XRE_GetIOMessageLoop(), aTransport)) {
-        return nullptr;
-    }
-
-    return child;
+    auto* child = new PluginModuleChild(false);
+    return child->InitForContent(Move(aEndpoint));
 }
 
 PluginModuleChild::PluginModuleChild(bool aIsChrome)
@@ -115,7 +87,6 @@ PluginModuleChild::PluginModuleChild(bool aIsChrome)
   , mQuirks(QUIRKS_NOT_INITIALIZED)
   , mIsChrome(aIsChrome)
   , mHasShutdown(false)
-  , mTransport(nullptr)
   , mShutdownFunc(0)
   , mInitializeFunc(0)
 #if defined(OS_WIN) || defined(OS_MACOSX)
@@ -168,10 +139,8 @@ PluginModuleChild::GetChrome()
     return gChromeInstance;
 }
 
-bool
-PluginModuleChild::CommonInit(base::ProcessId aParentPid,
-                              MessageLoop* aIOLoop,
-                              IPC::Channel* aChannel)
+void
+PluginModuleChild::CommonInit()
 {
     PLUGIN_LOG_DEBUG_METHOD;
 
@@ -181,27 +150,19 @@ PluginModuleChild::CommonInit(base::ProcessId aParentPid,
     // Bug 1090573 - Don't do this for connections to content processes.
     GetIPCChannel()->SetChannelFlags(MessageChannel::REQUIRE_DEFERRED_MESSAGE_PROTECTION);
 
-    if (!Open(aChannel, aParentPid, aIOLoop)) {
-        return false;
-    }
-
     memset((void*) &mFunctions, 0, sizeof(mFunctions));
     mFunctions.size = sizeof(mFunctions);
     mFunctions.version = (NP_VERSION_MAJOR << 8) | NP_VERSION_MINOR;
-
-    return true;
 }
 
 bool
-PluginModuleChild::InitForContent(base::ProcessId aParentPid,
-                                  MessageLoop* aIOLoop,
-                                  IPC::Channel* aChannel)
+PluginModuleChild::InitForContent(Endpoint<PPluginModuleChild>&& aEndpoint)
 {
-    if (!CommonInit(aParentPid, aIOLoop, aChannel)) {
+    CommonInit();
+
+    if (!aEndpoint.Bind(this)) {
         return false;
     }
-
-    mTransport = aChannel;
 
     mLibrary = GetChrome()->mLibrary;
     mFunctions = GetChrome()->mFunctions;
@@ -209,16 +170,25 @@ PluginModuleChild::InitForContent(base::ProcessId aParentPid,
     return true;
 }
 
-bool
+mozilla::ipc::IPCResult
+PluginModuleChild::RecvInitProfiler(Endpoint<mozilla::PProfilerChild>&& aEndpoint)
+{
+#ifdef MOZ_GECKO_PROFILER
+    mProfilerController = ChildProfilerController::Create(Move(aEndpoint));
+#endif
+    return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
 PluginModuleChild::RecvDisableFlashProtectedMode()
 {
     MOZ_ASSERT(mIsChrome);
 #ifdef XP_WIN
-    HookProtectedMode();
+    FunctionHook::HookProtectedMode();
 #else
     MOZ_ASSERT(false, "Should not be called");
 #endif
-    return true;
+    return IPC_OK();
 }
 
 bool
@@ -265,7 +235,7 @@ PluginModuleChild::InitForChrome(const std::string& aPluginFilename,
 #if defined(XP_MACOSX)
     const char* namePrefix = "Plugin Content";
     char nameBuffer[80];
-    snprintf(nameBuffer, sizeof(nameBuffer), "%s (%s)", namePrefix, info.fName);
+    SprintfLiteral(nameBuffer, "%s (%s)", namePrefix, info.fName);
     mozilla::plugins::PluginUtilsOSX::SetProcessName(nameBuffer);
 #endif
     pluginFile.FreePluginInfo(info);
@@ -279,15 +249,15 @@ PluginModuleChild::InitForChrome(const std::string& aPluginFilename,
     }
     NS_ASSERTION(mLibrary, "couldn't open shared object");
 
-    if (!CommonInit(aParentPid, aIOLoop, aChannel)) {
+    CommonInit();
+
+    if (!Open(aChannel, aParentPid, aIOLoop)) {
         return false;
     }
 
     GetIPCChannel()->SetAbortOnError(true);
 
-    // TODO: use PluginPRLibrary here
-
-#if defined(OS_LINUX) || defined(OS_BSD)
+#if defined(OS_LINUX) || defined(OS_BSD) || defined(OS_SOLARIS)
     mShutdownFunc =
         (NP_PLUGINSHUTDOWN) PR_FindFunctionSymbol(mLibrary, "NP_Shutdown");
 
@@ -545,20 +515,20 @@ PluginModuleChild::ExitedCxxStack()
 
 #endif
 
-bool
+mozilla::ipc::IPCResult
 PluginModuleChild::RecvSetParentHangTimeout(const uint32_t& aSeconds)
 {
 #ifdef XP_WIN
     SetReplyTimeoutMs(((aSeconds > 0) ? (1000 * aSeconds) : 0));
 #endif
-    return true;
+    return IPC_OK();
 }
 
 bool
 PluginModuleChild::ShouldContinueFromReplyTimeout()
 {
 #ifdef XP_WIN
-    NS_RUNTIMEABORT("terminating child process");
+    MOZ_CRASH("terminating child process");
 #endif
     return true;
 }
@@ -607,7 +577,7 @@ PluginModuleChild::InitGraphics()
 #endif
 #ifdef MOZ_X11
     // Do this after initializing GDK, or GDK will install its own handler.
-    XRE_InstallX11ErrorHandler();
+    InstallX11ErrorHandler();
 #endif
     return true;
 }
@@ -656,14 +626,14 @@ PluginModuleChild::NP_Shutdown()
     return rv;
 }
 
-bool
+mozilla::ipc::IPCResult
 PluginModuleChild::AnswerNP_Shutdown(NPError *rv)
 {
     *rv = NP_Shutdown();
-    return true;
+    return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 PluginModuleChild::AnswerOptionalFunctionsSupported(bool *aURLRedirectNotify,
                                                     bool *aClearSiteData,
                                                     bool *aGetSitesWithData)
@@ -671,10 +641,10 @@ PluginModuleChild::AnswerOptionalFunctionsSupported(bool *aURLRedirectNotify,
     *aURLRedirectNotify = !!mFunctions.urlredirectnotify;
     *aClearSiteData = !!mFunctions.clearsitedata;
     *aGetSitesWithData = !!mFunctions.getsiteswithdata;
-    return true;
+    return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 PluginModuleChild::RecvNPP_ClearSiteData(const nsCString& aSite,
                                            const uint64_t& aFlags,
                                            const uint64_t& aMaxAge,
@@ -683,17 +653,17 @@ PluginModuleChild::RecvNPP_ClearSiteData(const nsCString& aSite,
     NPError result =
         mFunctions.clearsitedata(NullableStringGet(aSite), aFlags, aMaxAge);
     SendReturnClearSiteData(result, aCallbackId);
-    return true;
+    return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 PluginModuleChild::RecvNPP_GetSitesWithData(const uint64_t& aCallbackId)
 {
     char** result = mFunctions.getsiteswithdata();
     InfallibleTArray<nsCString> array;
     if (!result) {
         SendReturnSitesWithData(array, aCallbackId);
-        return true;
+        return IPC_OK();
     }
     char** iterator = result;
     while (*iterator) {
@@ -703,64 +673,70 @@ PluginModuleChild::RecvNPP_GetSitesWithData(const uint64_t& aCallbackId)
     }
     SendReturnSitesWithData(array, aCallbackId);
     free(result);
-    return true;
+    return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 PluginModuleChild::RecvSetAudioSessionData(const nsID& aId,
                                            const nsString& aDisplayName,
                                            const nsString& aIconPath)
 {
 #if !defined XP_WIN
-    NS_RUNTIMEABORT("Not Reached!");
-    return false;
+    MOZ_CRASH("Not Reached!");
 #else
     nsresult rv = mozilla::widget::RecvAudioSessionData(aId, aDisplayName, aIconPath);
-    NS_ENSURE_SUCCESS(rv, true); // Bail early if this fails
+    NS_ENSURE_SUCCESS(rv, IPC_OK()); // Bail early if this fails
 
     // Ignore failures here; we can't really do anything about them
     mozilla::widget::StartAudioSession();
-    return true;
+    return IPC_OK();
 #endif
 }
 
-PPluginModuleChild*
-PluginModuleChild::AllocPPluginModuleChild(mozilla::ipc::Transport* aTransport,
-                                           base::ProcessId aOtherPid)
+mozilla::ipc::IPCResult
+PluginModuleChild::RecvInitPluginModuleChild(Endpoint<PPluginModuleChild>&& aEndpoint)
 {
-    return PluginModuleChild::CreateForContentProcess(aTransport, aOtherPid);
+    if (!CreateForContentProcess(Move(aEndpoint))) {
+        return IPC_FAIL(this, "CreateForContentProcess failed");
+    }
+    return IPC_OK();
 }
 
-PCrashReporterChild*
-PluginModuleChild::AllocPCrashReporterChild(mozilla::dom::NativeThreadId* id,
-                                            uint32_t* processType)
+mozilla::ipc::IPCResult
+PluginModuleChild::RecvInitPluginFunctionBroker(Endpoint<PFunctionBrokerChild>&& aEndpoint)
 {
-    return new CrashReporterChild();
-}
-
-bool
-PluginModuleChild::DeallocPCrashReporterChild(PCrashReporterChild* actor)
-{
-    delete actor;
-    return true;
-}
-
-bool
-PluginModuleChild::AnswerPCrashReporterConstructor(
-        PCrashReporterChild* actor,
-        mozilla::dom::NativeThreadId* id,
-        uint32_t* processType)
-{
-#ifdef MOZ_CRASHREPORTER
-    *id = CrashReporter::CurrentThreadId();
-    *processType = XRE_GetProcessType();
+#if defined(XP_WIN)
+    MOZ_ASSERT(mIsChrome);
+    if (!FunctionBrokerChild::Initialize(Move(aEndpoint))) {
+      return IPC_FAIL(this,
+                      "InitPluginFunctionBroker failed to initialize broker child.");
+    }
+    return IPC_OK();
+#else
+    return IPC_FAIL(this, "InitPluginFunctionBroker not supported on this platform.");
 #endif
-    return true;
+}
+
+
+mozilla::ipc::IPCResult
+PluginModuleChild::AnswerInitCrashReporter(Shmem&& aShmem, mozilla::dom::NativeThreadId* aOutId)
+{
+    CrashReporterClient::InitSingletonWithShmem(aShmem);
+    *aOutId = CrashReporter::CurrentThreadId();
+
+    return IPC_OK();
 }
 
 void
 PluginModuleChild::ActorDestroy(ActorDestroyReason why)
 {
+#ifdef MOZ_GECKO_PROFILER
+    if (mProfilerController) {
+        mProfilerController->Shutdown();
+        mProfilerController = nullptr;
+    }
+#endif
+
     if (!mIsChrome) {
         PluginModuleChild* chromeInstance = PluginModuleChild::GetChrome();
         if (chromeInstance) {
@@ -784,8 +760,15 @@ PluginModuleChild::ActorDestroy(ActorDestroyReason why)
         NP_Shutdown();
     }
 
+#if defined(XP_WIN)
+    FunctionBrokerChild::Destroy();
+    FunctionHook::ClearDllInterceptorCache();
+#endif
+
     // doesn't matter why we're being destroyed; it's up to us to
     // initiate (clean) shutdown
+    CrashReporterClient::DestroySingleton();
+
     XRE_ShutdownChildProcess();
 }
 
@@ -830,15 +813,6 @@ _posturlnotify(NPP aNPP, const char* relativeURL, const char *target,
 static NPError
 _posturl(NPP aNPP, const char* relativeURL, const char *target, uint32_t len,
          const char *buf, NPBool file);
-
-static NPError
-_newstream(NPP aNPP, NPMIMEType type, const char* window, NPStream** pstream);
-
-static int32_t
-_write(NPP aNPP, NPStream *pstream, int32_t len, void *buffer);
-
-static NPError
-_destroystream(NPP aNPP, NPStream *pstream, NPError reason);
 
 static void
 _status(NPP aNPP, const char *message);
@@ -923,10 +897,6 @@ _pushpopupsenabledstate(NPP aNPP, NPBool enabled);
 static void
 _poppopupsenabledstate(NPP aNPP);
 
-static void
-_pluginthreadasynccall(NPP instance, PluginThreadCallback func,
-                       void *userData);
-
 static NPError
 _getvalueforurl(NPP npp, NPNURLVariable variable, const char *url,
                 char **value, uint32_t *len);
@@ -934,13 +904,6 @@ _getvalueforurl(NPP npp, NPNURLVariable variable, const char *url,
 static NPError
 _setvalueforurl(NPP npp, NPNURLVariable variable, const char *url,
                 const char *value, uint32_t len);
-
-static NPError
-_getauthenticationinfo(NPP npp, const char *protocol,
-                       const char *host, int32_t port,
-                       const char *scheme, const char *realm,
-                       char **username, uint32_t *ulen,
-                       char **password, uint32_t *plen);
 
 static uint32_t
 _scheduletimer(NPP instance, uint32_t interval, NPBool repeat,
@@ -953,7 +916,7 @@ static NPError
 _popupcontextmenu(NPP instance, NPMenu* menu);
 
 static NPBool
-_convertpoint(NPP instance, 
+_convertpoint(NPP instance,
               double sourceX, double sourceY, NPCoordinateSpace sourceSpace,
               double *destX, double *destY, NPCoordinateSpace destSpace);
 
@@ -981,9 +944,9 @@ const NPNetscapeFuncs PluginModuleChild::sBrowserFuncs = {
     mozilla::plugins::child::_geturl,
     mozilla::plugins::child::_posturl,
     mozilla::plugins::child::_requestread,
-    mozilla::plugins::child::_newstream,
-    mozilla::plugins::child::_write,
-    mozilla::plugins::child::_destroystream,
+    nullptr,
+    nullptr,
+    nullptr,
     mozilla::plugins::child::_status,
     mozilla::plugins::child::_useragent,
     mozilla::plugins::child::_memalloc,
@@ -1021,11 +984,11 @@ const NPNetscapeFuncs PluginModuleChild::sBrowserFuncs = {
     mozilla::plugins::child::_pushpopupsenabledstate,
     mozilla::plugins::child::_poppopupsenabledstate,
     mozilla::plugins::child::_enumerate,
-    mozilla::plugins::child::_pluginthreadasynccall,
+    nullptr, // pluginthreadasynccall, not used
     mozilla::plugins::child::_construct,
     mozilla::plugins::child::_getvalueforurl,
     mozilla::plugins::child::_setvalueforurl,
-    mozilla::plugins::child::_getauthenticationinfo,
+    nullptr, //NPN GetAuthenticationInfo, not supported
     mozilla::plugins::child::_scheduletimer,
     mozilla::plugins::child::_unscheduletimer,
     mozilla::plugins::child::_popupcontextmenu,
@@ -1053,13 +1016,7 @@ NPError
 _requestread(NPStream* aStream,
              NPByteRange* aRangeList)
 {
-    PLUGIN_LOG_DEBUG_FUNCTION;
-    ENSURE_PLUGIN_THREAD(NPERR_INVALID_PARAM);
-
-    BrowserStreamChild* bs =
-        static_cast<BrowserStreamChild*>(static_cast<AStream*>(aStream->ndata));
-    bs->EnsureCorrectStream(aStream);
-    return bs->NPN_RequestRead(aRangeList);
+    return NPERR_STREAM_NOT_SEEKABLE;
 }
 
 NPError
@@ -1075,7 +1032,7 @@ _geturlnotify(NPP aNPP,
         return NPERR_INVALID_INSTANCE_ERROR;
 
     nsCString url = NullableString(aRelativeURL);
-    StreamNotifyChild* sn = new StreamNotifyChild(url);
+    auto* sn = new StreamNotifyChild(url);
 
     NPError err;
     InstCast(aNPP)->CallPStreamNotifyConstructor(
@@ -1117,20 +1074,20 @@ _getvalue(NPP aNPP,
             *(NPBool*)aValue = PluginModuleChild::GetChrome()->Settings().isOffline();
             return NPERR_NO_ERROR;
         case NPNVSupportsXEmbedBool:
-            *(NPBool*)aValue = PluginModuleChild::GetChrome()->Settings().supportsXembed();
+            // We don't support windowed xembed any more. But we still deliver
+            // events based on X/GTK, not Xt, so we continue to return true
+            // (and Flash requires that we return true).
+            *(NPBool*)aValue = true;
             return NPERR_NO_ERROR;
         case NPNVSupportsWindowless:
-            *(NPBool*)aValue = PluginModuleChild::GetChrome()->Settings().supportsWindowless();
+            *(NPBool*)aValue = true;
             return NPERR_NO_ERROR;
 #if defined(MOZ_WIDGET_GTK)
         case NPNVxDisplay: {
-            if (aNPP) {
-                return InstCast(aNPP)->NPN_GetValue(aVariable, aValue);
-            } 
-            else {
-                *(void **)aValue = xt_client_get_display();
-            }          
-            return NPERR_NO_ERROR;
+            if (!aNPP) {
+                return NPERR_INVALID_INSTANCE_ERROR;
+            }
+            return InstCast(aNPP)->NPN_GetValue(aVariable, aValue);
         }
         case NPNVxtAppContext:
             return NPERR_GENERIC_ERROR;
@@ -1188,8 +1145,13 @@ _posturlnotify(NPP aNPP,
     if (!aBuffer)
         return NPERR_INVALID_PARAM;
 
+    if (aIsFile) {
+      PLUGIN_LOG_DEBUG(("NPN_PostURLNotify with file=true is no longer supported"));
+      return NPERR_GENERIC_ERROR;
+    }
+
     nsCString url = NullableString(aRelativeURL);
-    StreamNotifyChild* sn = new StreamNotifyChild(url);
+    auto* sn = new StreamNotifyChild(url);
 
     NPError err;
     InstCast(aNPP)->CallPStreamNotifyConstructor(
@@ -1216,6 +1178,10 @@ _posturl(NPP aNPP,
     PLUGIN_LOG_DEBUG_FUNCTION;
     ENSURE_PLUGIN_THREAD(NPERR_INVALID_PARAM);
 
+    if (aIsFile) {
+      PLUGIN_LOG_DEBUG(("NPN_PostURL with file=true is no longer supported"));
+      return NPERR_GENERIC_ERROR;
+    }
     NPError err;
     // FIXME what should happen when |aBuffer| is null?
     InstCast(aNPP)->CallNPN_PostURL(NullableString(aRelativeURL),
@@ -1225,55 +1191,6 @@ _posturl(NPP aNPP,
     return err;
 }
 
-NPError
-_newstream(NPP aNPP,
-           NPMIMEType aMIMEType,
-           const char* aWindow,
-           NPStream** aStream)
-{
-    PLUGIN_LOG_DEBUG_FUNCTION;
-    ENSURE_PLUGIN_THREAD(NPERR_INVALID_PARAM);
-    return InstCast(aNPP)->NPN_NewStream(aMIMEType, aWindow, aStream);
-}
-
-int32_t
-_write(NPP aNPP,
-       NPStream* aStream,
-       int32_t aLength,
-       void* aBuffer)
-{
-    PLUGIN_LOG_DEBUG_FUNCTION;
-    ENSURE_PLUGIN_THREAD(0);
-
-    PluginStreamChild* ps =
-        static_cast<PluginStreamChild*>(static_cast<AStream*>(aStream->ndata));
-    ps->EnsureCorrectInstance(InstCast(aNPP));
-    ps->EnsureCorrectStream(aStream);
-    return ps->NPN_Write(aLength, aBuffer);
-}
-
-NPError
-_destroystream(NPP aNPP,
-               NPStream* aStream,
-               NPError aReason)
-{
-    PLUGIN_LOG_DEBUG_FUNCTION;
-    ENSURE_PLUGIN_THREAD(NPERR_INVALID_PARAM);
-
-    PluginInstanceChild* p = InstCast(aNPP);
-    AStream* s = static_cast<AStream*>(aStream->ndata);
-    if (s->IsBrowserStream()) {
-        BrowserStreamChild* bs = static_cast<BrowserStreamChild*>(s);
-        bs->EnsureCorrectInstance(p);
-        bs->NPN_DestroyStream(aReason);
-    }
-    else {
-        PluginStreamChild* ps = static_cast<PluginStreamChild*>(s);
-        ps->EnsureCorrectInstance(p);
-        PPluginStreamChild::Call__delete__(ps, aReason, false);
-    }
-    return NPERR_NO_ERROR;
-}
 
 void
 _status(NPP aNPP,
@@ -1594,18 +1511,6 @@ _poppopupsenabledstate(NPP aNPP)
     InstCast(aNPP)->CallNPN_PopPopupsEnabledState();
 }
 
-void
-_pluginthreadasynccall(NPP aNPP,
-                       PluginThreadCallback aFunc,
-                       void* aUserData)
-{
-    PLUGIN_LOG_DEBUG_FUNCTION;
-    if (!aFunc)
-        return;
-
-    InstCast(aNPP)->AsyncCall(aFunc, aUserData);
-}
-
 NPError
 _getvalueforurl(NPP npp, NPNURLVariable variable, const char *url,
                 char **value, uint32_t *len)
@@ -1619,9 +1524,7 @@ _getvalueforurl(NPP npp, NPNURLVariable variable, const char *url,
     if (!npp || !value || !len)
         return NPERR_INVALID_PARAM;
 
-    switch (variable) {
-    case NPNURLVCookie:
-    case NPNURLVProxy:
+    if (variable == NPNURLVProxy) {
         nsCString v;
         NPError result;
         InstCast(npp)->
@@ -1649,9 +1552,7 @@ _setvalueforurl(NPP npp, NPNURLVariable variable, const char *url,
     if (!url)
         return NPERR_INVALID_URL;
 
-    switch (variable) {
-    case NPNURLVCookie:
-    case NPNURLVProxy:
+    if (variable == NPNURLVProxy) {
         NPError result;
         InstCast(npp)->CallNPN_SetValueForURL(variable, nsCString(url),
                                               nsDependentCString(value, len),
@@ -1662,38 +1563,6 @@ _setvalueforurl(NPP npp, NPNURLVariable variable, const char *url,
     return NPERR_INVALID_PARAM;
 }
 
-NPError
-_getauthenticationinfo(NPP npp, const char *protocol,
-                       const char *host, int32_t port,
-                       const char *scheme, const char *realm,
-                       char **username, uint32_t *ulen,
-                       char **password, uint32_t *plen)
-{
-    PLUGIN_LOG_DEBUG_FUNCTION;
-    AssertPluginThread();
-
-    if (!protocol || !host || !scheme || !realm || !username || !ulen ||
-        !password || !plen)
-        return NPERR_INVALID_PARAM;
-
-    nsCString u;
-    nsCString p;
-    NPError result;
-    InstCast(npp)->
-        CallNPN_GetAuthenticationInfo(nsDependentCString(protocol),
-                                      nsDependentCString(host),
-                                      port,
-                                      nsDependentCString(scheme),
-                                      nsDependentCString(realm),
-                                      &u, &p, &result);
-    if (NPERR_NO_ERROR == result) {
-        *username = ToNewCString(u);
-        *ulen = u.Length();
-        *password = ToNewCString(p);
-        *plen = p.Length();
-    }
-    return result;
-}
 
 uint32_t
 _scheduletimer(NPP npp, uint32_t interval, NPBool repeat,
@@ -1731,7 +1600,7 @@ _popupcontextmenu(NPP instance, NPMenu* menu)
     AssertPluginThread();
 
 #ifdef MOZ_WIDGET_COCOA
-    double pluginX, pluginY; 
+    double pluginX, pluginY;
     double screenX, screenY;
 
     const NPCocoaEvent* currentEvent = InstCast(instance)->getCurrentEvent();
@@ -1755,8 +1624,8 @@ _popupcontextmenu(NPP instance, NPMenu* menu)
     if ((pluginX < 0.0) || (pluginY < 0.0))
         return NPERR_GENERIC_ERROR;
 
-    NPBool success = _convertpoint(instance, 
-                                  pluginX,  pluginY, NPCoordinateSpacePlugin, 
+    NPBool success = _convertpoint(instance,
+                                  pluginX,  pluginY, NPCoordinateSpacePlugin,
                                  &screenX, &screenY, NPCoordinateSpaceScreen);
 
     if (success) {
@@ -1776,7 +1645,7 @@ _popupcontextmenu(NPP instance, NPMenu* menu)
 }
 
 NPBool
-_convertpoint(NPP instance, 
+_convertpoint(NPP instance,
               double sourceX, double sourceY, NPCoordinateSpace sourceSpace,
               double *destX, double *destY, NPCoordinateSpace destSpace)
 {
@@ -1835,42 +1704,35 @@ _setcurrentasyncsurface(NPP instance, NPAsyncSurface *surface, NPRect *changed)
 
 //-----------------------------------------------------------------------------
 
-bool
+mozilla::ipc::IPCResult
 PluginModuleChild::RecvSettingChanged(const PluginSettings& aSettings)
 {
     mCachedSettings = aSettings;
-    return true;
+    return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 PluginModuleChild::AnswerNP_GetEntryPoints(NPError* _retval)
 {
     PLUGIN_LOG_DEBUG_METHOD;
     AssertPluginThread();
     MOZ_ASSERT(mIsChrome);
 
-#if defined(OS_LINUX) || defined(OS_BSD)
-    return true;
+#if defined(OS_LINUX) || defined(OS_BSD) || defined(OS_SOLARIS)
+    return IPC_OK();
 #elif defined(OS_WIN) || defined(OS_MACOSX)
     *_retval = mGetEntryPointsFunc(&mFunctions);
-    return true;
+    return IPC_OK();
 #else
 #  error Please implement me for your platform
 #endif
 }
 
-bool
+mozilla::ipc::IPCResult
 PluginModuleChild::AnswerNP_Initialize(const PluginSettings& aSettings, NPError* rv)
 {
     *rv = DoNP_Initialize(aSettings);
-    return true;
-}
-
-bool
-PluginModuleChild::RecvAsyncNP_Initialize(const PluginSettings& aSettings)
-{
-    NPError error = DoNP_Initialize(aSettings);
-    return SendNP_InitializeResult(error);
+    return IPC_OK();
 }
 
 NPError
@@ -1894,7 +1756,7 @@ PluginModuleChild::DoNP_Initialize(const PluginSettings& aSettings)
 #endif
 
     NPError result;
-#if defined(OS_LINUX) || defined(OS_BSD)
+#if defined(OS_LINUX) || defined(OS_BSD) || defined(OS_SOLARIS)
     result = mInitializeFunc(&sBrowserFuncs, &mFunctions);
 #elif defined(OS_WIN) || defined(OS_MACOSX)
     result = mInitializeFunc(&sBrowserFuncs);
@@ -1905,189 +1767,8 @@ PluginModuleChild::DoNP_Initialize(const PluginSettings& aSettings)
     return result;
 }
 
-#if defined(XP_WIN)
-
-// Windows 8 RTM (kernelbase's version is 6.2.9200.16384) doesn't call
-// CreateFileW from CreateFileA.
-// So we hook CreateFileA too to use CreateFileW hook.
-
-static HANDLE WINAPI
-CreateFileAHookFn(LPCSTR fname, DWORD access, DWORD share,
-                  LPSECURITY_ATTRIBUTES security, DWORD creation, DWORD flags,
-                  HANDLE ftemplate)
-{
-    while (true) { // goto out
-        // Our hook is for mms.cfg into \Windows\System32\Macromed\Flash
-        // We don't requrie supporting too long path.
-        WCHAR unicodeName[MAX_PATH];
-        size_t len = strlen(fname);
-
-        if (len >= MAX_PATH) {
-            break;
-        }
-
-        // We call to CreateFileW for workaround of Windows 8 RTM
-        int newLen = MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS, fname,
-                                         len, unicodeName, MAX_PATH);
-        if (newLen == 0 || newLen >= MAX_PATH) {
-            break;
-        }
-        unicodeName[newLen] = '\0';
-
-        return CreateFileW(unicodeName, access, share, security, creation, flags, ftemplate);
-    }
-
-    return sCreateFileAStub(fname, access, share, security, creation, flags,
-                            ftemplate);
-}
-
-static bool
-GetLocalLowTempPath(size_t aLen, LPWSTR aPath)
-{
-    NS_NAMED_LITERAL_STRING(tempname, "\\Temp");
-    LPWSTR path;
-    if (SUCCEEDED(WinUtils::SHGetKnownFolderPath(FOLDERID_LocalAppDataLow, 0,
-                                                 nullptr, &path))) {
-        if (wcslen(path) + tempname.Length() < aLen) {
-            wcscpy(aPath, path);
-            wcscat(aPath, tempname.get());
-            ::CoTaskMemFree(path);
-            return true;
-        }
-        ::CoTaskMemFree(path);
-    }
-
-    // XP doesn't support SHGetKnownFolderPath and LocalLow
-    if (!GetTempPathW(aLen, aPath)) {
-        return false;
-    }
-    return true;
-}
-
-HANDLE WINAPI
-CreateFileWHookFn(LPCWSTR fname, DWORD access, DWORD share,
-                  LPSECURITY_ATTRIBUTES security, DWORD creation, DWORD flags,
-                  HANDLE ftemplate)
-{
-    static const WCHAR kConfigFile[] = L"mms.cfg";
-    static const size_t kConfigLength = ArrayLength(kConfigFile) - 1;
-
-    while (true) { // goto out, in sheep's clothing
-        size_t len = wcslen(fname);
-        if (len < kConfigLength) {
-            break;
-        }
-        if (wcscmp(fname + len - kConfigLength, kConfigFile) != 0) {
-            break;
-        }
-
-        // This is the config file we want to rewrite
-        WCHAR tempPath[MAX_PATH+1];
-        if (GetLocalLowTempPath(MAX_PATH, tempPath) == 0) {
-            break;
-        }
-        WCHAR tempFile[MAX_PATH+1];
-        if (GetTempFileNameW(tempPath, L"fx", 0, tempFile) == 0) {
-            break;
-        }
-        HANDLE replacement =
-            sCreateFileWStub(tempFile, GENERIC_READ | GENERIC_WRITE, share,
-                             security, TRUNCATE_EXISTING,
-                             FILE_ATTRIBUTE_TEMPORARY |
-                               FILE_FLAG_DELETE_ON_CLOSE,
-                             NULL);
-        if (replacement == INVALID_HANDLE_VALUE) {
-            break;
-        }
-
-        HANDLE original = sCreateFileWStub(fname, access, share, security,
-                                           creation, flags, ftemplate);
-        if (original != INVALID_HANDLE_VALUE) {
-            // copy original to replacement
-            static const size_t kBufferSize = 1024;
-            char buffer[kBufferSize];
-            DWORD bytes;
-            while (ReadFile(original, buffer, kBufferSize, &bytes, NULL)) {
-                if (bytes == 0) {
-                    break;
-                }
-                DWORD wbytes;
-                WriteFile(replacement, buffer, bytes, &wbytes, NULL);
-                if (bytes < kBufferSize) {
-                    break;
-                }
-            }
-            CloseHandle(original);
-        }
-        static const char kSettingString[] = "\nProtectedMode=0\n";
-        DWORD wbytes;
-        WriteFile(replacement, static_cast<const void*>(kSettingString),
-                  sizeof(kSettingString) - 1, &wbytes, NULL);
-        SetFilePointer(replacement, 0, NULL, FILE_BEGIN);
-        return replacement;
-    }
-    return sCreateFileWStub(fname, access, share, security, creation, flags,
-                            ftemplate);
-}
-
-void
-PluginModuleChild::HookProtectedMode()
-{
-    sKernel32Intercept.Init("kernel32.dll");
-    sKernel32Intercept.AddHook("CreateFileW",
-                               reinterpret_cast<intptr_t>(CreateFileWHookFn),
-                               (void**) &sCreateFileWStub);
-    sKernel32Intercept.AddHook("CreateFileA",
-                               reinterpret_cast<intptr_t>(CreateFileAHookFn),
-                               (void**) &sCreateFileAStub);
-}
-
-BOOL WINAPI
-PMCGetWindowInfoHook(HWND hWnd, PWINDOWINFO pwi)
-{
-  if (!pwi)
-      return FALSE;
-
-  if (!sGetWindowInfoPtrStub) {
-     NS_ASSERTION(FALSE, "Something is horribly wrong in PMCGetWindowInfoHook!");
-     return FALSE;
-  }
-
-  if (!sBrowserHwnd) {
-      wchar_t szClass[20];
-      if (GetClassNameW(hWnd, szClass, ArrayLength(szClass)) &&
-          !wcscmp(szClass, kMozillaWindowClass)) {
-          sBrowserHwnd = hWnd;
-      }
-  }
-  // Oddity: flash does strange rect comparisons for mouse input destined for
-  // it's internal settings window. Post removing sub widgets for tabs, touch
-  // this up so they get the rect they expect.
-  // XXX potentially tie this to a specific major version?
-  BOOL result = sGetWindowInfoPtrStub(hWnd, pwi);
-  if (sBrowserHwnd && sBrowserHwnd == hWnd)
-      pwi->rcWindow = pwi->rcClient;
-  return result;
-}
-
-// static
-SHORT WINAPI
-PMCGetKeyState(int aVirtKey)
-{
-    PluginModuleChild* chromeInstance = PluginModuleChild::GetChrome();
-    if (chromeInstance) {
-        int16_t ret = 0;
-        if (chromeInstance->CallGetKeyState(aVirtKey, &ret)) {
-          return ret;
-        }
-    }
-    return sGetKeyStatePtrStub(aVirtKey);
-}
-#endif
-
 PPluginInstanceChild*
 PluginModuleChild::AllocPPluginInstanceChild(const nsCString& aMimeType,
-                                             const uint16_t& aMode,
                                              const InfallibleTArray<nsCString>& aNames,
                                              const InfallibleTArray<nsCString>& aValues)
 {
@@ -2103,21 +1784,10 @@ PluginModuleChild::AllocPPluginInstanceChild(const nsCString& aMimeType,
     mQuirks = GetChrome()->mQuirks;
 
 #ifdef XP_WIN
-    sUser32Intercept.Init("user32.dll");
-    if ((mQuirks & QUIRK_FLASH_HOOK_GETWINDOWINFO) &&
-        !sGetWindowInfoPtrStub) {
-        sUser32Intercept.AddHook("GetWindowInfo", reinterpret_cast<intptr_t>(PMCGetWindowInfoHook),
-                                 (void**) &sGetWindowInfoPtrStub);
-    }
-
-    if ((mQuirks & QUIRK_FLASH_HOOK_GETKEYSTATE) &&
-        !sGetKeyStatePtrStub) {
-        sUser32Intercept.AddHook("GetKeyState", reinterpret_cast<intptr_t>(PMCGetKeyState),
-                                 (void**) &sGetKeyStatePtrStub);
-    }
+    FunctionHook::HookFunctions(mQuirks);
 #endif
 
-    return new PluginInstanceChild(&mFunctions, aMimeType, aMode, aNames,
+    return new PluginInstanceChild(&mFunctions, aMimeType, aNames,
                                    aValues);
 }
 
@@ -2131,22 +1801,21 @@ PluginModuleChild::InitQuirksModes(const nsCString& aMimeType)
     mQuirks = GetQuirksFromMimeTypeAndFilename(aMimeType, mPluginFilename);
 }
 
-bool
+mozilla::ipc::IPCResult
 PluginModuleChild::AnswerModuleSupportsAsyncRender(bool* aResult)
 {
 #if defined(XP_WIN)
     *aResult = gChromeInstance->mAsyncRenderSupport;
-    return true;
+    return IPC_OK();
 #else
     NS_NOTREACHED("Shouldn't get here!");
-    return false;
+    return IPC_FAIL_NO_REASON(this);
 #endif
 }
 
-bool
+mozilla::ipc::IPCResult
 PluginModuleChild::RecvPPluginInstanceConstructor(PPluginInstanceChild* aActor,
                                                   const nsCString& aMimeType,
-                                                  const uint16_t& aMode,
                                                   InfallibleTArray<nsCString>&& aNames,
                                                   InfallibleTArray<nsCString>&& aValues)
 {
@@ -2154,10 +1823,10 @@ PluginModuleChild::RecvPPluginInstanceConstructor(PPluginInstanceChild* aActor,
     AssertPluginThread();
 
     NS_ASSERTION(aActor, "Null actor!");
-    return true;
+    return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 PluginModuleChild::AnswerSyncNPP_New(PPluginInstanceChild* aActor, NPError* rv)
 {
     PLUGIN_LOG_DEBUG_METHOD;
@@ -2165,52 +1834,7 @@ PluginModuleChild::AnswerSyncNPP_New(PPluginInstanceChild* aActor, NPError* rv)
         reinterpret_cast<PluginInstanceChild*>(aActor);
     AssertPluginThread();
     *rv = childInstance->DoNPP_New();
-    return true;
-}
-
-class AsyncNewResultSender : public ChildAsyncCall
-{
-public:
-    AsyncNewResultSender(PluginInstanceChild* aInstance, NPError aResult)
-        : ChildAsyncCall(aInstance, nullptr, nullptr)
-        , mResult(aResult)
-    {
-    }
-
-    NS_IMETHOD Run() override
-    {
-        RemoveFromAsyncList();
-        DebugOnly<bool> sendOk = mInstance->SendAsyncNPP_NewResult(mResult);
-        MOZ_ASSERT(sendOk);
-        return NS_OK;
-    }
-
-private:
-    NPError  mResult;
-};
-
-static void
-RunAsyncNPP_New(void* aChildInstance)
-{
-    MOZ_ASSERT(aChildInstance);
-    PluginInstanceChild* childInstance =
-        static_cast<PluginInstanceChild*>(aChildInstance);
-    NPError rv = childInstance->DoNPP_New();
-    RefPtr<AsyncNewResultSender> task =
-        new AsyncNewResultSender(childInstance, rv);
-    childInstance->PostChildAsyncCall(task.forget());
-}
-
-bool
-PluginModuleChild::RecvAsyncNPP_New(PPluginInstanceChild* aActor)
-{
-    PLUGIN_LOG_DEBUG_METHOD;
-    PluginInstanceChild* childInstance =
-        reinterpret_cast<PluginInstanceChild*>(aActor);
-    AssertPluginThread();
-    // We don't want to run NPP_New async from within nested calls
-    childInstance->AsyncCall(&RunAsyncNPP_New, childInstance);
-    return true;
+    return IPC_OK();
 }
 
 bool
@@ -2276,7 +1900,7 @@ PluginModuleChild::NPN_ReleaseObject(NPObject* aNPObj)
 
     PluginInstanceChild* instance = PluginScriptableObjectChild::GetInstanceForNPObject(aNPObj);
     if (!instance) {
-        NS_ERROR("Releasing object not in mObjectMap?");
+        // The PluginInstanceChild was destroyed
         return;
     }
 
@@ -2299,7 +1923,6 @@ PluginModuleChild::NPN_ReleaseObject(NPObject* aNPObj)
         if (doe)
             doe->mDeleted = true;
     }
-    return;
 }
 
 void
@@ -2343,7 +1966,7 @@ PluginModuleChild::NPN_GetStringIdentifiers(const NPUTF8** aNames,
     AssertPluginThread();
 
     if (!(aNames && aNameCount > 0 && aIdentifiers)) {
-        NS_RUNTIMEABORT("Bad input! Headed for a crash!");
+        MOZ_CRASH("Bad input! Headed for a crash!");
     }
 
     for (int32_t index = 0; index < aNameCount; ++index) {
@@ -2503,65 +2126,80 @@ PluginModuleChild::ResetEventHooks()
 }
 #endif
 
-bool
+mozilla::ipc::IPCResult
 PluginModuleChild::RecvProcessNativeEventsInInterruptCall()
 {
     PLUGIN_LOG_DEBUG(("%s", FULLFUNCTION));
 #if defined(OS_WIN)
     ProcessNativeEventsInInterruptCall();
-    return true;
+    return IPC_OK();
 #else
-    NS_RUNTIMEABORT(
+    MOZ_CRASH(
         "PluginModuleChild::RecvProcessNativeEventsInInterruptCall not implemented!");
-    return false;
+    return IPC_FAIL_NO_REASON(this);
 #endif
 }
 
 #ifdef MOZ_WIDGET_COCOA
 void
 PluginModuleChild::ProcessNativeEvents() {
-    CallProcessSomeEvents();    
+    CallProcessSomeEvents();
 }
 #endif
 
-bool
-PluginModuleChild::RecvStartProfiler(const ProfilerInitParams& params)
+NPError
+PluginModuleChild::PluginRequiresAudioDeviceChanges(
+                          PluginInstanceChild* aInstance,
+                          NPBool aShouldRegister)
 {
-    nsTArray<const char*> featureArray;
-    for (size_t i = 0; i < params.features().Length(); ++i) {
-        featureArray.AppendElement(params.features()[i].get());
+#ifdef XP_WIN
+    // Maintain a set of PluginInstanceChildren that we need to tell when the
+    // default audio device has changed.
+    NPError rv = NPERR_NO_ERROR;
+    if (aShouldRegister) {
+        if (mAudioNotificationSet.IsEmpty()) {
+            // We are registering the first plugin.  Notify the PluginModuleParent
+            // that it needs to start sending us audio device notifications.
+            if (!CallNPN_SetValue_NPPVpluginRequiresAudioDeviceChanges(
+                                                      aShouldRegister, &rv)) {
+                return NPERR_GENERIC_ERROR;
+            }
+        }
+        if (rv == NPERR_NO_ERROR) {
+            mAudioNotificationSet.PutEntry(aInstance);
+        }
     }
-
-    nsTArray<const char*> threadNameFilterArray;
-    for (size_t i = 0; i < params.threadFilters().Length(); ++i) {
-        threadNameFilterArray.AppendElement(params.threadFilters()[i].get());
+    else if (!mAudioNotificationSet.IsEmpty()) {
+        mAudioNotificationSet.RemoveEntry(aInstance);
+        if (mAudioNotificationSet.IsEmpty()) {
+            // We released the last plugin.  Unregister from the PluginModuleParent.
+            if (!CallNPN_SetValue_NPPVpluginRequiresAudioDeviceChanges(
+    	      	                                        aShouldRegister, &rv)) {
+                return NPERR_GENERIC_ERROR;
+            }
+        }
     }
-
-    profiler_start(params.entries(), params.interval(),
-                   featureArray.Elements(), featureArray.Length(),
-                   threadNameFilterArray.Elements(), threadNameFilterArray.Length());
-
-    return true;
+    return rv;
+#else
+    MOZ_CRASH("PluginRequiresAudioDeviceChanges is not available on this platform.");
+#endif // XP_WIN
 }
 
-bool
-PluginModuleChild::RecvStopProfiler()
+mozilla::ipc::IPCResult
+PluginModuleChild::RecvNPP_SetValue_NPNVaudioDeviceChangeDetails(
+                              const NPAudioDeviceChangeDetailsIPC& detailsIPC)
 {
-    profiler_stop();
-    return true;
-}
-
-bool
-PluginModuleChild::RecvGatherProfile()
-{
-    nsCString profileCString;
-    UniquePtr<char[]> profile = profiler_get_profile();
-    if (profile != nullptr) {
-        profileCString = nsCString(profile.get(), strlen(profile.get()));
-    } else {
-        profileCString = nsCString("", 0);
+#if defined(XP_WIN)
+    NPAudioDeviceChangeDetails details;
+    details.flow = detailsIPC.flow;
+    details.role = detailsIPC.role;
+    details.defaultDevice = detailsIPC.defaultDevice.c_str();
+    for (auto iter = mAudioNotificationSet.ConstIter(); !iter.Done(); iter.Next()) {
+      PluginInstanceChild* pluginInst = iter.Get()->GetKey();
+      pluginInst->DefaultAudioDeviceChanged(details);
     }
-
-    Unused << SendProfile(profileCString);
-    return true;
+    return IPC_OK();
+#else
+    MOZ_CRASH("NPP_SetValue_NPNVaudioDeviceChangeDetails is a Windows-only message");
+#endif
 }

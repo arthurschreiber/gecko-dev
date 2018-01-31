@@ -28,13 +28,11 @@ add_task(function* () {
 
 function* testImageTooltipAfterColorChange(swatch, url, ruleView) {
   info("First, verify that the image preview tooltip works");
-  let anchor = yield isHoverTooltipTarget(ruleView.tooltips.previewTooltip,
-                                          url);
-  ok(anchor, "The image preview tooltip is shown on the url span");
-  is(anchor, url, "The anchor returned by the showOnHover callback is correct");
+  let previewTooltip = yield assertShowPreviewTooltip(ruleView, url);
+  yield assertTooltipHiddenOnMouseOut(previewTooltip, url);
 
   info("Open the color picker tooltip and change the color");
-  let picker = ruleView.tooltips.colorPicker;
+  let picker = ruleView.tooltips.getTooltip("colorPicker");
   let onColorPickerReady = picker.once("ready");
   swatch.click();
   yield onColorPickerReady;
@@ -48,7 +46,7 @@ function* testImageTooltipAfterColorChange(swatch, url, ruleView) {
   let spectrum = picker.spectrum;
   let onHidden = picker.tooltip.once("hidden");
   let onModifications = ruleView.once("ruleview-changed");
-  EventUtils.sendKey("RETURN", spectrum.element.ownerDocument.defaultView);
+  focusAndSendKey(spectrum.element.ownerDocument.defaultView, "RETURN");
   yield onHidden;
   yield onModifications;
 
@@ -57,7 +55,7 @@ function* testImageTooltipAfterColorChange(swatch, url, ruleView) {
   // dom node
   url = getRuleViewProperty(ruleView, "body", "background").valueSpan
     .querySelector(".theme-link");
-  anchor = yield isHoverTooltipTarget(ruleView.tooltips.previewTooltip, url);
-  ok(anchor, "The image preview tooltip is shown on the url span");
-  is(anchor, url, "The anchor returned by the showOnHover callback is correct");
+  previewTooltip = yield assertShowPreviewTooltip(ruleView, url);
+
+  yield assertTooltipHiddenOnMouseOut(previewTooltip, url);
 }

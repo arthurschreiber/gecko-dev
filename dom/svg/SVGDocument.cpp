@@ -19,9 +19,8 @@
 #include "nsIDOMSVGElement.h"
 #include "mozilla/dom/Element.h"
 #include "nsSVGElement.h"
-#include "mozilla/dom/SVGDocumentBinding.h"
-#include "mozilla/StyleSheetHandle.h"
-#include "mozilla/StyleSheetHandleInlines.h"
+#include "mozilla/StyleSheet.h"
+#include "mozilla/StyleSheetInlines.h"
 
 using namespace mozilla::css;
 using namespace mozilla::dom;
@@ -35,63 +34,49 @@ namespace dom {
 //----------------------------------------------------------------------
 // nsISupports methods:
 
-void
-SVGDocument::GetDomain(nsAString& aDomain, ErrorResult& aRv)
-{
-  SetDOMStringToNull(aDomain);
-
-  if (mDocumentURI) {
-    nsAutoCString domain;
-    nsresult rv = mDocumentURI->GetHost(domain);
-    if (NS_FAILED(rv)) {
-      aRv.Throw(rv);
-      return;
-    }
-    if (domain.IsEmpty()) {
-      return;
-    }
-    CopyUTF8toUTF16(domain, aDomain);
-  }
-}
-
-nsSVGElement*
-SVGDocument::GetRootElement(ErrorResult& aRv)
-{
-  Element* root = nsDocument::GetRootElement();
-  if (!root) {
-    return nullptr;
-  }
-  if (!root->IsSVGElement()) {
-    aRv.Throw(NS_NOINTERFACE);
-    return nullptr;
-  }
-  return static_cast<nsSVGElement*>(root);
-}
-
 nsresult
-SVGDocument::InsertChildAt(nsIContent* aKid, uint32_t aIndex, bool aNotify)
+SVGDocument::InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
+                               bool aNotify)
 {
   if (aKid->IsElement() && !aKid->IsSVGElement()) {
     // We can get here when well formed XML with a non-SVG root element is
     // served with the SVG MIME type, for example. In that case we need to load
     // the non-SVG UA sheets or else we can get bugs like bug 1016145.  Note
-    // that we have to do this _before_ the XMLDocument::InsertChildAt call,
+    // that we have to do this _before_ the XMLDocument::InsertChildBefore,
     // since that can try to construct frames, and we need to have the sheets
     // loaded by then.
     EnsureNonSVGUserAgentStyleSheetsLoaded();
   }
 
-  return XMLDocument::InsertChildAt(aKid, aIndex, aNotify);
+  return XMLDocument::InsertChildBefore(aKid, aBeforeThis, aNotify);
 }
 
 nsresult
-SVGDocument::Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const
+SVGDocument::InsertChildAt_Deprecated(nsIContent* aKid, uint32_t aIndex,
+                                      bool aNotify)
+{
+  if (aKid->IsElement() && !aKid->IsSVGElement()) {
+    // We can get here when well formed XML with a non-SVG root element is
+    // served with the SVG MIME type, for example. In that case we need to load
+    // the non-SVG UA sheets or else we can get bugs like bug 1016145.  Note
+    // that we have to do this _before_ the
+    // XMLDocument::InsertChildAt_Deprecated call, since that can try to
+    // construct frames, and we need to have the sheets loaded by then.
+    EnsureNonSVGUserAgentStyleSheetsLoaded();
+  }
+
+  return XMLDocument::InsertChildAt_Deprecated(aKid, aIndex, aNotify);
+}
+
+nsresult
+SVGDocument::Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult,
+                   bool aPreallocateChildren) const
 {
   NS_ASSERTION(aNodeInfo->NodeInfoManager() == mNodeInfoManager,
                "Can't import this document into another document!");
 
   RefPtr<SVGDocument> clone = new SVGDocument();
-  nsresult rv = CloneDocHelper(clone.get());
+  nsresult rv = CloneDocHelper(clone.get(), aPreallocateChildren);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return CallQueryInterface(clone.get(), aResult);
@@ -148,7 +133,7 @@ SVGDocument::EnsureNonSVGUserAgentStyleSheetsLoaded()
           nsAutoCString name;
           icStr->GetData(name);
 
-          nsXPIDLCString spec;
+          nsCString spec;
           catMan->GetCategoryEntry("agent-style-sheets", name.get(),
                                    getter_Copies(spec));
 
@@ -157,7 +142,7 @@ SVGDocument::EnsureNonSVGUserAgentStyleSheetsLoaded()
             nsCOMPtr<nsIURI> uri;
             NS_NewURI(getter_AddRefs(uri), spec);
             if (uri) {
-              StyleSheetHandle::RefPtr sheet;
+              RefPtr<StyleSheet> sheet;
               cssLoader->LoadSheetSync(uri,
                                        mozilla::css::eAgentSheetFeatures,
                                        true, &sheet);
@@ -173,7 +158,7 @@ SVGDocument::EnsureNonSVGUserAgentStyleSheetsLoaded()
 
   auto cache = nsLayoutStylesheetCache::For(GetStyleBackendType());
 
-  StyleSheetHandle sheet = cache->NumberControlSheet();
+  StyleSheet* sheet = cache->NumberControlSheet();
   if (sheet) {
     // number-control.css can be behind a pref
     EnsureOnDemandBuiltInUASheet(sheet);
@@ -190,12 +175,6 @@ SVGDocument::EnsureNonSVGUserAgentStyleSheetsLoaded()
   EnsureOnDemandBuiltInUASheet(cache->UASheet());
 
   EndUpdate(UPDATE_STYLE);
-}
-
-JSObject*
-SVGDocument::WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto)
-{
-  return SVGDocumentBinding::Wrap(aCx, this, aGivenProto);
 }
 
 } // namespace dom

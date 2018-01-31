@@ -54,13 +54,12 @@ DocAccessibleChildBase::SerializeTree(Accessible* aRoot,
                                       nsTArray<AccessibleData>& aTree)
 {
   uint64_t id = reinterpret_cast<uint64_t>(aRoot->UniqueID());
+#if defined(XP_WIN)
+  int32_t msaaId = AccessibleWrap::GetChildIDFor(aRoot);
+#endif
   uint32_t role = aRoot->Role();
   uint32_t childCount = aRoot->ChildCount();
   uint32_t interfaces = InterfacesFor(aRoot);
-
-#if defined(XP_WIN)
-  IAccessibleHolder holder(CreateHolderFromAccessible(aRoot));
-#endif
 
   // OuterDocAccessibles are special because we don't want to serialize the
   // child doc here, we'll call PDocAccessibleConstructor in
@@ -71,8 +70,7 @@ DocAccessibleChildBase::SerializeTree(Accessible* aRoot,
   }
 
 #if defined(XP_WIN)
-  aTree.AppendElement(AccessibleData(id, role, childCount, interfaces,
-                                     holder));
+  aTree.AppendElement(AccessibleData(id, msaaId, role, childCount, interfaces));
 #else
   aTree.AppendElement(AccessibleData(id, role, childCount, interfaces));
 #endif
@@ -83,15 +81,28 @@ DocAccessibleChildBase::SerializeTree(Accessible* aRoot,
 }
 
 void
+DocAccessibleChildBase::InsertIntoIpcTree(Accessible* aParent,
+                                          Accessible* aChild,
+                                          uint32_t aIdxInParent)
+{
+  uint64_t parentID = aParent->IsDoc() ?
+    0 : reinterpret_cast<uint64_t>(aParent->UniqueID());
+  nsTArray<AccessibleData> shownTree;
+  ShowEventData data(parentID, aIdxInParent, shownTree, true);
+  SerializeTree(aChild, data.NewTree());
+  MaybeSendShowEvent(data, false);
+}
+
+void
 DocAccessibleChildBase::ShowEvent(AccShowEvent* aShowEvent)
 {
   Accessible* parent = aShowEvent->Parent();
   uint64_t parentID = parent->IsDoc() ? 0 : reinterpret_cast<uint64_t>(parent->UniqueID());
-  uint32_t idxInParent = aShowEvent->InsertionIndex();
+  uint32_t idxInParent = aShowEvent->GetAccessible()->IndexInParent();
   nsTArray<AccessibleData> shownTree;
-  ShowEventData data(parentID, idxInParent, shownTree);
+  ShowEventData data(parentID, idxInParent, shownTree, false);
   SerializeTree(aShowEvent->GetAccessible(), data.NewTree());
-  SendShowEvent(data, aShowEvent->IsFromUserInput());
+  MaybeSendShowEvent(data, aShowEvent->IsFromUserInput());
 }
 
 } // namespace a11y

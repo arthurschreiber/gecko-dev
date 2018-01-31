@@ -19,17 +19,21 @@ class MediaEngineTabVideoSource : public MediaEngineVideoSource, nsIDOMEventList
     NS_DECL_NSITIMERCALLBACK
     MediaEngineTabVideoSource();
 
-    void GetName(nsAString_internal&) const override;
-    void GetUUID(nsACString_internal&) const override;
+    void GetName(nsAString&) const override;
+    void GetUUID(nsACString&) const override;
+
+    bool GetScary() const override {
+      return true;
+    }
+
     nsresult Allocate(const dom::MediaTrackConstraints &,
                       const mozilla::MediaEnginePrefs&,
                       const nsString& aDeviceId,
-                      const nsACString& aOrigin,
+                      const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
                       AllocationHandle** aOutHandle,
                       const char** aOutBadConstraint) override;
     nsresult Deallocate(AllocationHandle* aHandle) override;
     nsresult Start(mozilla::SourceMediaStream*, mozilla::TrackID, const mozilla::PrincipalHandle&) override;
-    void SetDirectListeners(bool aHasDirectListeners) override {};
     void NotifyPull(mozilla::MediaStreamGraph*, mozilla::SourceMediaStream*, mozilla::TrackID, mozilla::StreamTime, const mozilla::PrincipalHandle& aPrincipalHandle) override;
     nsresult Stop(mozilla::SourceMediaStream*, mozilla::TrackID) override;
     nsresult Restart(AllocationHandle* aHandle,
@@ -57,22 +61,41 @@ class MediaEngineTabVideoSource : public MediaEngineVideoSource, nsIDOMEventList
 
     class StartRunnable : public Runnable {
     public:
-      explicit StartRunnable(MediaEngineTabVideoSource *videoSource) : mVideoSource(videoSource) {}
-      NS_IMETHOD Run();
+      explicit StartRunnable(MediaEngineTabVideoSource *videoSource)
+        : Runnable("MediaEngineTabVideoSource::StartRunnable")
+        , mVideoSource(videoSource)
+      {}
+      NS_IMETHOD Run() override;
       RefPtr<MediaEngineTabVideoSource> mVideoSource;
     };
 
     class StopRunnable : public Runnable {
     public:
-      explicit StopRunnable(MediaEngineTabVideoSource *videoSource) : mVideoSource(videoSource) {}
-      NS_IMETHOD Run();
+      explicit StopRunnable(MediaEngineTabVideoSource *videoSource)
+        : Runnable("MediaEngineTabVideoSource::StopRunnable")
+        , mVideoSource(videoSource)
+      {}
+      NS_IMETHOD Run() override;
       RefPtr<MediaEngineTabVideoSource> mVideoSource;
     };
 
     class InitRunnable : public Runnable {
     public:
-      explicit InitRunnable(MediaEngineTabVideoSource *videoSource) : mVideoSource(videoSource) {}
-      NS_IMETHOD Run();
+      explicit InitRunnable(MediaEngineTabVideoSource *videoSource)
+        : Runnable("MediaEngineTabVideoSource::InitRunnable")
+        , mVideoSource(videoSource)
+      {}
+      NS_IMETHOD Run() override;
+      RefPtr<MediaEngineTabVideoSource> mVideoSource;
+    };
+
+    class DestroyRunnable : public Runnable {
+    public:
+      explicit DestroyRunnable(MediaEngineTabVideoSource* videoSource)
+        : Runnable("MediaEngineTabVideoSource::DestroyRunnable")
+        , mVideoSource(videoSource)
+      {}
+      NS_IMETHOD Run() override;
       RefPtr<MediaEngineTabVideoSource> mVideoSource;
     };
 

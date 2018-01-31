@@ -16,7 +16,7 @@
 
 using namespace js;
 
-#ifdef IS_LITTLE_ENDIAN
+#if MOZ_LITTLE_ENDIAN
 #define IEEE_8087
 #else
 #define IEEE_MC68k
@@ -73,13 +73,9 @@ static const uint8_t dtoaModes[] = {
     2};  /* DTOSTR_PRECISION */
 
 double
-js_strtod_harder(DtoaState* state, const char* s00, char** se, int* err)
+js_strtod_harder(DtoaState* state, const char* s00, char** se)
 {
-    double retval;
-    if (err)
-        *err = 0;
-    retval = _strtod(state, s00, se);
-    return retval;
+    return _strtod(state, s00, se);
 }
 
 char*

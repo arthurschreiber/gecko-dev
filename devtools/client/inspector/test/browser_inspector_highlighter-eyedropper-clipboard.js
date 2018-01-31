@@ -23,10 +23,10 @@ add_task(function* () {
   info("Make sure to wait until the eyedropper is done taking a screenshot of the page");
   yield waitForElementAttributeSet("root", "drawn", helper);
 
-  yield waitForClipboard(() => {
+  yield waitForClipboardPromise(() => {
     info("Activate the eyedropper so the background color is copied");
     EventUtils.synthesizeKey("VK_RETURN", {});
-  }, "#FF0000");
+  }, "#ff0000");
 
   ok(true, "The clipboard contains the right value");
 

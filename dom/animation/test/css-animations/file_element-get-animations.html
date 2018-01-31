@@ -11,6 +11,12 @@
 @keyframes multiPropAnim {
   to { background: green, opacity: 0.5, left: 100px, top: 100px }
 }
+::before {
+  content: ''
+}
+::after {
+  content: ''
+}
 @keyframes empty { }
 </style>
 <body>
@@ -83,7 +89,7 @@ promise_test(function(t) {
   // Add an animation
   div.style.backgroundColor = 'red';
   div.style.animation = 'anim1 100s';
-  window.getComputedStyle(div).backgroundColor;
+  getComputedStyle(div).backgroundColor;
 
   // Wait until a frame after the animation starts, then add a transition
   var animations = div.getAnimations();
@@ -235,7 +241,7 @@ test(function(t) {
   // Update pause state (an Animation change)
   div.style.animationPlayState = 'paused';
   var pendingAnimation = div.getAnimations()[0];
-  assert_equals(pendingAnimation.playState, 'pending',
+  assert_equals(pendingAnimation.playState, 'paused',
                 'animation\'s play state is updated');
   assert_equals(originalAnimation, pendingAnimation,
                 'getAnimations returns the same objects even when their'

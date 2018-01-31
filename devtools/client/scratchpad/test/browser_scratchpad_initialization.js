@@ -9,14 +9,12 @@ function test()
   waitForExplicitFinish();
 
   Services.prefs.setBoolPref(DEVTOOLS_CHROME_ENABLED, false);
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.selectedBrowser.addEventListener("load", function onLoad() {
-    gBrowser.selectedBrowser.removeEventListener("load", onLoad, true);
-
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(function () {
     openScratchpad(runTests);
-  }, true);
+  });
 
-  content.location = "data:text/html,initialization test for Scratchpad";
+  gBrowser.loadURI("data:text/html,initialization test for Scratchpad");
 }
 
 function runTests()

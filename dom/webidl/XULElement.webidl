@@ -4,17 +4,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-interface MozControllers;
-interface MozFrameLoader;
-interface MozRDFCompositeDataSource;
-interface MozRDFResource;
-interface MozXULTemplateBuilder;
+interface XULControllers;
 
-[Func="IsChromeOrXBL"]
+[HTMLConstructor, Func="IsChromeOrXBL"]
 interface XULElement : Element {
-  [SetterThrows]
-  attribute DOMString className;
-
   // Layout properties
   [SetterThrows]
   attribute DOMString align;
@@ -73,26 +66,20 @@ interface XULElement : Element {
   [SetterThrows]
   attribute DOMString top;
 
-  // XUL Template Builder
-  [SetterThrows]
-  attribute DOMString datasources;
-  [SetterThrows]
-  attribute DOMString ref;
-
   // Tooltip and status info
   [SetterThrows]
   attribute DOMString tooltipText;
   [SetterThrows]
   attribute DOMString statusText;
 
+  // Properties for images
+  [SetterThrows]
+  attribute DOMString src;
+
   attribute boolean allowEvents;
 
-  readonly attribute MozRDFCompositeDataSource? database;
-  readonly attribute MozXULTemplateBuilder?     builder;
-  [Throws]
-  readonly attribute MozRDFResource?            resource;
-  [Throws]
-  readonly attribute MozControllers             controllers;
+  [Throws, ChromeOnly]
+  readonly attribute XULControllers             controllers;
   [Throws]
   readonly attribute BoxObject?                 boxObject;
 
@@ -100,7 +87,7 @@ interface XULElement : Element {
   void                      focus();
   [Throws]
   void                      blur();
-  [Throws]
+  [NeedsCallerType]
   void                      click();
   void                      doCommand();
 
@@ -120,10 +107,10 @@ interface XULElement : Element {
 [NoInterfaceObject]
 interface MozFrameLoaderOwner {
   [ChromeOnly]
-  readonly attribute MozFrameLoader? frameLoader;
+  readonly attribute FrameLoader? frameLoader;
 
-  [ChromeOnly]
-  void setIsPrerendered();
+  [ChromeOnly, Throws]
+  void presetOpenerWindow(WindowProxy? window);
 
   [ChromeOnly, Throws]
   void swapFrameLoaders(XULElement aOtherLoaderOwner);

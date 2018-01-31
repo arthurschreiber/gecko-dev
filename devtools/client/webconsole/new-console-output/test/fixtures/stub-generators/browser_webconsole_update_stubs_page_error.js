@@ -5,45 +5,11 @@
 
 "use strict";
 
-Cu.import("resource://gre/modules/osfile.jsm");
-const TEST_URI = "data:text/html;charset=utf-8,stub generation";
-
-const { pageError: snippets} = require("devtools/client/webconsole/new-console-output/test/fixtures/stub-generators/stub-snippets.js");
-
-let stubs = {
-  preparedMessages: [],
-  packets: [],
-};
+Cu.import("resource://gre/modules/osfile.jsm", {});
 
 add_task(function* () {
-  let toolbox = yield openNewTabAndToolbox(TEST_URI, "webconsole");
-  ok(true, "make the test not fail");
-
-  for (var [key,code] of snippets) {
-    let received = new Promise(resolve => {
-      toolbox.target.client.addListener("pageError", function onPacket(e, packet) {
-        toolbox.target.client.removeListener("pageError", onPacket);
-        info("Received page error:" + e + " " + JSON.stringify(packet, null, "\t"));
-
-        let message = prepareMessage(packet, {getNextId: () => 1});
-        stubs.packets.push(formatPacket(message.messageText, packet));
-        stubs.preparedMessages.push(formatStub(message.messageText, packet));
-        resolve();
-      });
-    });
-
-    info("Injecting script: " + code);
-
-    yield ContentTask.spawn(gBrowser.selectedBrowser, code, function(code) {
-      let container = content.document.createElement("script");
-      content.document.body.appendChild(container);
-      container.textContent = code;
-      content.document.body.removeChild(container);
-    });
-
-    yield received;
-  }
-
+  let fileContent = yield generatePageErrorStubs();
   let filePath = OS.Path.join(`${BASE_PATH}/stubs`, "pageError.js");
-  OS.File.writeAtomic(filePath, formatFile(stubs));
+  yield OS.File.writeAtomic(filePath, fileContent);
+  ok(true, "Make the test not fail");
 });

@@ -4,34 +4,39 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files("**"):
+    BUG_COMPONENT = ("Core", "XUL")
+
 MOCHITEST_MANIFESTS += ['test/mochitest.ini']
 
 MOCHITEST_CHROME_MANIFESTS += ['test/chrome.ini']
 
 if CONFIG['MOZ_XUL']:
-    DIRS += ['templates']
-
     XPIDL_SOURCES += [
         'nsIXULOverlayProvider.idl',
     ]
 
     EXPORTS += [
         'nsIXULDocument.h',
+        'nsXULElement.h',
     ]
 
     UNIFIED_SOURCES += [
         'nsXULCommandDispatcher.cpp',
         'nsXULContentSink.cpp',
+        'nsXULContentUtils.cpp',
         'nsXULElement.cpp',
         'nsXULPopupListener.cpp',
         'nsXULPrototypeCache.cpp',
         'nsXULPrototypeDocument.cpp',
+        'nsXULSortService.cpp',
         'XULDocument.cpp',
     ]
 
 XPIDL_SOURCES += [
     'nsIController.idl',
     'nsIControllers.idl',
+    'nsIXULSortService.idl',
 ]
 
 XPIDL_MODULE = 'xul'
@@ -46,7 +51,6 @@ LOCAL_INCLUDES += [
     '/dom/html',
     '/dom/xbl',
     '/dom/xml',
-    '/dom/xul/templates',
     '/layout/base',
     '/layout/generic',
     '/layout/style',
@@ -55,5 +59,5 @@ LOCAL_INCLUDES += [
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

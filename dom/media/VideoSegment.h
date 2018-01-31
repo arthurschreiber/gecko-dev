@@ -29,7 +29,8 @@ public:
   {
     return mIntrinsicSize == aFrame.mIntrinsicSize &&
            mForceBlack == aFrame.mForceBlack &&
-           ((mForceBlack && aFrame.mForceBlack) || mImage == aFrame.mImage);
+           ((mForceBlack && aFrame.mForceBlack) || mImage == aFrame.mImage) &&
+           mPrincipalHandle == aFrame.mPrincipalHandle;
   }
   bool operator!=(const VideoFrame& aFrame) const
   {
@@ -61,8 +62,6 @@ protected:
 };
 
 struct VideoChunk {
-  VideoChunk();
-  ~VideoChunk();
   void SliceTo(StreamTime aStart, StreamTime aEnd)
   {
     NS_ASSERTION(aStart >= 0 && aStart < aEnd && aEnd <= mDuration,
@@ -103,6 +102,11 @@ public:
   typedef mozilla::gfx::IntSize IntSize;
 
   VideoSegment();
+  VideoSegment(VideoSegment&& aSegment);
+
+  VideoSegment(const VideoSegment&)=delete;
+  VideoSegment& operator= (const VideoSegment&)=delete;
+
   ~VideoSegment();
 
   void AppendFrame(already_AddRefed<Image>&& aImage,

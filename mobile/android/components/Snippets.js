@@ -4,14 +4,14 @@
 
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
-Cu.import("resource://gre/modules/Accounts.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Accounts.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "Home", "resource://gre/modules/Home.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task", "resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "UITelemetry", "resource://gre/modules/UITelemetry.jsm");
+ChromeUtils.defineModuleGetter(this, "Home", "resource://gre/modules/Home.jsm");
+ChromeUtils.defineModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
+ChromeUtils.defineModuleGetter(this, "Task", "resource://gre/modules/Task.jsm");
+ChromeUtils.defineModuleGetter(this, "UITelemetry", "resource://gre/modules/UITelemetry.jsm");
 
 
 XPCOMUtils.defineLazyGetter(this, "gEncoder", function() { return new gChromeWin.TextEncoder(); });
@@ -140,7 +140,7 @@ function updateSnippets() {
 function cacheSnippets(response) {
   let data = gEncoder.encode(response);
   let promise = OS.File.writeAtomic(gSnippetsPath, data, { tmpPath: gSnippetsPath + ".tmp" });
-  promise.then(null, e => Cu.reportError("Error caching snippets: " + e));
+  promise.catch(e => Cu.reportError("Error caching snippets: " + e));
 }
 
 /**
@@ -257,7 +257,7 @@ function removeSnippet(messageId, snippetId) {
 function writeStat(snippetId, timestamp) {
   let data = gEncoder.encode(snippetId + "," + timestamp + ";");
 
-  Task.spawn(function() {
+  Task.spawn(function*() {
     try {
       let file = yield OS.File.open(gStatsPath, { append: true, write: true });
       try {
@@ -265,11 +265,14 @@ function writeStat(snippetId, timestamp) {
       } finally {
         yield file.close();
       }
-    } catch (ex if ex instanceof OS.File.Error && ex.becauseNoSuchFile) {
+    } catch (ex) {
+      if (!(ex instanceof OS.File.Error && ex.becauseNoSuchFile)) {
+        throw ex;
+      }
       // If the file doesn't exist yet, create it.
       yield OS.File.writeAtomic(gStatsPath, data, { tmpPath: gStatsPath + ".tmp" });
     }
-  }).then(null, e => Cu.reportError("Error writing snippets stats: " + e));
+  }).catch(e => Cu.reportError("Error writing snippets stats: " + e));
 }
 
 /**
@@ -315,7 +318,7 @@ function sendStatsRequest(data) {
  */
 function removeStats() {
   let promise = OS.File.remove(gStatsPath);
-  promise.then(null, e => Cu.reportError("Error removing snippets stats: " + e));
+  promise.catch(e => Cu.reportError("Error removing snippets stats: " + e));
 }
 
 /**

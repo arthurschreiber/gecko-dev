@@ -1,34 +1,27 @@
-function local_is(value, expected, message) {
-  if (value === expected) {
-    local_ok(true, message);
-  } else {
-    local_ok(false, message + " unexpectedly: " + value + " !== " + expected);
+function promiseU2FRegister(aAppId, aChallenges, aExcludedKeys, aFunc) {
+  return new Promise(function(resolve, reject) {
+      u2f.register(aAppId, aChallenges, aExcludedKeys, function(res) {
+        aFunc(res);
+        resolve(res);
+      });
+  });
+}
+
+function promiseU2FSign(aAppId, aChallenge, aAllowedKeys, aFunc) {
+  return new Promise(function(resolve, reject) {
+      u2f.sign(aAppId, aChallenge, aAllowedKeys, function(res) {
+        aFunc(res);
+        resolve(res);
+      });
+  });
+}
+
+function log(msg) {
+  console.log(msg)
+  let logBox = document.getElementById("log");
+  if (logBox) {
+    logBox.textContent += "\n" + msg;
   }
-}
-
-function local_isnot(value, expected, message) {
-  if (value !== expected) {
-    local_ok(true, message);
-  } else {
-    local_ok(false, message + " unexpectedly: " + value + " === " + expected);
-  }
-}
-
-function local_ok(expression, message) {
-  let body = {"test": this.location.pathname, "status":expression, "msg": message}
-  parent.postMessage(body, "http://mochi.test:8888");
-}
-
-function local_doesThrow(fn, name) {
-  var gotException = false;
-  try {
-    fn();
-  } catch (ex) { gotException = true; }
-  local_ok(gotException, name);
-};
-
-function local_finished() {
-  parent.postMessage({"done":true}, "http://mochi.test:8888");
 }
 
 function string2buffer(str) {
@@ -36,15 +29,15 @@ function string2buffer(str) {
 }
 
 function buffer2string(buf) {
-  var str = "";
+  let str = "";
   buf.map(x => str += String.fromCharCode(x));
   return str;
 }
 
 function bytesToBase64(u8a){
-  var CHUNK_SZ = 0x8000;
-  var c = [];
-  for (var i = 0; i < u8a.length; i += CHUNK_SZ) {
+  let CHUNK_SZ = 0x8000;
+  let c = [];
+  for (let i = 0; i < u8a.length; i += CHUNK_SZ) {
     c.push(String.fromCharCode.apply(null, u8a.subarray(i, i + CHUNK_SZ)));
   }
   return window.btoa(c.join(""));
@@ -64,7 +57,7 @@ function bytesToBase64UrlSafe(buf) {
 }
 
 function base64ToBytesUrlSafe(str) {
-  if (str.length % 4 == 1) {
+  if (!str || str.length % 4 == 1) {
     throw "Improper b64 string";
   }
 
@@ -83,6 +76,27 @@ function hexEncode(buf) {
 
 function hexDecode(str) {
   return new Uint8Array(str.match(/../g).map(x => parseInt(x, 16)));
+}
+
+function decodeU2FRegistration(aRegData) {
+  if (aRegData[0] != 0x05) {
+    return Promise.reject("Sentinal byte != 0x05");
+  }
+
+  let keyHandleLength = aRegData[66];
+  let u2fRegObj = {
+    publicKeyBytes: aRegData.slice(1, 66),
+    keyHandleBytes: aRegData.slice(67, 67 + keyHandleLength),
+    attestationBytes: aRegData.slice(67 + keyHandleLength)
+  }
+
+  u2fRegObj.keyHandle = bytesToBase64UrlSafe(u2fRegObj.keyHandleBytes);
+
+  return importPublicKey(u2fRegObj.publicKeyBytes)
+  .then(function(keyObj) {
+    u2fRegObj.publicKey = keyObj;
+    return u2fRegObj;
+  });
 }
 
 function importPublicKey(keyBytes) {
@@ -113,7 +127,7 @@ function deriveAppAndChallengeParam(appId, clientData) {
 }
 
 function assembleSignedData(appParam, presenceAndCounter, challengeParam) {
-  var signedData = new Uint8Array(32 + 1 + 4 + 32);
+  let signedData = new Uint8Array(32 + 1 + 4 + 32);
   appParam.map((x, i) => signedData[0 + i] = x);
   presenceAndCounter.map((x, i) => signedData[32 + i] = x);
   challengeParam.map((x, i) => signedData[37 + i] = x);
@@ -121,7 +135,7 @@ function assembleSignedData(appParam, presenceAndCounter, challengeParam) {
 }
 
 function assembleRegistrationSignedData(appParam, challengeParam, keyHandle, pubKey) {
-  var signedData = new Uint8Array(1 + 32 + 32 + keyHandle.length + 65);
+  let signedData = new Uint8Array(1 + 32 + 32 + keyHandle.length + 65);
   signedData[0] = 0x00;
   appParam.map((x, i) => signedData[1 + i] = x);
   challengeParam.map((x, i) => signedData[33 + i] = x);
@@ -137,26 +151,28 @@ function sanitizeSigArray(arr) {
   if (arr.length > 32) {
     arr = arr.slice(arr.length - 32)
   }
-  var ret = new Uint8Array(32);
+  let ret = new Uint8Array(32);
   ret.set(arr, ret.length - arr.length);
   return ret;
 }
 
 function verifySignature(key, data, derSig) {
-  var sigAsn1 = org.pkijs.fromBER(derSig.buffer);
-  var sigR = new Uint8Array(sigAsn1.result.value_block.value[0].value_block.value_hex);
-  var sigS = new Uint8Array(sigAsn1.result.value_block.value[1].value_block.value_hex);
+  let sigAsn1 = org.pkijs.fromBER(derSig.buffer);
+  let sigR = new Uint8Array(sigAsn1.result.value_block.value[0].value_block.value_hex);
+  let sigS = new Uint8Array(sigAsn1.result.value_block.value[1].value_block.value_hex);
 
   // The resulting R and S values from the ASN.1 Sequence must be fit into 32
   // bytes. Sometimes they have leading zeros, sometimes they're too short, it
   // all depends on what lib generated the signature.
-  var R = sanitizeSigArray(sigR);
-  var S = sanitizeSigArray(sigS);
+  let R = sanitizeSigArray(sigR);
+  let S = sanitizeSigArray(sigS);
 
-  var sigData = new Uint8Array(R.length + S.length);
+  console.log("Verifying these bytes: " + bytesToBase64UrlSafe(data));
+
+  let sigData = new Uint8Array(R.length + S.length);
   sigData.set(R);
   sigData.set(S, R.length);
 
-  var alg = {name: "ECDSA", hash: "SHA-256"};
+  let alg = {name: "ECDSA", hash: "SHA-256"};
   return crypto.subtle.verify(alg, key, sigData, data);
 }

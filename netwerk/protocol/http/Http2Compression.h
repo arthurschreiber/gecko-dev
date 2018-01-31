@@ -13,6 +13,7 @@
 #include "nsDeque.h"
 #include "nsString.h"
 #include "nsIMemoryReporter.h"
+#include "mozilla/Telemetry.h"
 
 namespace mozilla {
 namespace net {
@@ -65,6 +66,7 @@ public:
   Http2BaseCompressor();
   virtual ~Http2BaseCompressor();
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
+  nsresult SetInitialMaxBufferSize(uint32_t maxBufferSize);
 
 protected:
   const static uint32_t kDefaultMaxBuffer = 4096;
@@ -79,6 +81,14 @@ protected:
 
   uint32_t mMaxBuffer;
   uint32_t mMaxBufferSetting;
+  bool mSetInitialMaxBufferSizeAllowed;
+
+  uint32_t mPeakSize;
+  uint32_t mPeakCount;
+  MOZ_INIT_OUTSIDE_CTOR
+  Telemetry::HistogramID mPeakSizeID;
+  MOZ_INIT_OUTSIDE_CTOR
+  Telemetry::HistogramID mPeakCountID;
 
 private:
   RefPtr<HpackDynamicTableReporter> mDynamicReporter;
@@ -89,12 +99,17 @@ class Http2Compressor;
 class Http2Decompressor final : public Http2BaseCompressor
 {
 public:
-  Http2Decompressor() { };
+  Http2Decompressor()
+  {
+    mPeakSizeID = Telemetry::HPACK_PEAK_SIZE_DECOMPRESSOR;
+    mPeakCountID = Telemetry::HPACK_PEAK_COUNT_DECOMPRESSOR;
+  };
   virtual ~Http2Decompressor() { } ;
 
   // NS_OK: Produces the working set of HTTP/1 formatted headers
-  nsresult DecodeHeaderBlock(const uint8_t *data, uint32_t datalen,
-                             nsACString &output, bool isPush);
+  MOZ_MUST_USE nsresult DecodeHeaderBlock(const uint8_t *data,
+                                          uint32_t datalen, nsACString &output,
+                                          bool isPush);
 
   void GetStatus(nsACString &hdr) { hdr = mHeaderStatus; }
   void GetHost(nsACString &hdr) { hdr = mHeaderHost; }
@@ -103,25 +118,27 @@ public:
   void GetMethod(nsACString &hdr) { hdr = mHeaderMethod; }
 
 private:
-  nsresult DoIndexed();
-  nsresult DoLiteralWithoutIndex();
-  nsresult DoLiteralWithIncremental();
-  nsresult DoLiteralInternal(nsACString &, nsACString &, uint32_t);
-  nsresult DoLiteralNeverIndexed();
-  nsresult DoContextUpdate();
+  MOZ_MUST_USE nsresult DoIndexed();
+  MOZ_MUST_USE nsresult DoLiteralWithoutIndex();
+  MOZ_MUST_USE nsresult DoLiteralWithIncremental();
+  MOZ_MUST_USE nsresult DoLiteralInternal(nsACString &, nsACString &, uint32_t);
+  MOZ_MUST_USE nsresult DoLiteralNeverIndexed();
+  MOZ_MUST_USE nsresult DoContextUpdate();
 
-  nsresult DecodeInteger(uint32_t prefixLen, uint32_t &result);
-  nsresult OutputHeader(uint32_t index);
-  nsresult OutputHeader(const nsACString &name, const nsACString &value);
+  MOZ_MUST_USE nsresult DecodeInteger(uint32_t prefixLen, uint32_t &result);
+  MOZ_MUST_USE nsresult OutputHeader(uint32_t index);
+  MOZ_MUST_USE nsresult OutputHeader(const nsACString &name, const nsACString &value);
 
-  nsresult CopyHeaderString(uint32_t index, nsACString &name);
-  nsresult CopyStringFromInput(uint32_t index, nsACString &val);
+  MOZ_MUST_USE nsresult CopyHeaderString(uint32_t index, nsACString &name);
+  MOZ_MUST_USE nsresult CopyStringFromInput(uint32_t index, nsACString &val);
   uint8_t ExtractByte(uint8_t bitsLeft, uint32_t &bytesConsumed);
-  nsresult CopyHuffmanStringFromInput(uint32_t index, nsACString &val);
-  nsresult DecodeHuffmanCharacter(const HuffmanIncomingTable *table, uint8_t &c,
-                                  uint32_t &bytesConsumed, uint8_t &bitsLeft);
-  nsresult DecodeFinalHuffmanCharacter(const HuffmanIncomingTable *table,
-                                       uint8_t &c, uint8_t &bitsLeft);
+  MOZ_MUST_USE nsresult CopyHuffmanStringFromInput(uint32_t index, nsACString &val);
+  MOZ_MUST_USE nsresult
+  DecodeHuffmanCharacter(const HuffmanIncomingTable *table, uint8_t &c,
+                         uint32_t &bytesConsumed, uint8_t &bitsLeft);
+  MOZ_MUST_USE nsresult
+  DecodeFinalHuffmanCharacter(const HuffmanIncomingTable *table, uint8_t &c,
+                              uint8_t &bitsLeft);
 
   nsCString mHeaderStatus;
   nsCString mHeaderHost;
@@ -144,15 +161,21 @@ public:
   Http2Compressor() : mParsedContentLength(-1),
                       mBufferSizeChangeWaiting(false),
                       mLowestBufferSizeWaiting(0)
-  { };
+  {
+    mPeakSizeID = Telemetry::HPACK_PEAK_SIZE_COMPRESSOR;
+    mPeakCountID = Telemetry::HPACK_PEAK_COUNT_COMPRESSOR;
+  };
   virtual ~Http2Compressor() { }
 
   // HTTP/1 formatted header block as input - HTTP/2 formatted
   // header block as output
-  nsresult EncodeHeaderBlock(const nsCString &nvInput,
-                             const nsACString &method, const nsACString &path,
-                             const nsACString &host, const nsACString &scheme,
-                             bool connectForm, nsACString &output);
+  MOZ_MUST_USE nsresult EncodeHeaderBlock(const nsCString &nvInput,
+                                          const nsACString &method,
+                                          const nsACString &path,
+                                          const nsACString &host,
+                                          const nsACString &scheme,
+                                          bool connectForm,
+                                          nsACString &output);
 
   int64_t GetParsedContentLength() { return mParsedContentLength; } // -1 on not found
 

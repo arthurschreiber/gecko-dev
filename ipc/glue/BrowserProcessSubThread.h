@@ -25,7 +25,7 @@ public:
       //FILE,
       //DB,
       //HISTORY,
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_SOLARIS)
       // This thread has a second connection to the X server and is used
       // to process UI requests when routing the request to the UI
       // thread would risk deadlock.
@@ -44,8 +44,8 @@ public:
   static MessageLoop* GetMessageLoop(ID identifier);
 
 protected:
-  virtual void Init();
-  virtual void CleanUp();
+  virtual void Init() override;
+  virtual void CleanUp() override;
 
 private:
   // The identifier of this thread.  Only one thread can exist with a given

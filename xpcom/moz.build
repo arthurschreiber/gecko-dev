@@ -30,6 +30,7 @@ if CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['MOZ_DEBUG']:
     DIRS += ['windbgdlg']
 
 TEST_DIRS += [
+    'rust/gtest',
     'tests',
 ]
 

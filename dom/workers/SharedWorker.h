@@ -7,10 +7,14 @@
 #ifndef mozilla_dom_workers_sharedworker_h__
 #define mozilla_dom_workers_sharedworker_h__
 
-#include "Workers.h"
+#include "WorkerCommon.h"
 
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/DOMEventTargetHelper.h"
+
+#ifdef XP_WIN
+#undef PostMessage
+#endif
 
 class nsIDOMEvent;
 class nsPIDOMWindowInner;
@@ -20,6 +24,7 @@ class EventChainPreVisitor;
 
 namespace dom {
 class MessagePort;
+class StringOrWorkerOptions;
 }
 } // namespace mozilla
 
@@ -42,9 +47,8 @@ class SharedWorker final : public DOMEventTargetHelper
 
 public:
   static already_AddRefed<SharedWorker>
-  Constructor(const GlobalObject& aGlobal, JSContext* aCx,
-              const nsAString& aScriptURL, const Optional<nsAString>& aName,
-              ErrorResult& aRv);
+  Constructor(const GlobalObject& aGlobal, const nsAString& aScriptURL,
+              const StringOrWorkerOptions& aOptions, ErrorResult& aRv);
 
   MessagePort*
   Port();
@@ -76,7 +80,7 @@ public:
   WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override;
 
   virtual nsresult
-  PreHandleEvent(EventChainPreVisitor& aVisitor) override;
+  GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
 
   WorkerPrivate*
   GetWorkerPrivate() const
@@ -96,8 +100,7 @@ private:
   // Only called by MessagePort.
   void
   PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
-              const Optional<Sequence<JS::Value>>& aTransferable,
-              ErrorResult& aRv);
+              const Sequence<JSObject*>& aTransferable, ErrorResult& aRv);
 };
 
 END_WORKERS_NAMESPACE

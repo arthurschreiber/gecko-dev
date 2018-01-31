@@ -9,8 +9,11 @@
 #include "nsFileChannel.h"
 #include "nsStandardURL.h"
 #include "nsURLHelper.h"
+#include "nsIURIMutator.h"
 
 #include "nsNetUtil.h"
+
+#include "FileChannelChild.h"
 
 // URL file handling, copied and modified from xpfe/components/bookmarks/src/nsBookmarksService.cpp
 #ifdef XP_WIN
@@ -164,23 +167,22 @@ nsFileProtocolHandler::NewURI(const nsACString &spec,
                               nsIURI *baseURI,
                               nsIURI **result)
 {
-    nsCOMPtr<nsIStandardURL> url = new nsStandardURL(true);
-    if (!url)
-        return NS_ERROR_OUT_OF_MEMORY;
+    nsCOMPtr<nsIURI> url = new nsStandardURL(true);
 
-    const nsACString *specPtr = &spec;
-
+    nsAutoCString buf(spec);
 #if defined(XP_WIN)
-    nsAutoCString buf;
-    if (net_NormalizeFileURL(spec, buf))
-        specPtr = &buf;
+    buf.Truncate();
+    if (!net_NormalizeFileURL(spec, buf)) {
+        buf = spec;
+    }
 #endif
 
-    nsresult rv = url->Init(nsIStandardURL::URLTYPE_NO_AUTHORITY, -1,
-                            *specPtr, charset, baseURI);
-    if (NS_FAILED(rv)) return rv;
-
-    return CallQueryInterface(url, result);
+    return NS_MutateURI(url)
+             .Apply<nsIStandardURLMutator>(&nsIStandardURLMutator::Init,
+                                           nsIStandardURL::URLTYPE_NO_AUTHORITY, -1,
+                                           buf, charset, baseURI,
+                                           nullptr)
+             .Finalize(result);
 }
 
 NS_IMETHODIMP
@@ -188,19 +190,28 @@ nsFileProtocolHandler::NewChannel2(nsIURI* uri,
                                    nsILoadInfo* aLoadInfo,
                                    nsIChannel** result)
 {
-    nsFileChannel *chan = new nsFileChannel(uri);
+    nsresult rv;
+
+    nsFileChannel *chan;
+    if (IsNeckoChild()) {
+        chan = new mozilla::net::FileChannelChild(uri);
+    } else {
+        chan = new nsFileChannel(uri);
+    }
     if (!chan)
         return NS_ERROR_OUT_OF_MEMORY;
     NS_ADDREF(chan);
 
-    nsresult rv = chan->Init();
+    // set the loadInfo on the new channel ; must do this
+    // before calling Init() on it, since it needs the load
+    // info be already set.
+    rv = chan->SetLoadInfo(aLoadInfo);
     if (NS_FAILED(rv)) {
         NS_RELEASE(chan);
         return rv;
     }
 
-    // set the loadInfo on the new channel
-    rv = chan->SetLoadInfo(aLoadInfo);
+    rv = chan->Init();
     if (NS_FAILED(rv)) {
         NS_RELEASE(chan);
         return rv;
@@ -216,10 +227,10 @@ nsFileProtocolHandler::NewChannel(nsIURI *uri, nsIChannel **result)
     return NewChannel2(uri, nullptr, result);
 }
 
-NS_IMETHODIMP 
+NS_IMETHODIMP
 nsFileProtocolHandler::AllowPort(int32_t port, const char *scheme, bool *result)
 {
-    // don't override anything.  
+    // don't override anything.
     *result = false;
     return NS_OK;
 }
@@ -253,7 +264,7 @@ nsFileProtocolHandler::GetURLSpecFromFile(nsIFile *file, nsACString &result)
 }
 
 NS_IMETHODIMP
-nsFileProtocolHandler::GetURLSpecFromActualFile(nsIFile *file, 
+nsFileProtocolHandler::GetURLSpecFromActualFile(nsIFile *file,
                                                 nsACString &result)
 {
     NS_ENSURE_ARG_POINTER(file);

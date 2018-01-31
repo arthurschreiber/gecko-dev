@@ -20,7 +20,9 @@ class SharedSurface_D3D11Interop
     : public SharedSurface
 {
 public:
-    const GLuint mProdRB;
+    const GLuint mProdTex;
+    const GLuint mInteropFB;
+    const GLuint mInteropRB;
     const RefPtr<DXInterop2Device> mInterop;
     const HANDLE mLockHandle;
     const RefPtr<ID3D11Texture2D> mTexD3D;
@@ -45,7 +47,9 @@ protected:
     SharedSurface_D3D11Interop(GLContext* gl,
                                const gfx::IntSize& size,
                                bool hasAlpha,
-                               GLuint renderbufferGL,
+                               GLuint prodTex,
+                               GLuint interopFB,
+                               GLuint interopRB,
                                DXInterop2Device* interop,
                                HANDLE lockHandle,
                                ID3D11Texture2D* texD3D,
@@ -61,7 +65,13 @@ public:
     virtual void ProducerReleaseImpl() override;
 
     virtual GLuint ProdRenderbuffer() override {
-        return mProdRB;
+        MOZ_ASSERT(!mProdTex);
+        return mInteropRB;
+    }
+
+    virtual GLuint ProdTexture() override {
+        MOZ_ASSERT(mProdTex);
+        return mProdTex;
     }
 
     virtual bool ToSurfaceDescriptor(layers::SurfaceDescriptor* const out_descriptor) override;
@@ -75,12 +85,12 @@ public:
 
     static UniquePtr<SurfaceFactory_D3D11Interop> Create(GLContext* gl,
                                                          const SurfaceCaps& caps,
-                                                         layers::ClientIPCAllocator* allocator,
+                                                         layers::LayersIPCChannel* allocator,
                                                          const layers::TextureFlags& flags);
 
 protected:
     SurfaceFactory_D3D11Interop(GLContext* gl, const SurfaceCaps& caps,
-                                layers::ClientIPCAllocator* allocator,
+                                layers::LayersIPCChannel* allocator,
                                 const layers::TextureFlags& flags,
                                 DXInterop2Device* interop);
 

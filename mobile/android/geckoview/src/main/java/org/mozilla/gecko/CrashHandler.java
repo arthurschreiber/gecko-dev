@@ -27,6 +27,8 @@ import android.os.Bundle;
 import android.os.Process;
 import android.util.Log;
 
+import org.mozilla.geckoview.BuildConfig;
+
 public class CrashHandler implements Thread.UncaughtExceptionHandler {
 
     private static final String LOGTAG = "GeckoCrashHandler";
@@ -179,15 +181,8 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
         return CrashHandler.class.getPackage().getName();
     }
 
-    protected String getAppPackageName() {
-        final Context context = getAppContext();
-
-        if (context != null) {
-            return context.getPackageName();
-        }
-
+    private static String getProcessName() {
         try {
-            // Package name is also the command line string in most cases.
             final FileReader reader = new FileReader("/proc/self/cmdline");
             final char[] buffer = new char[64];
             try {
@@ -199,9 +194,23 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
             } finally {
                 reader.close();
             }
-
         } catch (final IOException e) {
-            Log.i(LOGTAG, "Error reading package name", e);
+        }
+
+        return null;
+    }
+
+    protected String getAppPackageName() {
+        final Context context = getAppContext();
+
+        if (context != null) {
+            return context.getPackageName();
+        }
+
+        // Package name is also the process name in most cases.
+        String processName = getProcessName();
+        if (processName != null) {
+            return processName;
         }
 
         // Fallback to using CrashHandler's package name.
@@ -223,10 +232,12 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
         final Context context = getAppContext();
         final Bundle extras = new Bundle();
         final String pkgName = getAppPackageName();
+        final String processName = getProcessName();
 
         extras.putString("ProductName", pkgName);
         extras.putLong("CrashTime", getCrashTime());
         extras.putLong("StartupTime", getStartupTime());
+        extras.putString("AndroidProcessName", getProcessName());
 
         if (context != null) {
             final PackageManager pkgMgr = context.getPackageManager();
@@ -299,8 +310,6 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
                 return true;
             }
 
-            // Avoid AppConstants dependency for SDK version constants,
-            // because CrashHandler could be used outside of Fennec code.
             if (Build.VERSION.SDK_INT < 17) {
                 pb = new ProcessBuilder(
                     "/system/bin/am", "start",
@@ -447,18 +456,18 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
             protected Bundle getCrashExtras(final Thread thread, final Throwable exc) {
                 final Bundle extras = super.getCrashExtras(thread, exc);
 
-                extras.putString("ProductName", AppConstants.MOZ_APP_BASENAME);
-                extras.putString("ProductID", AppConstants.MOZ_APP_ID);
-                extras.putString("Version", AppConstants.MOZ_APP_VERSION);
-                extras.putString("BuildID", AppConstants.MOZ_APP_BUILDID);
-                extras.putString("Vendor", AppConstants.MOZ_APP_VENDOR);
-                extras.putString("ReleaseChannel", AppConstants.MOZ_UPDATE_CHANNEL);
+                extras.putString("ProductName", BuildConfig.MOZ_APP_BASENAME);
+                extras.putString("ProductID", BuildConfig.MOZ_APP_ID);
+                extras.putString("Version", BuildConfig.MOZ_APP_VERSION);
+                extras.putString("BuildID", BuildConfig.MOZ_APP_BUILDID);
+                extras.putString("Vendor", BuildConfig.MOZ_APP_VENDOR);
+                extras.putString("ReleaseChannel", BuildConfig.MOZ_UPDATE_CHANNEL);
                 return extras;
             }
 
             @Override
             public boolean reportException(final Thread thread, final Throwable exc) {
-                if (AppConstants.MOZ_CRASHREPORTER && AppConstants.MOZILLA_OFFICIAL) {
+                if (BuildConfig.MOZ_CRASHREPORTER && BuildConfig.MOZILLA_OFFICIAL) {
                     // Only use Java crash reporter if enabled on official build.
                     return super.reportException(thread, exc);
                 }

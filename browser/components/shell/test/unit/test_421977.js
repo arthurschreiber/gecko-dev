@@ -45,7 +45,7 @@ function checkGConfToShellColor(aGConfColor, aExpectedShellColor) {
   gGConf.setString(GCONF_BG_COLOR_KEY, aGConfColor);
   var shellColor = colorToHex(gShell.desktopBackgroundColor);
 
-  do_check_eq(shellColor, aExpectedShellColor);
+  Assert.equal(shellColor, aExpectedShellColor);
 }
 
 /**
@@ -58,7 +58,7 @@ function checkShellToGConfColor(aShellColor, aExpectedGConfColor) {
   gShell.desktopBackgroundColor = hexToColor(aShellColor);
   var gconfColor = gGConf.getString(GCONF_BG_COLOR_KEY);
 
-  do_check_eq(gconfColor, aExpectedGConfColor);
+  Assert.equal(gconfColor, aExpectedGConfColor);
 }
 
 function run_test() {
@@ -70,9 +70,9 @@ function run_test() {
   try {
     // If GSettings is available, then the GConf tests
     // will fail
-    var gsettings = Cc["@mozilla.org/gsettings-service;1"].
-                    getService(Ci.nsIGSettingsService).
-                    getCollectionForSchema("org.gnome.desktop.background");
+    Cc["@mozilla.org/gsettings-service;1"].
+      getService(Ci.nsIGSettingsService).
+      getCollectionForSchema("org.gnome.desktop.background");
     return;
   } catch (e) { }
 

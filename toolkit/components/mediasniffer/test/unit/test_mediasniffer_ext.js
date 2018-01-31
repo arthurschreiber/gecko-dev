@@ -11,8 +11,8 @@ var BinaryOutputStream = CC("@mozilla.org/binaryoutputstream;1",
                             "nsIBinaryOutputStream",
                             "setOutputStream");
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 
@@ -46,23 +46,23 @@ const tests = [
 
 // A basic listener that reads checks the if we sniffed properly.
 var listener = {
-  onStartRequest: function(request, context) {
-    do_print("Sniffing " + tests[testRan].path);
-    do_check_eq(request.QueryInterface(Ci.nsIChannel).contentType, tests[testRan].expected);
+  onStartRequest(request, context) {
+    info("Sniffing " + tests[testRan].path);
+    Assert.equal(request.QueryInterface(Ci.nsIChannel).contentType, tests[testRan].expected);
   },
 
-  onDataAvailable: function(request, context, stream, offset, count) {
+  onDataAvailable(request, context, stream, offset, count) {
     try {
       var bis = Components.classes["@mozilla.org/binaryinputstream;1"]
                           .createInstance(Components.interfaces.nsIBinaryInputStream);
       bis.setInputStream(stream);
-      var array = bis.readByteArray(bis.available());
+      bis.readByteArray(bis.available());
     } catch (ex) {
       do_throw("Error in onDataAvailable: " + ex);
     }
   },
 
-  onStopRequest: function(request, context, status) {
+  onStopRequest(request, context, status) {
     testRan++;
     runNext();
   }
@@ -88,7 +88,6 @@ function runNext() {
 }
 
 function getFileContents(aFile) {
-  const PR_RDONLY = 0x01;
   var fileStream = Cc["@mozilla.org/network/file-input-stream;1"]
                       .createInstance(Ci.nsIFileInputStream);
   fileStream.init(aFile, 1, -1, null);

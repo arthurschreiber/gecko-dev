@@ -7,6 +7,7 @@
 
 #include <cstring>
 #include "CompositorTypes.h"
+#include "gfxPrefs.h"
 #include "GLContext.h"
 #include "GLBlitHelper.h"
 #include "GLReadTexImageHelper.h"
@@ -15,18 +16,13 @@
 #include "ScopedGLHelpers.h"
 #include "gfx2DGlue.h"
 #include "../layers/ipc/ShadowLayers.h"
-#include "mozilla/layers/CompositableForwarder.h"
+#include "mozilla/layers/TextureForwarder.h"
 #include "mozilla/layers/TextureClientSharedSurface.h"
 
 #ifdef XP_WIN
 #include "SharedSurfaceANGLE.h"         // for SurfaceFactory_ANGLEShareHandle
 #include "SharedSurfaceD3D11Interop.h"  // for SurfaceFactory_D3D11Interop
 #include "mozilla/gfx/DeviceManagerDx.h"
-#endif
-
-#ifdef MOZ_WIDGET_GONK
-#include "SharedSurfaceGralloc.h"
-#include "nsXULAppAPI.h"
 #endif
 
 #ifdef XP_MACOSX
@@ -69,69 +65,65 @@ GLScreenBuffer::Create(GLContext* gl,
 /* static */ UniquePtr<SurfaceFactory>
 GLScreenBuffer::CreateFactory(GLContext* gl,
                               const SurfaceCaps& caps,
-                              const RefPtr<layers::CompositableForwarder>& forwarder,
+                              KnowsCompositor* compositorConnection,
                               const layers::TextureFlags& flags)
 {
-  return CreateFactory(gl, caps, forwarder, forwarder->GetCompositorBackendType(), flags);
-}
+    LayersIPCChannel* ipcChannel = compositorConnection->GetTextureForwarder();
+    const layers::LayersBackend backend = compositorConnection->GetCompositorBackendType();
+    const bool useANGLE = compositorConnection->GetCompositorUseANGLE();
 
-/* static */ UniquePtr<SurfaceFactory>
-GLScreenBuffer::CreateFactory(GLContext* gl,
-                              const SurfaceCaps& caps,
-                              const RefPtr<layers::ClientIPCAllocator>& allocator,
-                              const mozilla::layers::LayersBackend backend,
-                              const layers::TextureFlags& flags)
-{
+    const bool useGl = !gfxPrefs::WebGLForceLayersReadback() &&
+                       (backend == layers::LayersBackend::LAYERS_OPENGL ||
+                       (backend == layers::LayersBackend::LAYERS_WR && !useANGLE));
+    const bool useD3D = !gfxPrefs::WebGLForceLayersReadback() &&
+                        (backend == layers::LayersBackend::LAYERS_D3D11 ||
+                        (backend == layers::LayersBackend::LAYERS_WR && useANGLE));
+
     UniquePtr<SurfaceFactory> factory = nullptr;
-    if (!gfxPrefs::WebGLForceLayersReadback()) {
-        switch (backend) {
-            case mozilla::layers::LayersBackend::LAYERS_OPENGL: {
+    if (useGl) {
 #if defined(XP_MACOSX)
-                factory = SurfaceFactory_IOSurface::Create(gl, caps, allocator, flags);
-#elif defined(MOZ_WIDGET_GONK)
-                factory = MakeUnique<SurfaceFactory_Gralloc>(gl, caps, allocator, flags);
+        factory = SurfaceFactory_IOSurface::Create(gl, caps, ipcChannel, flags);
 #elif defined(GL_PROVIDER_GLX)
-                if (sGLXLibrary.UseTextureFromPixmap())
-                  factory = SurfaceFactory_GLXDrawable::Create(gl, caps, allocator, flags);
+        if (sGLXLibrary.UseTextureFromPixmap())
+            factory = SurfaceFactory_GLXDrawable::Create(gl, caps, ipcChannel, flags);
 #elif defined(MOZ_WIDGET_UIKIT)
-                factory = MakeUnique<SurfaceFactory_GLTexture>(mGLContext, caps, allocator, mFlags);
+        factory = MakeUnique<SurfaceFactory_GLTexture>(mGLContext, caps, ipcChannel, mFlags);
+#elif defined(MOZ_WIDGET_ANDROID)
+        if (XRE_IsParentProcess() && !gfxPrefs::WebGLSurfaceTextureEnabled()) {
+            factory = SurfaceFactory_EGLImage::Create(gl, caps, ipcChannel, flags);
+        } else {
+            factory = SurfaceFactory_SurfaceTexture::Create(gl, caps, ipcChannel, flags);
+        }
 #else
-                if (gl->GetContextType() == GLContextType::EGL) {
-                    if (XRE_IsParentProcess()) {
-                        factory = SurfaceFactory_EGLImage::Create(gl, caps, allocator, flags);
-                    }
-                }
-#endif
-                break;
+        if (gl->GetContextType() == GLContextType::EGL) {
+            if (XRE_IsParentProcess()) {
+                factory = SurfaceFactory_EGLImage::Create(gl, caps, ipcChannel, flags);
             }
-            case mozilla::layers::LayersBackend::LAYERS_D3D11: {
+        }
+#endif
+    } else if (useD3D) {
 #ifdef XP_WIN
-                // Enable surface sharing only if ANGLE and compositing devices
-                // are both WARP or both not WARP
-                gfx::DeviceManagerDx* dm = gfx::DeviceManagerDx::Get();
-                if (gl->IsANGLE() &&
-                    (gl->IsWARP() == dm->IsWARP()) &&
-                    dm->TextureSharingWorks())
-                {
-                    factory = SurfaceFactory_ANGLEShareHandle::Create(gl, caps, allocator, flags);
-                }
-
-                if (!factory && gfxPrefs::WebGLDXGLEnabled()) {
-                  factory = SurfaceFactory_D3D11Interop::Create(gl, caps, allocator, flags);
-                }
-#endif
-              break;
-            }
-            default:
-              break;
+        // Enable surface sharing only if ANGLE and compositing devices
+        // are both WARP or both not WARP
+        gfx::DeviceManagerDx* dm = gfx::DeviceManagerDx::Get();
+        if (gl->IsANGLE() &&
+            (gl->IsWARP() == dm->IsWARP()) &&
+             dm->TextureSharingWorks())
+        {
+            factory = SurfaceFactory_ANGLEShareHandle::Create(gl, caps, ipcChannel, flags);
         }
 
-#ifdef GL_PROVIDER_GLX
-        if (!factory && sGLXLibrary.UseTextureFromPixmap()) {
-            factory = SurfaceFactory_GLXDrawable::Create(gl, caps, allocator, flags);
+        if (!factory && gfxPrefs::WebGLDXGLEnabled()) {
+            factory = SurfaceFactory_D3D11Interop::Create(gl, caps, ipcChannel, flags);
         }
 #endif
     }
+
+#ifdef GL_PROVIDER_GLX
+    if (!factory && sGLXLibrary.UseTextureFromPixmap()) {
+        factory = SurfaceFactory_GLXDrawable::Create(gl, caps, ipcChannel, flags);
+    }
+#endif
 
     return factory;
 }
@@ -477,7 +469,7 @@ GLScreenBuffer::AssureBlitted()
 void
 GLScreenBuffer::Morph(UniquePtr<SurfaceFactory> newFactory)
 {
-    MOZ_ASSERT(newFactory);
+    MOZ_RELEASE_ASSERT(newFactory, "newFactory must not be null");
     mFactory = Move(newFactory);
 }
 
@@ -825,7 +817,7 @@ DrawBuffer::Create(GLContext* const gl,
         if (formats.samples == 0)
             return false; // Can't create it.
 
-        MOZ_ASSERT(formats.samples <= gl->MaxSamples());
+        MOZ_ASSERT(uint32_t(formats.samples) <= gl->MaxSamples());
     }
 
     GLuint colorMSRB = 0;
@@ -884,7 +876,7 @@ DrawBuffer::~DrawBuffer()
     GLuint rbs[] = {
         mColorMSRB,
         mDepthRB,
-        mStencilRB
+        (mStencilRB != mDepthRB) ? mStencilRB : 0, // Don't double-delete DEPTH_STENCIL RBs.
     };
 
     mGL->fDeleteFramebuffers(1, &fb);
@@ -951,11 +943,11 @@ ReadBuffer::Create(GLContext* gl,
 
     const bool needsAcquire = !surf->IsProducerAcquired();
     if (needsAcquire) {
-        surf->ProducerAcquire();
+        surf->ProducerReadAcquire();
     }
     const bool isComplete = gl->IsFramebufferComplete(fb);
     if (needsAcquire) {
-        surf->ProducerRelease();
+        surf->ProducerReadRelease();
     }
 
     if (!isComplete)
@@ -972,11 +964,12 @@ ReadBuffer::~ReadBuffer()
     GLuint fb = mFB;
     GLuint rbs[] = {
         mDepthRB,
-        mStencilRB
+        (mStencilRB != mDepthRB) ? mStencilRB : 0, // Don't double-delete DEPTH_STENCIL RBs.
     };
 
     mGL->fDeleteFramebuffers(1, &fb);
     mGL->fDeleteRenderbuffers(2, rbs);
+
     mGL->mFBOMapping.erase(mFB);
 }
 

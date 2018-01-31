@@ -5,8 +5,8 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 UNIFIED_SOURCES += [
+    'AudioSink.cpp',
     'AudioSinkWrapper.cpp',
-    'DecodedAudioDataSink.cpp',
     'DecodedStream.cpp',
     'OutputStreamManager.cpp',
     'VideoSink.cpp',
@@ -14,5 +14,5 @@ UNIFIED_SOURCES += [
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

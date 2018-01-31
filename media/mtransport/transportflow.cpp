@@ -35,10 +35,12 @@ TransportFlow::~TransportFlow() {
   // destroy it simultaneously. The conversion to an nsAutoPtr
   // ensures automatic destruction of the queue at exit of
   // DestroyFinal.
-  nsAutoPtr<std::deque<TransportLayer*>> layers_tmp(layers_.release());
-  RUN_ON_THREAD(target_,
-                WrapRunnableNM(&TransportFlow::DestroyFinal, layers_tmp),
-                NS_DISPATCH_NORMAL);
+  if (target_) {
+    nsAutoPtr<std::deque<TransportLayer*>> layers_tmp(layers_.release());
+    RUN_ON_THREAD(target_,
+                  WrapRunnableNM(&TransportFlow::DestroyFinal, layers_tmp),
+                  NS_DISPATCH_NORMAL);
+  }
 }
 
 void TransportFlow::DestroyFinal(nsAutoPtr<std::deque<TransportLayer *> > layers) {
@@ -203,8 +205,8 @@ TransportResult TransportFlow::SendPacket(const unsigned char *data,
 
 bool TransportFlow::Contains(TransportLayer *layer) const {
   if (layers_) {
-    for (auto l = layers_->begin(); l != layers_->end(); ++l) {
-      if (*l == layer) {
+    for (auto& l : *layers_) {
+      if (l == layer) {
         return true;
       }
     }

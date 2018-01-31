@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+"use strict";
+
 /**
  * Test if getExecutableLines return correct information
  */
@@ -20,8 +22,8 @@ function run_test() {
     attachTestTabAndResume(
       gClient,
       "test-get-executable-lines",
-      function (aResponse, aTabClient, aThreadClient) {
-        gThreadClient = aThreadClient;
+      function (response, tabClient, threadClient) {
+        gThreadClient = threadClient;
         test_executable_lines();
       }
     );
@@ -32,13 +34,13 @@ function run_test() {
 
 function test_executable_lines() {
   gThreadClient.addOneTimeListener("newSource", function _onNewSource(evt, packet) {
-    do_check_eq(evt, "newSource");
+    Assert.equal(evt, "newSource");
 
     gThreadClient.getSources(function ({error, sources}) {
-      do_check_true(!error);
+      Assert.ok(!error);
       let source = gThreadClient.source(sources[0]);
       source.getExecutableLines(function (lines) {
-        do_check_true(arrays_equal([2, 5, 7, 8, 10, 12, 14, 16], lines));
+        Assert.ok(arrays_equal([2, 5, 7, 8, 10, 12, 14, 16, 17], lines));
         finishClient(gClient);
       });
     });

@@ -1,330 +1,381 @@
 /* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
+ * vim: ts=4 sw=4 expandtab:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko;
 
-import java.util.Set;
+import org.mozilla.gecko.gfx.DynamicToolbarAnimator;
+import org.mozilla.gecko.gfx.NativePanZoomController;
+import org.mozilla.gecko.gfx.GeckoDisplay;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.mozilla.gecko.annotation.ReflectionTarget;
-import org.mozilla.gecko.annotation.WrapForJNI;
-import org.mozilla.gecko.gfx.LayerView;
-import org.mozilla.gecko.mozglue.JNIObject;
-import org.mozilla.gecko.util.EventCallback;
-import org.mozilla.gecko.util.GeckoEventListener;
-import org.mozilla.gecko.util.NativeEventListener;
-import org.mozilla.gecko.util.NativeJSObject;
-import org.mozilla.gecko.util.ThreadUtils;
-
-import android.app.Activity;
 import android.content.Context;
-import android.content.SharedPreferences;
-import android.os.Binder;
-import android.os.Bundle;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Rect;
+import android.graphics.Region;
+import android.os.Build;
 import android.os.Handler;
-import android.os.IBinder;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
-import android.util.Log;
+import android.util.TypedValue;
+import android.view.InputDevice;
 import android.view.KeyEvent;
-import android.view.View;
+import android.view.MotionEvent;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
+import android.view.ViewGroup;
+import android.view.accessibility.AccessibilityManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.FrameLayout;
 
-public class GeckoView extends LayerView
-    implements ContextGetter, GeckoEventListener, NativeEventListener {
-
-    private static final String DEFAULT_SHARED_PREFERENCES_FILE = "GeckoView";
+public class GeckoView extends FrameLayout {
     private static final String LOGTAG = "GeckoView";
+    private static final boolean DEBUG = false;
 
-    private ChromeDelegate mChromeDelegate;
-    private ContentDelegate mContentDelegate;
+    private static AccessibilityManager sAccessibilityManager;
 
-    private InputConnectionListener mInputConnectionListener;
+    protected final Display mDisplay = new Display();
+    protected GeckoSession mSession;
+    private boolean mStateSaved;
 
-    private boolean onAttachedToWindowCalled;
+    protected SurfaceView mSurfaceView;
 
-    @Override
-    public void handleMessage(final String event, final JSONObject message) {
-        ThreadUtils.postToUiThread(new Runnable() {
+    private boolean mIsResettingFocus;
+
+    private static class SavedState extends BaseSavedState {
+        public final GeckoSession session;
+
+        public SavedState(final Parcelable superState, final GeckoSession session) {
+            super(superState);
+            this.session = session;
+        }
+
+        /* package */ SavedState(final Parcel in) {
+            super(in);
+            session = in.readParcelable(getClass().getClassLoader());
+        }
+
+        @Override // BaseSavedState
+        public void writeToParcel(final Parcel dest, final int flags) {
+            super.writeToParcel(dest, flags);
+            dest.writeParcelable(session, flags);
+        }
+
+        public static final Creator<SavedState> CREATOR = new Creator<SavedState>() {
+            @Override
+            public SavedState createFromParcel(final Parcel in) {
+                return new SavedState(in);
+            }
+
+            @Override
+            public SavedState[] newArray(final int size) {
+                return new SavedState[size];
+            }
+        };
+    }
+
+    private class Display implements SurfaceHolder.Callback {
+        private final int[] mOrigin = new int[2];
+
+        private GeckoDisplay mDisplay;
+        private boolean mValid;
+
+        public void acquire(final GeckoDisplay display) {
+            mDisplay = display;
+
+            if (!mValid) {
+                return;
+            }
+
+            // Tell display there is already a surface.
+            onGlobalLayout();
+            if (GeckoView.this.mSurfaceView != null) {
+                final SurfaceHolder holder = GeckoView.this.mSurfaceView.getHolder();
+                final Rect frame = holder.getSurfaceFrame();
+                mDisplay.surfaceChanged(holder.getSurface(), frame.right, frame.bottom);
+            }
+        }
+
+        public GeckoDisplay release() {
+            if (mValid) {
+                mDisplay.surfaceDestroyed();
+            }
+
+            final GeckoDisplay display = mDisplay;
+            mDisplay = null;
+            return display;
+        }
+
+        @Override // SurfaceHolder.Callback
+        public void surfaceCreated(final SurfaceHolder holder) {
+        }
+
+        @Override // SurfaceHolder.Callback
+        public void surfaceChanged(final SurfaceHolder holder, final int format,
+                                   final int width, final int height) {
+            if (mDisplay != null) {
+                mDisplay.surfaceChanged(holder.getSurface(), width, height);
+            }
+            mValid = true;
+        }
+
+        @Override // SurfaceHolder.Callback
+        public void surfaceDestroyed(final SurfaceHolder holder) {
+            if (mDisplay != null) {
+                mDisplay.surfaceDestroyed();
+            }
+            mValid = false;
+        }
+
+        public void onGlobalLayout() {
+            if (mDisplay == null) {
+                return;
+            }
+            if (GeckoView.this.mSurfaceView != null) {
+                GeckoView.this.mSurfaceView.getLocationOnScreen(mOrigin);
+                mDisplay.screenOriginChanged(mOrigin[0], mOrigin[1]);
+            }
+        }
+    }
+
+    public GeckoView(final Context context) {
+        super(context);
+        init();
+    }
+
+    public GeckoView(final Context context, final AttributeSet attrs) {
+        super(context, attrs);
+        init();
+    }
+
+    private void init() {
+        setFocusable(true);
+        setFocusableInTouchMode(true);
+
+        // We are adding descendants to this LayerView, but we don't want the
+        // descendants to affect the way LayerView retains its focus.
+        setDescendantFocusability(FOCUS_BLOCK_DESCENDANTS);
+
+        // This will stop PropertyAnimator from creating a drawing cache (i.e. a
+        // bitmap) from a SurfaceView, which is just not possible (the bitmap will be
+        // transparent).
+        setWillNotCacheDrawing(false);
+
+        mSurfaceView = new SurfaceView(getContext());
+        mSurfaceView.setBackgroundColor(Color.WHITE);
+        addView(mSurfaceView,
+                new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                                           ViewGroup.LayoutParams.MATCH_PARENT));
+
+        mSurfaceView.getHolder().addCallback(mDisplay);
+    }
+
+    /**
+     * Set a color to cover the display surface while a document is being shown. The color
+     * is automatically cleared once the new document starts painting. Set to
+     * Color.TRANSPARENT to undo the cover.
+     *
+     * @param color Cover color.
+     */
+    public void coverUntilFirstPaint(final int color) {
+        if (mSurfaceView != null) {
+            mSurfaceView.setBackgroundColor(color);
+        }
+    }
+
+    public void setSession(final GeckoSession session) {
+        if (mSession != null && mSession.isOpen()) {
+            throw new IllegalStateException("Current session is open");
+        }
+
+        if (mSession != null) {
+            mSession.releaseDisplay(mDisplay.release());
+        }
+        if (session != null) {
+            mDisplay.acquire(session.acquireDisplay());
+        }
+
+        final Context context = getContext();
+        session.getOverscrollEdgeEffect().setTheme(context);
+        session.getOverscrollEdgeEffect().setInvalidationCallback(new Runnable() {
             @Override
             public void run() {
-                try {
-                    if (event.equals("Gecko:Ready")) {
-                        handleReady(message);
-                    } else if (event.equals("Content:StateChange")) {
-                        handleStateChange(message);
-                    } else if (event.equals("Content:LoadError")) {
-                        handleLoadError(message);
-                    } else if (event.equals("Content:PageShow")) {
-                        handlePageShow(message);
-                    } else if (event.equals("DOMTitleChanged")) {
-                        handleTitleChanged(message);
-                    } else if (event.equals("Link:Favicon")) {
-                        handleLinkFavicon(message);
-                    } else if (event.equals("Prompt:Show") || event.equals("Prompt:ShowTop")) {
-                        handlePrompt(message);
-                    } else if (event.equals("Accessibility:Event")) {
-                        int mode = getImportantForAccessibility();
-                        if (mode == View.IMPORTANT_FOR_ACCESSIBILITY_YES ||
-                                mode == View.IMPORTANT_FOR_ACCESSIBILITY_AUTO) {
-                            GeckoAccessibility.sendAccessibilityEvent(message);
-                        }
-                    }
-                } catch (Exception e) {
-                    Log.e(LOGTAG, "handleMessage threw for " + event, e);
+                if (Build.VERSION.SDK_INT >= 16) {
+                    GeckoView.this.postInvalidateOnAnimation();
+                } else {
+                    GeckoView.this.postInvalidateDelayed(10);
+                }
+            }
+        });
+
+        final DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        final TypedValue outValue = new TypedValue();
+        if (context.getTheme().resolveAttribute(android.R.attr.listPreferredItemHeight,
+                                                outValue, true)) {
+            session.getPanZoomController().setScrollFactor(outValue.getDimension(metrics));
+        } else {
+            session.getPanZoomController().setScrollFactor(0.075f * metrics.densityDpi);
+        }
+
+        session.getCompositorController().setFirstPaintCallback(new Runnable() {
+            @Override
+            public void run() {
+                coverUntilFirstPaint(Color.TRANSPARENT);
+            }
+        });
+
+        mSession = session;
+    }
+
+    public GeckoSession getSession() {
+        return mSession;
+    }
+
+    public EventDispatcher getEventDispatcher() {
+        return mSession.getEventDispatcher();
+    }
+
+    public GeckoSessionSettings getSettings() {
+        return mSession.getSettings();
+    }
+
+    public NativePanZoomController getPanZoomController() {
+        return mSession.getPanZoomController();
+    }
+
+    public DynamicToolbarAnimator getDynamicToolbarAnimator() {
+        return mSession.getDynamicToolbarAnimator();
+    }
+
+    @Override
+    public void onAttachedToWindow() {
+        if (mSession == null) {
+            setSession(new GeckoSession());
+        }
+
+        if (!mSession.isOpen()) {
+            mSession.openWindow(getContext().getApplicationContext());
+        }
+
+        mSession.getTextInputController().setView(this);
+
+        super.onAttachedToWindow();
+    }
+
+    @Override
+    public void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+
+        mSession.getTextInputController().setView(this);
+
+        if (mStateSaved) {
+            // If we saved state earlier, we don't want to close the window.
+            return;
+        }
+
+        if (mSession != null && mSession.isOpen()) {
+            mSession.closeWindow();
+        }
+    }
+
+    @Override
+    public boolean gatherTransparentRegion(final Region region) {
+        // For detecting changes in SurfaceView layout, we take a shortcut here and
+        // override gatherTransparentRegion, instead of registering a layout listener,
+        // which is more expensive.
+        if (mSurfaceView != null) {
+            mDisplay.onGlobalLayout();
+        }
+        return super.gatherTransparentRegion(region);
+    }
+
+    @Override
+    protected Parcelable onSaveInstanceState() {
+        mStateSaved = true;
+        return new SavedState(super.onSaveInstanceState(), mSession);
+    }
+
+    @Override
+    protected void onRestoreInstanceState(final Parcelable state) {
+        mStateSaved = false;
+
+        if (!(state instanceof SavedState)) {
+            super.onRestoreInstanceState(state);
+            return;
+        }
+
+        final SavedState ss = (SavedState) state;
+        super.onRestoreInstanceState(ss.getSuperState());
+
+        if (mSession == null) {
+            setSession(ss.session);
+        } else if (ss.session != null) {
+            mSession.transferFrom(ss.session);
+        }
+    }
+
+    @Override
+    public void onFocusChanged(boolean gainFocus, int direction, Rect previouslyFocusedRect) {
+        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
+
+        if (!gainFocus || mIsResettingFocus) {
+            return;
+        }
+
+        post(new Runnable() {
+            @Override
+            public void run() {
+                if (!isFocused()) {
+                    return;
+                }
+
+                final InputMethodManager imm = InputMethods.getInputMethodManager(getContext());
+                // Bug 1404111: Through View#onFocusChanged, the InputMethodManager queues
+                // up a checkFocus call for the next spin of the message loop, so by
+                // posting this Runnable after super#onFocusChanged, the IMM should have
+                // completed its focus change handling at this point and we should be the
+                // active view for input handling.
+
+                // If however onViewDetachedFromWindow for the previously active view gets
+                // called *after* onFocusChanged, but *before* the focus change has been
+                // fully processed by the IMM with the help of checkFocus, the IMM will
+                // lose track of the currently active view, which means that we can't
+                // interact with the IME.
+                if (!imm.isActive(GeckoView.this)) {
+                    // If that happens, we bring the IMM's internal state back into sync
+                    // by clearing and resetting our focus.
+                    mIsResettingFocus = true;
+                    clearFocus();
+                    // After calling clearFocus we might regain focus automatically, but
+                    // we explicitly request it again in case this doesn't happen.  If
+                    // we've already got the focus back, this will then be a no-op anyway.
+                    requestFocus();
+                    mIsResettingFocus = false;
                 }
             }
         });
     }
 
     @Override
-    public void handleMessage(final String event, final NativeJSObject message, final EventCallback callback) {
-        try {
-            if ("Accessibility:Ready".equals(event)) {
-                GeckoAccessibility.updateAccessibilitySettings(getContext());
-            } else if ("GeckoView:Message".equals(event)) {
-                // We need to pull out the bundle while on the Gecko thread.
-                NativeJSObject json = message.optObject("data", null);
-                if (json == null) {
-                    // Must have payload to call the message handler.
-                    return;
-                }
-                final Bundle data = json.toBundle();
-                ThreadUtils.postToUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        handleScriptMessage(data, callback);
-                    }
-                });
-            }
-        } catch (Exception e) {
-            Log.w(LOGTAG, "handleMessage threw for " + event, e);
-        }
-    }
-
-    @WrapForJNI(dispatchTo = "proxy")
-    private static final class Window extends JNIObject {
-        @WrapForJNI(skip = true)
-        /* package */ Window() {}
-
-        static native void open(Window instance, GeckoView view, Object compositor,
-                                String chromeURI, int width, int height);
-
-        @Override protected native void disposeNative();
-        native void close();
-        native void reattach(GeckoView view, Object compositor);
-        native void loadUri(String uri, int flags);
-    }
-
-    // Object to hold onto our nsWindow connection when GeckoView gets destroyed.
-    private static class StateBinder extends Binder implements Parcelable {
-        public final Parcelable superState;
-        public final Window window;
-
-        public StateBinder(Parcelable superState, Window window) {
-            this.superState = superState;
-            this.window = window;
-        }
-
-        @Override
-        public int describeContents() {
-            return 0;
-        }
-
-        @Override
-        public void writeToParcel(Parcel out, int flags) {
-            // Always write out the super-state, so that even if we lose this binder, we
-            // will still have something to pass into super.onRestoreInstanceState.
-            out.writeParcelable(superState, flags);
-            out.writeStrongBinder(this);
-        }
-
-        @ReflectionTarget
-        public static final Parcelable.Creator<StateBinder> CREATOR
-            = new Parcelable.Creator<StateBinder>() {
-                @Override
-                public StateBinder createFromParcel(Parcel in) {
-                    final Parcelable superState = in.readParcelable(null);
-                    final IBinder binder = in.readStrongBinder();
-                    if (binder instanceof StateBinder) {
-                        return (StateBinder) binder;
-                    }
-                    // Not the original object we saved; return null state.
-                    return new StateBinder(superState, null);
-                }
-
-                @Override
-                public StateBinder[] newArray(int size) {
-                    return new StateBinder[size];
-                }
-            };
-    }
-
-    private Window window;
-    private boolean stateSaved;
-
-    public GeckoView(Context context) {
-        super(context);
-        init(context);
-    }
-
-    public GeckoView(Context context, AttributeSet attrs) {
-        super(context, attrs);
-        init(context);
-    }
-
-    private void init(Context context) {
-        if (GeckoAppShell.getApplicationContext() == null) {
-            GeckoAppShell.setApplicationContext(context.getApplicationContext());
-        }
-
-        // Set the GeckoInterface if the context is an activity and the GeckoInterface
-        // has not already been set
-        if (context instanceof Activity && getGeckoInterface() == null) {
-            setGeckoInterface(new BaseGeckoInterface(context));
-            GeckoAppShell.setContextGetter(this);
-        }
-
-        // Perform common initialization for Fennec/GeckoView.
-        GeckoAppShell.setLayerView(this);
-
-        initializeView(EventDispatcher.getInstance());
-    }
-
-    @Override
-    protected Parcelable onSaveInstanceState()
-    {
-        final Parcelable superState = super.onSaveInstanceState();
-        stateSaved = true;
-        return new StateBinder(superState, this.window);
-    }
-
-    @Override
-    protected void onRestoreInstanceState(final Parcelable state)
-    {
-        final StateBinder stateBinder = (StateBinder) state;
-
-        if (stateBinder.window != null) {
-            this.window = stateBinder.window;
-        }
-        stateSaved = false;
-
-        if (onAttachedToWindowCalled) {
-            reattachWindow();
-        }
-
-        // We have to always call super.onRestoreInstanceState because View keeps
-        // track of these calls and throws an exception when we don't call it.
-        super.onRestoreInstanceState(stateBinder.superState);
-    }
-
-    private void openWindow() {
-        final DisplayMetrics metrics = getContext().getResources().getDisplayMetrics();
-
-        final String chromeURI = getGeckoInterface().getDefaultChromeURI();
-
-        if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
-            Window.open(window, this, getCompositor(),
-                        chromeURI, metrics.widthPixels, metrics.heightPixels);
-        } else {
-            GeckoThread.queueNativeCallUntil(GeckoThread.State.PROFILE_READY, Window.class,
-                    "open", window, GeckoView.class, this, Object.class, getCompositor(),
-                    String.class, chromeURI, metrics.widthPixels, metrics.heightPixels);
-        }
-    }
-
-    private void reattachWindow() {
-        if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
-            window.reattach(this, getCompositor());
-        } else {
-            GeckoThread.queueNativeCallUntil(GeckoThread.State.PROFILE_READY,
-                    window, "reattach", GeckoView.class, this, Object.class, getCompositor());
-        }
-    }
-
-    @Override
-    public void onAttachedToWindow()
-    {
-        final DisplayMetrics metrics = getContext().getResources().getDisplayMetrics();
-
-        if (window == null) {
-            // Open a new nsWindow if we didn't have one from before.
-            window = new Window();
-            openWindow();
-        } else {
-            reattachWindow();
-        }
-
-        super.onAttachedToWindow();
-
-        onAttachedToWindowCalled = true;
-    }
-
-    @Override
-    public void onDetachedFromWindow()
-    {
-        super.onDetachedFromWindow();
-        super.destroy();
-
-        if (stateSaved) {
-            // If we saved state earlier, we don't want to close the nsWindow.
-            return;
-        }
-
-        if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
-            window.close();
-            window.disposeNative();
-        } else {
-            GeckoThread.queueNativeCallUntil(GeckoThread.State.PROFILE_READY,
-                    window, "close");
-            GeckoThread.queueNativeCallUntil(GeckoThread.State.PROFILE_READY,
-                    window, "disposeNative");
-        }
-
-        onAttachedToWindowCalled = false;
-    }
-
-    @WrapForJNI public static final int LOAD_DEFAULT = 0;
-    @WrapForJNI public static final int LOAD_NEW_TAB = 1;
-    @WrapForJNI public static final int LOAD_SWITCH_TAB = 2;
-
-    public void loadUri(String uri, int flags) {
-        if (window == null) {
-            throw new IllegalStateException("Not attached to window");
-        }
-
-        if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
-            window.loadUri(uri, flags);
-        }  else {
-            GeckoThread.queueNativeCallUntil(GeckoThread.State.PROFILE_READY,
-                    window, "loadUri", String.class, uri, flags);
-        }
-    }
-
-    /* package */ void setInputConnectionListener(final InputConnectionListener icl) {
-        mInputConnectionListener = icl;
-    }
-
-    @Override
     public Handler getHandler() {
-        if (mInputConnectionListener != null) {
-            return mInputConnectionListener.getHandler(super.getHandler());
+        if (Build.VERSION.SDK_INT >= 24 || mSession == null) {
+            return super.getHandler();
         }
-        return super.getHandler();
+        return mSession.getTextInputController().getHandler(super.getHandler());
     }
 
     @Override
-    public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
-        if (mInputConnectionListener != null) {
-            return mInputConnectionListener.onCreateInputConnection(outAttrs);
+    public InputConnection onCreateInputConnection(final EditorInfo outAttrs) {
+        if (mSession == null) {
+            return null;
         }
-        return null;
+        return mSession.getTextInputController().onCreateInputConnection(outAttrs);
     }
 
     @Override
@@ -332,8 +383,8 @@ public class GeckoView extends LayerView
         if (super.onKeyPreIme(keyCode, event)) {
             return true;
         }
-        return mInputConnectionListener != null &&
-                mInputConnectionListener.onKeyPreIme(keyCode, event);
+        return mSession != null &&
+               mSession.getTextInputController().onKeyPreIme(keyCode, event);
     }
 
     @Override
@@ -341,8 +392,8 @@ public class GeckoView extends LayerView
         if (super.onKeyUp(keyCode, event)) {
             return true;
         }
-        return mInputConnectionListener != null &&
-                mInputConnectionListener.onKeyUp(keyCode, event);
+        return mSession != null &&
+               mSession.getTextInputController().onKeyUp(keyCode, event);
     }
 
     @Override
@@ -350,8 +401,8 @@ public class GeckoView extends LayerView
         if (super.onKeyDown(keyCode, event)) {
             return true;
         }
-        return mInputConnectionListener != null &&
-                mInputConnectionListener.onKeyDown(keyCode, event);
+        return mSession != null &&
+               mSession.getTextInputController().onKeyDown(keyCode, event);
     }
 
     @Override
@@ -359,8 +410,8 @@ public class GeckoView extends LayerView
         if (super.onKeyLongPress(keyCode, event)) {
             return true;
         }
-        return mInputConnectionListener != null &&
-                mInputConnectionListener.onKeyLongPress(keyCode, event);
+        return mSession != null &&
+               mSession.getTextInputController().onKeyLongPress(keyCode, event);
     }
 
     @Override
@@ -368,376 +419,60 @@ public class GeckoView extends LayerView
         if (super.onKeyMultiple(keyCode, repeatCount, event)) {
             return true;
         }
-        return mInputConnectionListener != null &&
-                mInputConnectionListener.onKeyMultiple(keyCode, repeatCount, event);
-    }
-
-    /* package */ boolean isIMEEnabled() {
-        return mInputConnectionListener != null &&
-                mInputConnectionListener.isIMEEnabled();
-    }
-
-    public void importScript(final String url) {
-        if (url.startsWith("resource://android/assets/")) {
-            GeckoAppShell.notifyObservers("GeckoView:ImportScript", url);
-            return;
-        }
-
-        throw new IllegalArgumentException("Must import script from 'resources://android/assets/' location.");
-    }
-
-    public void connectToGecko() {
-        GeckoAppShell.notifyObservers("Viewport:Flush", null);
-    }
-
-    private void handleReady(final JSONObject message) {
-        connectToGecko();
-
-        if (mChromeDelegate != null) {
-            mChromeDelegate.onReady(this);
-        }
-    }
-
-    private void handleStateChange(final JSONObject message) throws JSONException {
-        int state = message.getInt("state");
-        if ((state & GeckoAppShell.WPL_STATE_IS_NETWORK) != 0) {
-            if ((state & GeckoAppShell.WPL_STATE_START) != 0) {
-                if (mContentDelegate != null) {
-                    int id = message.getInt("tabID");
-                    mContentDelegate.onPageStart(this, new Browser(id), message.getString("uri"));
-                }
-            } else if ((state & GeckoAppShell.WPL_STATE_STOP) != 0) {
-                if (mContentDelegate != null) {
-                    int id = message.getInt("tabID");
-                    mContentDelegate.onPageStop(this, new Browser(id), message.getBoolean("success"));
-                }
-            }
-        }
-    }
-
-    private void handleLoadError(final JSONObject message) throws JSONException {
-        if (mContentDelegate != null) {
-            int id = message.getInt("tabID");
-            mContentDelegate.onPageStop(GeckoView.this, new Browser(id), false);
-        }
-    }
-
-    private void handlePageShow(final JSONObject message) throws JSONException {
-        if (mContentDelegate != null) {
-            int id = message.getInt("tabID");
-            mContentDelegate.onPageShow(GeckoView.this, new Browser(id));
-        }
-    }
-
-    private void handleTitleChanged(final JSONObject message) throws JSONException {
-        if (mContentDelegate != null) {
-            int id = message.getInt("tabID");
-            mContentDelegate.onReceivedTitle(GeckoView.this, new Browser(id), message.getString("title"));
-        }
-    }
-
-    private void handleLinkFavicon(final JSONObject message) throws JSONException {
-        if (mContentDelegate != null) {
-            int id = message.getInt("tabID");
-            mContentDelegate.onReceivedFavicon(GeckoView.this, new Browser(id), message.getString("href"), message.getInt("size"));
-        }
-    }
-
-    private void handlePrompt(final JSONObject message) throws JSONException {
-        if (mChromeDelegate != null) {
-            String hint = message.optString("hint");
-            if ("alert".equals(hint)) {
-                String text = message.optString("text");
-                mChromeDelegate.onAlert(GeckoView.this, null, text, new PromptResult(message));
-            } else if ("confirm".equals(hint)) {
-                String text = message.optString("text");
-                mChromeDelegate.onConfirm(GeckoView.this, null, text, new PromptResult(message));
-            } else if ("prompt".equals(hint)) {
-                String text = message.optString("text");
-                String defaultValue = message.optString("textbox0");
-                mChromeDelegate.onPrompt(GeckoView.this, null, text, defaultValue, new PromptResult(message));
-            } else if ("remotedebug".equals(hint)) {
-                mChromeDelegate.onDebugRequest(GeckoView.this, new PromptResult(message));
-            }
-        }
-    }
-
-    private void handleScriptMessage(final Bundle data, final EventCallback callback) {
-        if (mChromeDelegate != null) {
-            MessageResult result = null;
-            if (callback != null) {
-                result = new MessageResult(callback);
-            }
-            mChromeDelegate.onScriptMessage(GeckoView.this, data, result);
-        }
-    }
-
-    /**
-    * Set the chrome callback handler.
-    * This will replace the current handler.
-    * @param chrome An implementation of GeckoViewChrome.
-    */
-    public void setChromeDelegate(ChromeDelegate chrome) {
-        mChromeDelegate = chrome;
-    }
-
-    /**
-    * Set the content callback handler.
-    * This will replace the current handler.
-    * @param content An implementation of ContentDelegate.
-    */
-    public void setContentDelegate(ContentDelegate content) {
-        mContentDelegate = content;
-    }
-
-    public static void setGeckoInterface(final BaseGeckoInterface geckoInterface) {
-        GeckoAppShell.setGeckoInterface(geckoInterface);
-    }
-
-    public static GeckoAppShell.GeckoInterface getGeckoInterface() {
-        return GeckoAppShell.getGeckoInterface();
-    }
-
-    protected String getSharedPreferencesFile() {
-        return DEFAULT_SHARED_PREFERENCES_FILE;
+        return mSession != null &&
+               mSession.getTextInputController().onKeyMultiple(keyCode, repeatCount, event);
     }
 
     @Override
-    public SharedPreferences getSharedPreferences() {
-        return getContext().getSharedPreferences(getSharedPreferencesFile(), 0);
-    }
+    public void dispatchDraw(final Canvas canvas) {
+        super.dispatchDraw(canvas);
 
-    /**
-    * Wrapper for a browser in the GeckoView container. Associated with a browser
-    * element in the Gecko system.
-    */
-    public class Browser {
-        private final int mId;
-        private Browser(int Id) {
-            mId = Id;
-        }
-
-        /**
-        * Get the ID of the Browser. This is the same ID used by Gecko for it's underlying
-        * browser element.
-        * @return The integer ID of the Browser.
-        */
-        private int getId() {
-            return mId;
-        }
-
-        /**
-        * Load a URL resource into the Browser.
-        * @param url The URL string.
-        */
-        public void loadUrl(String url) {
-            JSONObject args = new JSONObject();
-            try {
-                args.put("url", url);
-                args.put("parentId", -1);
-                args.put("newTab", false);
-                args.put("tabID", mId);
-            } catch (Exception e) {
-                Log.w(LOGTAG, "Error building JSON arguments for loadUrl.", e);
-            }
-            GeckoAppShell.notifyObservers("Tab:Load", args.toString());
+        if (mSession != null) {
+            mSession.getOverscrollEdgeEffect().draw(canvas);
         }
     }
 
-    /* Provides a means for the client to indicate whether a JavaScript
-     * dialog request should proceed. An instance of this class is passed to
-     * various GeckoViewChrome callback actions.
-     */
-    public class PromptResult {
-        private final int RESULT_OK = 0;
-        private final int RESULT_CANCEL = 1;
-
-        private final JSONObject mMessage;
-
-        public PromptResult(JSONObject message) {
-            mMessage = message;
+    @Override
+    public boolean onTouchEvent(final MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            requestFocus();
         }
 
-        private JSONObject makeResult(int resultCode) {
-            JSONObject result = new JSONObject();
-            try {
-                result.put("button", resultCode);
-            } catch (JSONException ex) { }
-            return result;
-        }
-
-        /**
-        * Handle a confirmation response from the user.
-        */
-        public void confirm() {
-            JSONObject result = makeResult(RESULT_OK);
-            EventDispatcher.sendResponse(mMessage, result);
-        }
-
-        /**
-        * Handle a confirmation response from the user.
-        * @param value String value to return to the browser context.
-        */
-        public void confirmWithValue(String value) {
-            JSONObject result = makeResult(RESULT_OK);
-            try {
-                result.put("textbox0", value);
-            } catch (JSONException ex) { }
-            EventDispatcher.sendResponse(mMessage, result);
-        }
-
-        /**
-        * Handle a cancellation response from the user.
-        */
-        public void cancel() {
-            JSONObject result = makeResult(RESULT_CANCEL);
-            EventDispatcher.sendResponse(mMessage, result);
-        }
+        // NOTE: Treat mouse events as "touch" rather than as "mouse", so mouse can be
+        // used to pan/zoom. Call onMouseEvent() instead for behavior similar to desktop.
+        return mSession != null &&
+               mSession.getPanZoomController().onTouchEvent(event);
     }
 
-    /* Provides a means for the client to respond to a script message with some data.
-     * An instance of this class is passed to GeckoViewChrome.onScriptMessage.
-     */
-    public class MessageResult {
-        private final EventCallback mCallback;
-
-        public MessageResult(EventCallback callback) {
-            if (callback == null) {
-                throw new IllegalArgumentException("EventCallback should not be null.");
-            }
-            mCallback = callback;
+    protected static boolean isAccessibilityEnabled(final Context context) {
+        if (sAccessibilityManager == null) {
+            sAccessibilityManager = (AccessibilityManager)
+                    context.getSystemService(Context.ACCESSIBILITY_SERVICE);
         }
-
-        private JSONObject bundleToJSON(Bundle data) {
-            JSONObject result = new JSONObject();
-            if (data == null) {
-                return result;
-            }
-
-            final Set<String> keys = data.keySet();
-            for (String key : keys) {
-                try {
-                    result.put(key, data.get(key));
-                } catch (JSONException e) {
-                }
-            }
-            return result;
-        }
-
-        /**
-        * Handle a successful response to a script message.
-        * @param value Bundle value to return to the script context.
-        */
-        public void success(Bundle data) {
-            mCallback.sendSuccess(bundleToJSON(data));
-        }
-
-        /**
-        * Handle a failure response to a script message.
-        */
-        public void failure(Bundle data) {
-            mCallback.sendError(bundleToJSON(data));
-        }
+        return sAccessibilityManager.isEnabled() &&
+               sAccessibilityManager.isTouchExplorationEnabled();
     }
 
-    public interface ChromeDelegate {
-        /**
-        * Tell the host application that Gecko is ready to handle requests.
-        * @param view The GeckoView that initiated the callback.
-        */
-        public void onReady(GeckoView view);
+    @Override
+    public boolean onHoverEvent(final MotionEvent event) {
+        // If we get a touchscreen hover event, and accessibility is not enabled, don't
+        // send it to Gecko.
+        if (event.getSource() == InputDevice.SOURCE_TOUCHSCREEN &&
+            !isAccessibilityEnabled(getContext())) {
+            return false;
+        }
 
-        /**
-        * Tell the host application to display an alert dialog.
-        * @param view The GeckoView that initiated the callback.
-        * @param browser The Browser that is loading the content.
-        * @param message The string to display in the dialog.
-        * @param result A PromptResult used to send back the result without blocking.
-        * Defaults to cancel requests.
-        */
-        public void onAlert(GeckoView view, GeckoView.Browser browser, String message, GeckoView.PromptResult result);
-
-        /**
-        * Tell the host application to display a confirmation dialog.
-        * @param view The GeckoView that initiated the callback.
-        * @param browser The Browser that is loading the content.
-        * @param message The string to display in the dialog.
-        * @param result A PromptResult used to send back the result without blocking.
-        * Defaults to cancel requests.
-        */
-        public void onConfirm(GeckoView view, GeckoView.Browser browser, String message, GeckoView.PromptResult result);
-
-        /**
-        * Tell the host application to display an input prompt dialog.
-        * @param view The GeckoView that initiated the callback.
-        * @param browser The Browser that is loading the content.
-        * @param message The string to display in the dialog.
-        * @param defaultValue The string to use as default input.
-        * @param result A PromptResult used to send back the result without blocking.
-        * Defaults to cancel requests.
-        */
-        public void onPrompt(GeckoView view, GeckoView.Browser browser, String message, String defaultValue, GeckoView.PromptResult result);
-
-        /**
-        * Tell the host application to display a remote debugging request dialog.
-        * @param view The GeckoView that initiated the callback.
-        * @param result A PromptResult used to send back the result without blocking.
-        * Defaults to cancel requests.
-        */
-        public void onDebugRequest(GeckoView view, GeckoView.PromptResult result);
-
-        /**
-        * Receive a message from an imported script.
-        * @param view The GeckoView that initiated the callback.
-        * @param data Bundle of data sent with the message. Never null.
-        * @param result A MessageResult used to send back a response without blocking. Can be null.
-        * Defaults to do nothing.
-        */
-        public void onScriptMessage(GeckoView view, Bundle data, GeckoView.MessageResult result);
+        return mSession != null &&
+               mSession.getPanZoomController().onMotionEvent(event);
     }
 
-    public interface ContentDelegate {
-        /**
-        * A Browser has started loading content from the network.
-        * @param view The GeckoView that initiated the callback.
-        * @param browser The Browser that is loading the content.
-        * @param url The resource being loaded.
-        */
-        public void onPageStart(GeckoView view, GeckoView.Browser browser, String url);
+    @Override
+    public boolean onGenericMotionEvent(final MotionEvent event) {
+        if (AndroidGamepadManager.handleMotionEvent(event)) {
+            return true;
+        }
 
-        /**
-        * A Browser has finished loading content from the network.
-        * @param view The GeckoView that initiated the callback.
-        * @param browser The Browser that was loading the content.
-        * @param success Whether the page loaded successfully or an error occurred.
-        */
-        public void onPageStop(GeckoView view, GeckoView.Browser browser, boolean success);
-
-        /**
-        * A Browser is displaying content. This page could have been loaded via
-        * network or from the session history.
-        * @param view The GeckoView that initiated the callback.
-        * @param browser The Browser that is showing the content.
-        */
-        public void onPageShow(GeckoView view, GeckoView.Browser browser);
-
-        /**
-        * A page title was discovered in the content or updated after the content
-        * loaded.
-        * @param view The GeckoView that initiated the callback.
-        * @param browser The Browser that is showing the content.
-        * @param title The title sent from the content.
-        */
-        public void onReceivedTitle(GeckoView view, GeckoView.Browser browser, String title);
-
-        /**
-        * A link element was discovered in the content or updated after the content
-        * loaded that specifies a favicon.
-        * @param view The GeckoView that initiated the callback.
-        * @param browser The Browser that is showing the content.
-        * @param url The href of the link element specifying the favicon.
-        * @param size The maximum size specified for the favicon, or -1 for any size.
-        */
-        public void onReceivedFavicon(GeckoView view, GeckoView.Browser browser, String url, int size);
+        return mSession != null &&
+               mSession.getPanZoomController().onMotionEvent(event);
     }
 }

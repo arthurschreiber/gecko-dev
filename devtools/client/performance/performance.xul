@@ -84,7 +84,9 @@
       <hbox id="recordings-controls">
         <html:div id='recording-controls-mount'/>
       </hbox>
-      <vbox id="recordings-list" class="theme-sidebar" flex="1"/>
+      <vbox id="recordings-list" class="theme-sidebar" flex="1">
+        <html:div id="recording-list-mount"/>
+      </vbox>
     </vbox>
 
     <!-- Main panel content -->
@@ -103,31 +105,31 @@
         <hbox id="performance-toolbar-controls-detail-views"
               class="devtools-toolbarbutton-group">
           <toolbarbutton id="select-waterfall-view"
-                         class="devtools-toolbarbutton devtools-button"
+                         class="devtools-toolbarbutton"
                          label="&performanceUI.toolbar.waterfall;"
                          hidden="true"
                          data-view="waterfall"
                          tooltiptext="&performanceUI.toolbar.waterfall.tooltiptext;" />
           <toolbarbutton id="select-js-calltree-view"
-                         class="devtools-toolbarbutton devtools-button"
+                         class="devtools-toolbarbutton"
                          label="&performanceUI.toolbar.js-calltree;"
                          hidden="true"
                          data-view="js-calltree"
                          tooltiptext="&performanceUI.toolbar.js-calltree.tooltiptext;" />
           <toolbarbutton id="select-js-flamegraph-view"
-                         class="devtools-toolbarbutton devtools-button"
+                         class="devtools-toolbarbutton"
                          label="&performanceUI.toolbar.js-flamegraph;"
                          hidden="true"
                          data-view="js-flamegraph"
                          tooltiptext="&performanceUI.toolbar.js-flamegraph.tooltiptext;" />
           <toolbarbutton id="select-memory-calltree-view"
-                         class="devtools-toolbarbutton devtools-button"
+                         class="devtools-toolbarbutton"
                          label="&performanceUI.toolbar.memory-calltree;"
                          hidden="true"
                          data-view="memory-calltree"
                          tooltiptext="&performanceUI.toolbar.allocations.tooltiptext;" />
           <toolbarbutton id="select-memory-flamegraph-view"
-                         class="devtools-toolbarbutton devtools-button"
+                         class="devtools-toolbarbutton"
                          label="&performanceUI.toolbar.memory-flamegraph;"
                          hidden="true"
                          data-view="memory-flamegraph" />
@@ -209,8 +211,6 @@
               <hbox pack="center">
                 <html:div class='recording-button-mount'/>
               </hbox>
-              <label class="realtime-disabled-message"
-                     value="&performanceUI.disabledRealTime.nonE10SBuild;"/>
               <label class="realtime-disabled-on-e10s-message"
                      value="&performanceUI.disabledRealTime.disabledE10S;"/>
               <label class="buffer-status-message"
@@ -235,8 +235,6 @@
                 <label class="console-profile-command" />
                 <label value="&performanceUI.console.stopCommandEnd;" />
               </hbox>
-              <label class="realtime-disabled-message"
-                     value="&performanceUI.disabledRealTime.nonE10SBuild;"/>
               <label class="realtime-disabled-on-e10s-message"
                      value="&performanceUI.disabledRealTime.disabledE10S;"/>
               <label class="buffer-status-message"
@@ -250,10 +248,7 @@
 
               <!-- Waterfall -->
               <hbox id="waterfall-view" flex="1">
-                <vbox flex="1">
-                  <hbox id="waterfall-header" />
-                  <vbox id="waterfall-breakdown" flex="1" />
-                </vbox>
+                <html:div xmlns="http://www.w3.org/1999/xhtml" id="waterfall-tree" />
                 <splitter class="devtools-side-splitter"/>
                 <vbox id="waterfall-details"
                       class="theme-sidebar"/>

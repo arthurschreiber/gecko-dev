@@ -4,12 +4,9 @@
 
 // Tests various aspects of the details view
 
-const { REQUIRE_SIGNING } = Components.utils.import("resource://gre/modules/addons/AddonConstants.jsm", {});
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
 const PREF_AUTOUPDATE_DEFAULT = "extensions.update.autoUpdateDefault";
-const PREF_GETADDONS_GETSEARCHRESULTS = "extensions.getAddons.search.url";
-const SEARCH_URL = TESTROOT + "browser_details.xml";
-const PREF_EM_HOTFIX_ID = "extensions.hotfix.id";
 
 var gManagerWindow;
 var gCategoryUtilities;
@@ -46,10 +43,6 @@ function get(aId) {
 
 function test() {
   requestLongerTimeout(2);
-  // Turn on searching for this test
-  Services.prefs.setIntPref(PREF_SEARCH_MAXRESULTS, 15);
-  Services.prefs.setCharPref(PREF_GETADDONS_GETSEARCHRESULTS, SEARCH_URL);
-  Services.prefs.setCharPref(PREF_EM_HOTFIX_ID, "hotfix@tests.mozilla.org");
 
   waitForExplicitFinish();
 
@@ -66,7 +59,7 @@ function test() {
     icon64URL: "chrome://foo/skin/icon64.png",
     contributionURL: "http://foo.com",
     contributionAmount: "$0.99",
-    sourceURI: Services.io.newURI("http://example.com/foo", null, null),
+    sourceURI: Services.io.newURI("http://example.com/foo"),
     averageRating: 4,
     reviewCount: 5,
     reviewURL: "http://example.com/reviews",
@@ -95,7 +88,7 @@ function test() {
     description: "Short description",
     creator: { name: "Mozilla", url: "http://www.mozilla.org" },
     type: "extension",
-    sourceURI: Services.io.newURI("http://example.com/foo", null, null),
+    sourceURI: Services.io.newURI("http://example.com/foo"),
     updateDate: gDate,
     reviewCount: 1,
     reviewURL: "http://example.com/reviews",
@@ -168,9 +161,6 @@ function test() {
     name: "Test add-on 12",
     signedState: AddonManager.SIGNEDSTATE_SIGNED,
     foreignInstall: true,
-  }, {
-    id: "hotfix@tests.mozilla.org",
-    name: "Test hotfix 1",
   }]);
 
   open_manager(null, function(aWindow) {
@@ -182,7 +172,6 @@ function test() {
 }
 
 function end_test() {
-  Services.prefs.clearUserPref(PREF_EM_HOTFIX_ID);
   close_manager(gManagerWindow, function() {
     finish();
   });
@@ -340,10 +329,9 @@ add_test(function() {
     is_element_hidden(get("detail-pending"), "Pending message should be hidden");
 
     get("detail-screenshot").addEventListener("load", function() {
-      this.removeEventListener("load", arguments.callee, false);
       is(this.hasAttribute("loading"), false, "Screenshot should not have loading attribute");
       run_next_test();
-    }, false);
+    }, {once: true});
   });
 });
 
@@ -423,10 +411,9 @@ add_test(function() {
     is_element_hidden(get("detail-pending"), "Pending message should be hidden");
 
     get("detail-screenshot").addEventListener("load", function() {
-      this.removeEventListener("load", arguments.callee, false);
       is(this.hasAttribute("loading"), false, "Screenshot should not have loading attribute");
       run_next_test();
-    }, false);
+    }, {once: true});
   });
 });
 
@@ -712,7 +699,7 @@ add_test(function() {
 });
 
 // These tests are only appropriate when signing can be turned off
-if (!REQUIRE_SIGNING) {
+if (!AppConstants.MOZ_REQUIRE_SIGNING) {
   // Opens and tests the details view for add-on 9
   add_test(function() {
     open_details("addon9@tests.mozilla.org", "extension", function() {
@@ -776,7 +763,7 @@ add_test(function() {
 });
 
 // These tests are only appropriate when signing can be turned off
-if (!REQUIRE_SIGNING) {
+if (!AppConstants.REQUIRE_SIGNING) {
   // Opens and tests the details view for add-on 10
   add_test(function() {
     open_details("addon10@tests.mozilla.org", "extension", function() {
@@ -949,26 +936,6 @@ add_test(function() {
   });
 });
 
-// Opens and tests the details view for hotfix 1
-add_test(function() {
-  open_details("hotfix@tests.mozilla.org", "extension", function() {
-    is(get("detail-name").textContent, "Test hotfix 1", "Name should be correct");
-
-    is_element_hidden(get("detail-updates-row"), "Updates should be hidden");
-
-    is_element_hidden(get("detail-prefs-btn"), "Preferences button should be hidden");
-    is_element_hidden(get("detail-enable-btn"), "Enable button should be hidden");
-    is_element_visible(get("detail-disable-btn"), "Disable button should be visible");
-    is_element_visible(get("detail-uninstall-btn"), "Remove button should be visible");
-
-    is_element_hidden(get("detail-warning"), "Warning message should be hidden");
-    is_element_hidden(get("detail-warning-link"), "Warning link should be hidden");
-    is_element_hidden(get("detail-pending"), "Pending message should be hidden");
-
-    run_next_test();
-  });
-});
-
 // Tests that upgrades with onExternalInstall apply immediately
 add_test(function() {
   open_details("addon1@tests.mozilla.org", "extension", function() {
@@ -981,7 +948,7 @@ add_test(function() {
       type: "extension",
       iconURL: "chrome://foo/skin/icon.png",
       icon64URL: "chrome://foo/skin/icon264.png",
-      sourceURI: Services.io.newURI("http://example.com/foo", null, null),
+      sourceURI: Services.io.newURI("http://example.com/foo"),
       averageRating: 2,
       optionsURL: "chrome://foo/content/options.xul",
       applyBackgroundUpdates: AddonManager.AUTOUPDATE_ENABLE,
@@ -1012,7 +979,7 @@ add_test(function() {
 
     is_element_hidden(get("detail-downloads"), "Downloads should be hidden");
 
-    is_element_visible(get("detail-prefs-btn"), "Preferences button should be visible");
+    is_element_hidden(get("detail-prefs-btn"), "Preferences button should be hidden");
     is_element_hidden(get("detail-enable-btn"), "Enable button should be hidden");
     is_element_visible(get("detail-disable-btn"), "Disable button should be visible");
     is_element_visible(get("detail-uninstall-btn"), "Remove button should be visible");

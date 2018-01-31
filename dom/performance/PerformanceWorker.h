@@ -21,8 +21,11 @@ class PerformanceWorker final : public Performance
 public:
   explicit PerformanceWorker(workers::WorkerPrivate* aWorkerPrivate);
 
-  // Performance WebIDL methods
-  DOMHighResTimeStamp Now() const override;
+  PerformanceStorage* AsPerformanceStorage() override
+  {
+    MOZ_CRASH("This should not be called on workers.");
+    return nullptr;
+  }
 
   virtual PerformanceTiming* Timing() override
   {
@@ -34,12 +37,6 @@ public:
   {
     MOZ_CRASH("This should not be called on workers.");
     return nullptr;
-  }
-
-  virtual void AddEntry(nsIHttpChannel* channel,
-                        nsITimedChannel* timedChannel) override
-  {
-    MOZ_CRASH("This should not be called on workers.");
   }
 
   TimeStamp CreationTimeStamp() const override;
@@ -64,30 +61,14 @@ public:
     return nullptr;
   }
 
-  virtual Performance* GetParentPerformance() const override
-  {
-    MOZ_CRASH("This should not be called on workers.");
-    return nullptr;
-  }
-
 protected:
   ~PerformanceWorker();
 
-  nsISupports* GetAsISupports() override
-  {
-    return nullptr;
-  }
-
   void InsertUserEntry(PerformanceEntry* aEntry) override;
-
-  bool IsPerformanceTimingAttribute(const nsAString& aName) override;
-
-  DOMHighResTimeStamp
-  GetPerformanceTimingFromString(const nsAString& aTimingName) override;
 
   void DispatchBufferFullEvent() override
   {
-    MOZ_CRASH("This should not be called on workers.");
+    // Nothing to do here. See bug 1432758.
   }
 
 private:

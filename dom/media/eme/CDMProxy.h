@@ -8,6 +8,7 @@
 #define CDMProxy_h_
 
 #include "mozilla/CDMCaps.h"
+#include "mozilla/DataMutex.h"
 #include "mozilla/MozPromise.h"
 
 #include "mozilla/dom/MediaKeyMessageEvent.h"
@@ -17,13 +18,18 @@
 
 namespace mozilla {
 class MediaRawData;
+class ChromiumCDMProxy;
 
+namespace eme {
 enum DecryptStatus {
   Ok = 0,
   GenericErr = 1,
   NoKeyErr = 2,
   AbortedErr = 3,
 };
+}
+
+using eme::DecryptStatus;
 
 struct DecryptResult {
   DecryptResult(DecryptStatus aStatus, MediaRawData* aSample)
@@ -34,6 +40,37 @@ struct DecryptResult {
   RefPtr<MediaRawData> mSample;
 };
 
+typedef MozPromise<DecryptResult, DecryptResult, /* IsExclusive = */ true> DecryptPromise;
+
+class CDMKeyInfo {
+public:
+  explicit CDMKeyInfo(const nsTArray<uint8_t>& aKeyId)
+    : mKeyId(aKeyId)
+    , mStatus()
+  {}
+
+  CDMKeyInfo(const nsTArray<uint8_t>& aKeyId,
+             const dom::Optional<dom::MediaKeyStatus>& aStatus)
+    : mKeyId(aKeyId)
+    , mStatus(aStatus.Value())
+  {}
+
+  // The copy-ctor and copy-assignment operator for Optional<T> are declared as
+  // delete, so override CDMKeyInfo copy-ctor for nsTArray operations.
+  CDMKeyInfo(const CDMKeyInfo& aKeyInfo)
+  {
+    mKeyId = aKeyInfo.mKeyId;
+    if (aKeyInfo.mStatus.WasPassed()) {
+      mStatus.Construct(aKeyInfo.mStatus.Value());
+    }
+  }
+
+  nsTArray<uint8_t> mKeyId;
+  dom::Optional<dom::MediaKeyStatus> mStatus;
+};
+
+// Time is defined as the number of milliseconds since the
+// Epoch (00:00:00 UTC, January 1, 1970).
 typedef int64_t UnixTime;
 
 // Proxies calls CDM, and proxies calls back.
@@ -46,20 +83,20 @@ protected:
   typedef dom::MediaKeySessionType MediaKeySessionType;
 public:
 
-  NS_IMETHOD_(MozExternalRefCountType) AddRef(void) = 0;
-  NS_IMETHOD_(MozExternalRefCountType) Release(void) = 0;
-
-  typedef MozPromise<DecryptResult, DecryptResult, /* IsExclusive = */ true> DecryptPromise;
+  NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
 
   // Main thread only.
   CDMProxy(dom::MediaKeys* aKeys,
            const nsAString& aKeySystem,
            bool aDistinctiveIdentifierRequired,
-           bool aPersistentStateRequired)
+           bool aPersistentStateRequired,
+           nsIEventTarget* aMainThread)
     : mKeys(aKeys)
     , mKeySystem(aKeySystem)
+    , mCapabilites("CDMProxy::mCDMCaps")
     , mDistinctiveIdentifierRequired(aDistinctiveIdentifierRequired)
     , mPersistentStateRequired(aPersistentStateRequired)
+    , mMainThread(aMainThread)
   {}
 
   // Main thread only.
@@ -68,8 +105,9 @@ public:
   virtual void Init(PromiseId aPromiseId,
                     const nsAString& aOrigin,
                     const nsAString& aTopLevelOrigin,
-                    const nsAString& aName,
-                    bool aInPrivateBrowsing) = 0;
+                    const nsAString& aName) = 0;
+
+  virtual void OnSetDecryptorId(uint32_t aId) {}
 
   // Main thread only.
   // Uses the CDM to create a key session.
@@ -85,6 +123,7 @@ public:
   // Uses the CDM to load a presistent session stored on disk.
   // Calls MediaKeys::OnSessionActivated() when session is loaded.
   virtual void LoadSession(PromiseId aPromiseId,
+                           dom::MediaKeySessionType aSessionType,
                            const nsAString& aSessionId) = 0;
 
   // Main thread only.
@@ -140,7 +179,7 @@ public:
   // Main thread only.
   virtual void OnSessionMessage(const nsAString& aSessionId,
                                 dom::MediaKeyMessageType aMessageType,
-                                nsTArray<uint8_t>& aMessage) = 0;
+                                const nsTArray<uint8_t>& aMessage) = 0;
 
   // Main thread only.
   virtual void OnExpirationChange(const nsAString& aSessionId,
@@ -180,17 +219,24 @@ public:
   // Threadsafe.
   virtual const nsString& KeySystem() const = 0;
 
-  virtual  CDMCaps& Capabilites() = 0;
+  virtual DataMutex<CDMCaps>& Capabilites() = 0;
 
   // Main thread only.
   virtual void OnKeyStatusesChange(const nsAString& aSessionId) = 0;
 
-  virtual void GetSessionIdsForKeyId(const nsTArray<uint8_t>& aKeyId,
-                                     nsTArray<nsCString>& aSessionIds) = 0;
+  // Main thread only.
+  // Calls MediaKeys->ResolvePromiseWithKeyStatus(aPromiseId, aKeyStatus) after
+  // the CDM has processed the request.
+  virtual void GetStatusForPolicy(PromiseId aPromiseId,
+                                  const nsAString& aMinHdcpVersion) = 0;
 
 #ifdef DEBUG
   virtual bool IsOnOwnerThread() = 0;
 #endif
+
+  virtual uint32_t GetDecryptorId() { return 0; }
+
+  virtual ChromiumCDMProxy* AsChromiumCDMProxy() { return nullptr; }
 
 protected:
   virtual ~CDMProxy() {}
@@ -236,10 +282,13 @@ protected:
 
   nsCString mNodeId;
 
-  CDMCaps mCapabilites;
+  DataMutex<CDMCaps> mCapabilites;
 
   const bool mDistinctiveIdentifierRequired;
   const bool mPersistentStateRequired;
+
+  // The main thread associated with the root document.
+  const nsCOMPtr<nsIEventTarget> mMainThread;
 };
 
 

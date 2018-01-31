@@ -8,6 +8,8 @@
 #include "jscntxt.h" /* for error messages */
 #include "jsobj.h" /* for unwrapping without a context */
 
+#include "gc/FreeOp.h"
+
 using namespace js;
 using JS::PerfMeasurement;
 
@@ -166,7 +168,6 @@ static const JSClassOps pm_classOps = {
     nullptr,
     nullptr,
     nullptr,
-    nullptr,
     pm_finalize
 };
 
@@ -225,7 +226,7 @@ GetPM(JSContext* cx, JS::HandleValue value, const char* fname)
         UniqueChars bytes = DecompileValueGenerator(cx, JSDVG_SEARCH_STACK, value, nullptr);
         if (!bytes)
             return nullptr;
-        JS_ReportErrorNumber(cx, GetErrorMessage, 0, JSMSG_NOT_NONNULL_OBJECT, bytes.get());
+        JS_ReportErrorNumberLatin1(cx, GetErrorMessage, 0, JSMSG_NOT_NONNULL_OBJECT, bytes.get());
         return nullptr;
     }
     RootedObject obj(cx, &value.toObject());
@@ -236,8 +237,8 @@ GetPM(JSContext* cx, JS::HandleValue value, const char* fname)
 
     // JS_GetInstancePrivate only sets an exception if its last argument
     // is nonzero, so we have to do it by hand.
-    JS_ReportErrorNumber(cx, GetErrorMessage, 0, JSMSG_INCOMPATIBLE_PROTO,
-                         pm_class.name, fname, JS_GetClass(obj)->name);
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, 0, JSMSG_INCOMPATIBLE_PROTO,
+                              pm_class.name, fname, JS_GetClass(obj)->name);
     return nullptr;
 }
 
@@ -262,8 +263,7 @@ RegisterPerfMeasurement(JSContext* cx, HandleObject globalArg)
         return 0;
 
     for (const pm_const* c = pm_consts; c->name; c++) {
-        if (!JS_DefineProperty(cx, ctor, c->name, c->value, PM_CATTRS,
-                               JS_STUBGETTER, JS_STUBSETTER))
+        if (!JS_DefineProperty(cx, ctor, c->name, c->value, PM_CATTRS))
             return 0;
     }
 
@@ -276,7 +276,7 @@ RegisterPerfMeasurement(JSContext* cx, HandleObject globalArg)
 }
 
 PerfMeasurement*
-ExtractPerfMeasurement(Value wrapper)
+ExtractPerfMeasurement(const Value& wrapper)
 {
     if (wrapper.isPrimitive())
         return 0;

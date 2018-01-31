@@ -9,17 +9,14 @@ const { NetUtil } = Cu.import("resource://gre/modules/NetUtil.jsm", {});
 
 /**
  * A function that can be used as part of a require hook for a
- * loader.js Loader.  This function only handles webpack-style "raw!"
- * requires; other requires should not be passed to this.  See
- * https://github.com/webpack/raw-loader.
+ * loader.js Loader.
+ * This function handles "raw!" and "theme-loader!" requires.
+ * See also: https://github.com/webpack/raw-loader.
  */
-function requireRawId(id, require) {
-  // Add the chrome:// protocol for properties files if missing (see Bug 1294220)
-  if (id.endsWith(".properties") && !id.startsWith("raw!chrome://")) {
-    id = id.replace("raw!", "raw!chrome://");
-  }
-
-  let uri = require.resolve(id.slice(4));
+this.requireRawId = function (id, require) {
+  let index = id.indexOf("!");
+  let rawId = id.slice(index + 1);
+  let uri = require.resolve(rawId);
   // If the original string did not end with ".js", then
   // require.resolve might have added the suffix.  We don't want to
   // add a suffix for a raw load (if needed the caller can specify it
@@ -27,7 +24,6 @@ function requireRawId(id, require) {
   if (!id.endsWith(".js") && uri.endsWith(".js")) {
     uri = uri.slice(0, -3);
   }
-
 
   let stream = NetUtil.newChannel({
     uri: NetUtil.newURI(uri, "UTF-8"),
@@ -43,6 +39,6 @@ function requireRawId(id, require) {
   // For the time being it doesn't seem worthwhile to cache the
   // result here.
   return data;
-}
+};
 
 this.EXPORTED_SYMBOLS = ["requireRawId"];

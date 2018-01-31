@@ -1,24 +1,16 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/licenses/publicdomain/  */
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const ps = Services.prefs;
-
-// Once we fetch the profile directory the xpcshell test harness will send
-// a profile-before-change notification at shutdown. This causes the prefs
-// service to flush the prefs file - and the prefs file it uses ends up being
-// testPrefSticky*.js in the test dir. This upsets things in confusing ways :)
-// We avoid this by ensuring our "temp" prefs.js is the current prefs file.
-do_get_profile();
-do_register_cleanup(saveAndReload);
 
 // A little helper to reset the service and load some pref files
 function resetAndLoad(filenames) {
   ps.resetPrefs();
   for (let filename of filenames) {
-    ps.readUserPrefs(do_get_file(filename));
+    ps.readUserPrefsFromFile(do_get_file(filename));
   }
 }
 
@@ -33,7 +25,12 @@ function saveAndReload() {
 
   // Now reset the pref service and re-read what we saved.
   ps.resetPrefs();
-  ps.readUserPrefs(file);
+
+  // Hack alert: on Windows nsLocalFile caches the size of savePrefFile from
+  // the .create() call above as 0. We call .exists() to reset the cache.
+  file.exists();
+
+  ps.readUserPrefsFromFile(file);
 }
 
 function run_test() {
@@ -163,7 +160,7 @@ add_test(function observerFires() {
     ps.removeObserver("testPref.sticky.bool", observe);
     run_next_test();
   }
-  ps.addObserver("testPref.sticky.bool", observe, false);
+  ps.addObserver("testPref.sticky.bool", observe);
 
   ps.setBoolPref("testPref.sticky.bool", ps.getBoolPref("testPref.sticky.bool"));
   // and the observer will fire triggering the next text.

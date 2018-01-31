@@ -12,16 +12,8 @@
 
 #include "compiler/translator/IntermNode.h"
 
-namespace
+namespace sh
 {
-
-bool IsNodeBlock(TIntermNode *node)
-{
-    ASSERT(node != nullptr);
-    return (node->getAsAggregate() && node->getAsAggregate()->getOp() == EOpSequence);
-}
-
-}  // anonymous namespace
 
 IntermNodePatternMatcher::IntermNodePatternMatcher(const unsigned int mask) : mMask(mask)
 {
@@ -39,7 +31,7 @@ bool IntermNodePatternMatcher::matchInternal(TIntermBinary *node, TIntermNode *p
     if ((mMask & kExpressionReturningArray) != 0)
     {
         if (node->isArray() && node->getOp() == EOpAssign && parentNode != nullptr &&
-            !IsNodeBlock(parentNode))
+            !parentNode->getAsBlock())
         {
             return true;
         }
@@ -49,6 +41,18 @@ bool IntermNodePatternMatcher::matchInternal(TIntermBinary *node, TIntermNode *p
     {
         if (node->getRight()->hasSideEffects() &&
             (node->getOp() == EOpLogicalOr || node->getOp() == EOpLogicalAnd))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IntermNodePatternMatcher::match(TIntermUnary *node)
+{
+    if ((mMask & kArrayLengthMethod) != 0)
+    {
+        if (node->getOp() == EOpArrayLength)
         {
             return true;
         }
@@ -95,8 +99,7 @@ bool IntermNodePatternMatcher::match(TIntermAggregate *node, TIntermNode *parent
                  (parentBinary->getOp() == EOpAssign || parentBinary->getOp() == EOpInitialize));
 
             if (node->getType().isArray() && !parentIsAssignment &&
-                (node->isConstructor() || node->getOp() == EOpFunctionCall) &&
-                !IsNodeBlock(parentNode))
+                (node->isConstructor() || node->isFunctionCall()) && !parentNode->getAsBlock())
             {
                 return true;
             }
@@ -105,14 +108,50 @@ bool IntermNodePatternMatcher::match(TIntermAggregate *node, TIntermNode *parent
     return false;
 }
 
-bool IntermNodePatternMatcher::match(TIntermSelection *node)
+bool IntermNodePatternMatcher::match(TIntermTernary *node)
 {
     if ((mMask & kUnfoldedShortCircuitExpression) != 0)
     {
-        if (node->usesTernaryOperator())
+        return true;
+    }
+    return false;
+}
+
+bool IntermNodePatternMatcher::match(TIntermDeclaration *node)
+{
+    if ((mMask & kMultiDeclaration) != 0)
+    {
+        if (node->getSequence()->size() > 1)
+        {
+            return true;
+        }
+    }
+    if ((mMask & kArrayDeclaration) != 0)
+    {
+        if (node->getSequence()->front()->getAsTyped()->getType().isStructureContainingArrays())
+        {
+            return true;
+        }
+        // Need to check from all declarators whether they are arrays since that may vary between
+        // declarators.
+        for (TIntermNode *declarator : *node->getSequence())
+        {
+            if (declarator->getAsTyped()->isArray())
+            {
+                return true;
+            }
+        }
+    }
+    if ((mMask & kNamelessStructDeclaration) != 0)
+    {
+        TIntermTyped *declarator = node->getSequence()->front()->getAsTyped();
+        if (declarator->getBasicType() == EbtStruct &&
+            declarator->getType().getStruct()->name() == "")
         {
             return true;
         }
     }
     return false;
 }
+
+}  // namespace sh

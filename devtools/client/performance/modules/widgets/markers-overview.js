@@ -9,39 +9,30 @@
  * markers are visible in the "waterfall".
  */
 
-const { Heritage } = require("devtools/client/shared/widgets/view-helpers");
+const { extend } = require("devtools/shared/extend");
 const { AbstractCanvasGraph } = require("devtools/client/shared/widgets/Graphs");
 
-const { colorUtils } = require("devtools/shared/css-color");
+const { colorUtils } = require("devtools/shared/css/color");
 const { getColor } = require("devtools/client/shared/theme");
 const ProfilerGlobal = require("devtools/client/performance/modules/global");
 const { MarkerBlueprintUtils } = require("devtools/client/performance/modules/marker-blueprint-utils");
-const { TickUtils } = require("devtools/client/performance/modules/widgets/waterfall-ticks");
+const { TickUtils } = require("devtools/client/performance/modules/waterfall-ticks");
 const { TIMELINE_BLUEPRINT } = require("devtools/client/performance/modules/markers");
 
-// px
-const OVERVIEW_HEADER_HEIGHT = 14;
-// px
-const OVERVIEW_ROW_HEIGHT = 11;
+const OVERVIEW_HEADER_HEIGHT = 14; // px
+const OVERVIEW_ROW_HEIGHT = 11; // px
 
 const OVERVIEW_SELECTION_LINE_COLOR = "#666";
 const OVERVIEW_CLIPHEAD_LINE_COLOR = "#555";
 
-// ms
-const OVERVIEW_HEADER_TICKS_MULTIPLE = 100;
-// px
-const OVERVIEW_HEADER_TICKS_SPACING_MIN = 75;
-// px
-const OVERVIEW_HEADER_TEXT_FONT_SIZE = 9;
+const OVERVIEW_HEADER_TICKS_MULTIPLE = 100; // ms
+const OVERVIEW_HEADER_TICKS_SPACING_MIN = 75; // px
+const OVERVIEW_HEADER_TEXT_FONT_SIZE = 9; // px
 const OVERVIEW_HEADER_TEXT_FONT_FAMILY = "sans-serif";
-// px
-const OVERVIEW_HEADER_TEXT_PADDING_LEFT = 6;
-// px
-const OVERVIEW_HEADER_TEXT_PADDING_TOP = 1;
-// px
-const OVERVIEW_MARKER_WIDTH_MIN = 4;
-// px
-const OVERVIEW_GROUP_VERTICAL_PADDING = 5;
+const OVERVIEW_HEADER_TEXT_PADDING_LEFT = 6; // px
+const OVERVIEW_HEADER_TEXT_PADDING_TOP = 1; // px
+const OVERVIEW_MARKER_WIDTH_MIN = 4; // px
+const OVERVIEW_GROUP_VERTICAL_PADDING = 5; // px
 
 /**
  * An overview for the markers data.
@@ -57,7 +48,7 @@ function MarkersOverview(parent, filter = [], ...args) {
   this.setFilter(filter);
 }
 
-MarkersOverview.prototype = Heritage.extend(AbstractCanvasGraph.prototype, {
+MarkersOverview.prototype = extend(AbstractCanvasGraph.prototype, {
   clipheadLineColor: OVERVIEW_CLIPHEAD_LINE_COLOR,
   selectionLineColor: OVERVIEW_SELECTION_LINE_COLOR,
   headerHeight: OVERVIEW_HEADER_HEIGHT,

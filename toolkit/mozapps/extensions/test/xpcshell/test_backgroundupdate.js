@@ -7,7 +7,7 @@
 // The test extension uses an insecure update url.
 Services.prefs.setBoolPref(PREF_EM_CHECK_UPDATE_SECURITY, false);
 
-Components.utils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://testing-common/httpd.js");
 var testserver = new HttpServer();
 testserver.start(-1);
 gPort = testserver.identity.primaryPort;
@@ -36,13 +36,13 @@ function end_test() {
 // called
 function run_test_1() {
   AddonManager.getAddonsByTypes(["extension", "theme", "locale"], function(aAddons) {
-    do_check_eq(aAddons.length, 0);
+    Assert.equal(aAddons.length, 0);
 
-    Services.obs.addObserver(function() {
-      Services.obs.removeObserver(arguments.callee, "addons-background-update-complete");
+    Services.obs.addObserver(function observer() {
+      Services.obs.removeObserver(observer, "addons-background-update-complete");
 
-      do_execute_soon(run_test_2);
-    }, "addons-background-update-complete", false);
+      executeSoon(run_test_2);
+    }, "addons-background-update-complete");
 
     // Trigger the background update timer handler
     gInternalManager.notify(null);
@@ -87,35 +87,35 @@ function run_test_2() {
     name: "Test Addon 3",
   }, profileDir);
 
+  // Disable rcwn to make cache behavior deterministic.
+  Services.prefs.setBoolPref("network.http.rcwn.enabled", false);
+
   // Background update uses a different pref, if set
   Services.prefs.setCharPref("extensions.update.background.url",
-                             "http://localhost:" + gPort +"/data/test_backgroundupdate.rdf");
-  restartManager();
+                             "http://localhost:" + gPort + "/data/test_backgroundupdate.rdf");
 
-  // Do hotfix checks
-  Services.prefs.setCharPref("extensions.hotfix.id", "hotfix@tests.mozilla.org");
-  Services.prefs.setCharPref("extensions.hotfix.url", "http://localhost:" + gPort + "/missing.rdf");
+  restartManager();
 
   let installCount = 0;
   let completeCount = 0;
   let sawCompleteNotification = false;
 
-  Services.obs.addObserver(function() {
-    Services.obs.removeObserver(arguments.callee, "addons-background-update-complete");
+  Services.obs.addObserver(function observer() {
+    Services.obs.removeObserver(observer, "addons-background-update-complete");
 
-    do_check_eq(installCount, 3);
+    Assert.equal(installCount, 3);
     sawCompleteNotification = true;
-  }, "addons-background-update-complete", false);
+  }, "addons-background-update-complete");
 
   AddonManager.addInstallListener({
-    onNewInstall: function(aInstall) {
+    onNewInstall(aInstall) {
       installCount++;
     },
 
-    onDownloadFailed: function(aInstall) {
+    onDownloadFailed(aInstall) {
       completeCount++;
       if (completeCount == 3) {
-        do_check_true(sawCompleteNotification);
+        Assert.ok(sawCompleteNotification);
         end_test();
       }
     }

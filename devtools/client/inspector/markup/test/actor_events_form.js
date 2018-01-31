@@ -7,11 +7,11 @@
 // on NodeActor. Custom form property is set when 'form' event is sent
 // by NodeActor actor (see 'onNodeActorForm' method).
 
-const Events = require("sdk/event/core");
+const EventEmitter = require("devtools/shared/event-emitter");
 const {ActorClassWithSpec, Actor, FrontClassWithSpec, Front, generateActorSpec} =
   require("devtools/shared/protocol");
 
-const {NodeActor} = require("devtools/server/actors/inspector");
+const {NodeActor} = require("devtools/server/actors/inspector/node-actor");
 
 var eventsSpec = generateActorSpec({
   typeName: "eventsFormActor",
@@ -34,11 +34,11 @@ var EventsFormActor = ActorClassWithSpec(eventsSpec, {
   },
 
   attach: function () {
-    Events.on(NodeActor, "form", this.onNodeActorForm);
+    EventEmitter.on(NodeActor, "form", this.onNodeActorForm);
   },
 
   detach: function () {
-    Events.off(NodeActor, "form", this.onNodeActorForm);
+    EventEmitter.off(NodeActor, "form", this.onNodeActorForm);
   },
 
   onNodeActorForm: function (event) {

@@ -36,7 +36,7 @@ add_task(function* () {
 function* testRuleView(ruleView, nodeFront) {
   info("Testing font-family tooltips in the rule view");
 
-  let tooltip = ruleView.tooltips.previewTooltip;
+  let tooltip = ruleView.tooltips.getTooltip("previewTooltip");
   let panel = tooltip.panel;
 
   // Check that the rule view has a tooltip and that a XUL panel has
@@ -49,7 +49,8 @@ function* testRuleView(ruleView, nodeFront) {
     "font-family");
 
   // And verify that the tooltip gets shown on this property
-  yield assertHoverTooltipOn(tooltip, valueSpan);
+  valueSpan.scrollIntoView(true);
+  let previewTooltip = yield assertShowPreviewTooltip(ruleView, valueSpan);
 
   let images = panel.getElementsByTagName("img");
   is(images.length, 1, "Tooltip contains an image");
@@ -59,16 +60,37 @@ function* testRuleView(ruleView, nodeFront) {
   let dataURL = yield getFontFamilyDataURL(valueSpan.textContent, nodeFront);
   is(images[0].getAttribute("src"), dataURL,
     "Tooltip contains the correct data-uri image");
+
+  yield assertTooltipHiddenOnMouseOut(previewTooltip, valueSpan);
+
+  // Do the tooltip test again, but now when hovering on the span that
+  // encloses each and every font family.
+  const fontFamilySpan = valueSpan.querySelector(".ruleview-font-family");
+  fontFamilySpan.scrollIntoView(true);
+
+  previewTooltip = yield assertShowPreviewTooltip(ruleView, fontFamilySpan);
+
+  images = panel.getElementsByTagName("img");
+  is(images.length, 1, "Tooltip contains an image");
+  ok(images[0].getAttribute("src").startsWith("data:"),
+    "Tooltip contains a data-uri image as expected");
+
+  dataURL = yield getFontFamilyDataURL(fontFamilySpan.textContent, nodeFront);
+  is(images[0].getAttribute("src"), dataURL,
+    "Tooltip contains the correct data-uri image");
+
+  yield assertTooltipHiddenOnMouseOut(previewTooltip, fontFamilySpan);
 }
 
 function* testComputedView(computedView, nodeFront) {
   info("Testing font-family tooltips in the computed view");
 
-  let tooltip = computedView.tooltips.previewTooltip;
+  let tooltip = computedView.tooltips.getTooltip("previewTooltip");
   let panel = tooltip.panel;
   let {valueSpan} = getComputedViewProperty(computedView, "font-family");
 
-  yield assertHoverTooltipOn(tooltip, valueSpan);
+  valueSpan.scrollIntoView(true);
+  let previewTooltip = yield assertShowPreviewTooltip(computedView, valueSpan);
 
   let images = panel.getElementsByTagName("img");
   is(images.length, 1, "Tooltip contains an image");
@@ -78,6 +100,8 @@ function* testComputedView(computedView, nodeFront) {
   let dataURL = yield getFontFamilyDataURL(valueSpan.textContent, nodeFront);
   is(images[0].getAttribute("src"), dataURL,
     "Tooltip contains the correct data-uri image");
+
+  yield assertTooltipHiddenOnMouseOut(previewTooltip, valueSpan);
 }
 
 function* testExpandedComputedViewProperty(computedView, nodeFront) {
@@ -90,12 +114,13 @@ function* testExpandedComputedViewProperty(computedView, nodeFront) {
   yield propertyView.refreshMatchedSelectors();
 
   let valueSpan = propertyView.matchedSelectorsContainer
-    .querySelector(".bestmatch .other-property-value");
+    .querySelector(".bestmatch .computed-other-property-value");
 
-  let tooltip = computedView.tooltips.previewTooltip;
+  let tooltip = computedView.tooltips.getTooltip("previewTooltip");
   let panel = tooltip.panel;
 
-  yield assertHoverTooltipOn(tooltip, valueSpan);
+  valueSpan.scrollIntoView(true);
+  let previewTooltip = yield assertShowPreviewTooltip(computedView, valueSpan);
 
   let images = panel.getElementsByTagName("img");
   is(images.length, 1, "Tooltip contains an image");
@@ -105,6 +130,8 @@ function* testExpandedComputedViewProperty(computedView, nodeFront) {
   let dataURL = yield getFontFamilyDataURL(valueSpan.textContent, nodeFront);
   is(images[0].getAttribute("src"), dataURL,
     "Tooltip contains the correct data-uri image");
+
+  yield assertTooltipHiddenOnMouseOut(previewTooltip, valueSpan);
 }
 
 function getPropertyView(computedView, name) {

@@ -16,16 +16,15 @@ function do_check_permission_prefs(preferences) {
   // Check preferences were emptied
   for (let pref of preferences) {
     try {
-      do_check_eq(Services.prefs.getCharPref(pref), "");
-    }
-    catch (e) {
+      Assert.equal(Services.prefs.getCharPref(pref), "");
+    } catch (e) {
       // Successfully emptied
     }
   }
 }
 
 function clear_imported_preferences_cache() {
-  let scope = Components.utils.import("resource://gre/modules/PermissionsUtils.jsm", {});
+  let scope = ChromeUtils.import("resource://gre/modules/PermissionsUtils.jsm", {});
   scope.gImportedPrefBranches.clear();
 }
 
@@ -63,12 +62,12 @@ function run_test() {
   // Then, request to flush just install permissions
   clear_imported_preferences_cache();
   Services.prefs.setCharPref("xpinstall.whitelist.add.TEST3", "https://whitelist3.example.com");
-  Services.obs.notifyObservers(null, "flush-pending-permissions", "");
+  Services.obs.notifyObservers(null, "flush-pending-permissions");
   do_check_permission_prefs(preferences);
 
   // And a request to flush some other permissions sholdn't flush install permissions
   clear_imported_preferences_cache();
   Services.prefs.setCharPref("xpinstall.whitelist.add.TEST4", "https://whitelist4.example.com");
   Services.obs.notifyObservers(null, "flush-pending-permissions", "lolcats");
-  do_check_eq(Services.prefs.getCharPref("xpinstall.whitelist.add.TEST4"), "https://whitelist4.example.com");
+  Assert.equal(Services.prefs.getCharPref("xpinstall.whitelist.add.TEST4"), "https://whitelist4.example.com");
 }

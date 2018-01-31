@@ -39,10 +39,11 @@ public:
   void GetSupportedConstraints(MediaTrackSupportedConstraints& aResult) {};
 
   already_AddRefed<Promise>
-  GetUserMedia(const MediaStreamConstraints& aConstraints, ErrorResult &aRv);
+  GetUserMedia(const MediaStreamConstraints& aConstraints,
+	       CallerType aCallerType, ErrorResult &aRv);
 
   already_AddRefed<Promise>
-  EnumerateDevices(ErrorResult &aRv);
+  EnumerateDevices(CallerType aCallerType, ErrorResult &aRv);
 
   virtual void OnDeviceChange() override;
 
@@ -66,7 +67,8 @@ private:
   class EnumDevResolver;
   class GumRejecter;
 
-  virtual ~MediaDevices() {}
+  virtual ~MediaDevices();
+  nsCOMPtr<nsITimer> mFuzzTimer;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(MediaDevices,

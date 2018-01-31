@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 
+#include "nsStringFwd.h"
 #include "nsTArray.h"
 
 /**
@@ -94,6 +95,8 @@ enum KeyNameIndex : KeyNameIndexType
 
 #undef NS_DEFINE_KEYNAME
 
+const nsCString ToString(KeyNameIndex aKeyNameIndex);
+
 #define NS_DEFINE_PHYSICAL_KEY_CODE_NAME(aCPPName, aDOMCodeName) \
   CODE_NAME_INDEX_##aCPPName,
 
@@ -108,7 +111,10 @@ enum CodeNameIndex : CodeNameIndexType
 
 #undef NS_DEFINE_PHYSICAL_KEY_CODE_NAME
 
+const nsCString ToString(CodeNameIndex aCodeNameIndex);
+
 #define NS_DEFINE_COMMAND(aName, aCommandStr) , Command##aName
+#define NS_DEFINE_COMMAND_NO_EXEC_COMMAND(aName) , Command##aName
 
 typedef int8_t CommandInt;
 enum Command : CommandInt
@@ -118,6 +124,9 @@ enum Command : CommandInt
 #include "mozilla/CommandList.h"
 };
 #undef NS_DEFINE_COMMAND
+#undef NS_DEFINE_COMMAND_NO_EXEC_COMMAND
+
+const char* ToChar(Command aCommand);
 
 } // namespace mozilla
 
@@ -144,6 +153,8 @@ class WidgetEventTime;
 class NativeEventData;
 
 // TextEvents.h
+enum class AccessKeyType;
+
 struct AlternativeCharCode;
 struct ShortcutKeyCandidate;
 
@@ -157,6 +168,7 @@ enum class TextRangeType : RawTextRangeType;
 struct TextRangeStyle;
 struct TextRange;
 
+class EditCommands;
 class TextRangeArray;
 
 // FontRange.h

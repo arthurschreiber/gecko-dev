@@ -3,7 +3,7 @@
 #
 #    Parse comment blocks to build content blocks (library file).
 #
-#  Copyright 2002, 2004, 2006-2009, 2012-2014 by
+#  Copyright 2002-2018 by
 #  David Turner.
 #
 #  This file is part of the FreeType project, and may only be used,
@@ -46,16 +46,34 @@ re_code_end   = re.compile( r"(\s*)}\s*$" )
 
 
 #
-# A regular expression to isolate identifiers from other text.
+# A regular expression to isolate identifiers from other text.  Two syntax
+# forms are supported:
 #
-re_identifier = re.compile( r'((?:\w|-)*)' )
+#   <name>
+#   <name>[<id>]
+#
+# where both `<name>' and `<id>' consist of alphanumeric characters, `_',
+# and `-'.  Use `<id>' if there are multiple, valid `<name>' entries; in the
+# index, `<id>' will be appended in parentheses.
+#
+# For example,
+#
+#   stem_darkening[autofit]
+#
+# becomes `stem_darkening (autofit)' in the index.
+#
+re_identifier = re.compile( r"""
+                              ((?:\w|-)+
+                               (?:\[(?:\w|-)+\])?)
+                            """, re.VERBOSE )
 
 
 #
 # We collect macro names ending in `_H' (group 1), as defined in
-# `config/ftheader.h'.  While outputting the object data, we use this info
-# together with the object's file location (group 2) to emit the appropriate
-# header file macro and its associated file name before the object itself.
+# `freetype/config/ftheader.h'.  While outputting the object data, we use
+# this info together with the object's file location (group 2) to emit the
+# appropriate header file macro and its associated file name before the
+# object itself.
 #
 # Example:
 #
@@ -435,15 +453,32 @@ class  ContentProcessor:
         markup_lines = []
         first        = 1
 
+        margin  = -1
+        in_code = 0
+
         for line in content:
-            found = None
-            for t in re_markup_tags:
-                m = t.match( line )
+            if in_code:
+                m = re_code_end.match( line )
+                if m and len( m.group( 1 ) ) <= margin:
+                    in_code = 0
+                    margin  = -1
+            else:
+                m = re_code_start.match( line )
                 if m:
-                    found  = string.lower( m.group( 1 ) )
-                    prefix = len( m.group( 0 ) )
-                    line   = " " * prefix + line[prefix:]   # remove markup from line
-                    break
+                    in_code = 1
+                    margin  = len( m.group( 1 ) )
+
+            found = None
+
+            if not in_code:
+                for t in re_markup_tags:
+                    m = t.match( line )
+                    if m:
+                        found  = string.lower( m.group( 1 ) )
+                        prefix = len( m.group( 0 ) )
+                        # remove markup from line
+                        line   = " " * prefix + line[prefix:]
+                        break
 
             # is it the start of a new markup section ?
             if found:

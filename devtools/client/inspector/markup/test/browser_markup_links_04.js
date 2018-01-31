@@ -9,7 +9,7 @@
 
 const TEST_URL = URL_ROOT + "doc_markup_links.html";
 
-const TOOLBOX_L10N = new LocalizationHelper("devtools/locale/toolbox.properties");
+const TOOLBOX_L10N = new LocalizationHelper("devtools/client/locales/toolbox.properties");
 
 // The test case array contains objects with the following properties:
 // - selector: css selector for the node to select in the inspector
@@ -92,12 +92,6 @@ add_task(function* () {
 
     let linkFollow = allMenuItems.find(i => i.id === "node-menu-link-follow");
     let linkCopy = allMenuItems.find(i => i.id === "node-menu-link-copy");
-
-    // The contextual menu setup is async, because it needs to know if the
-    // inspector has the resolveRelativeURL method first. So call actorHasMethod
-    // here too to make sure the first call resolves first and the menu is
-    // properly setup.
-    yield inspector.target.actorHasMethod("inspector", "resolveRelativeURL");
 
     is(linkFollow.visible, test.isLinkFollowItemVisible,
       "The follow-link item display is correct");

@@ -9,7 +9,7 @@ function startNewWindowTestCase(aTestNumber) {
        getReferrerTestDescription(aTestNumber));
   contextMenuOpened(gTestWindow, "testlink").then(function(aContextMenu) {
     newWindowOpened().then(function(aNewWindow) {
-      someTabLoaded(aNewWindow).then(function() {
+      BrowserTestUtils.firstBrowserLoaded(aNewWindow, false).then(function() {
         checkReferrerAndStartNextTest(aTestNumber, aNewWindow, null,
                                       startNewWindowTestCase,
                                       { userContextId: 1 });
@@ -26,7 +26,7 @@ function test() {
   SpecialPowers.pushPrefEnv(
     {set: [["privacy.userContext.enabled", true]]},
     function() {
-      requestLongerTimeout(10);  // slowwww shutdown on e10s
+      requestLongerTimeout(10); // slowwww shutdown on e10s
       startReferrerTest(startNewWindowTestCase, { userContextId: 1 });
     });
 }

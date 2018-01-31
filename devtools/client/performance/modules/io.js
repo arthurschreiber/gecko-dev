@@ -38,7 +38,7 @@ function getUnicodeConverter() {
  *
  * @param object recordingData
  *        The recording data to stream as JSON.
- * @param nsILocalFile file
+ * @param nsIFile file
  *        The file to stream the data into.
  * @return object
  *         A promise that is resolved once streaming finishes, or rejected
@@ -60,7 +60,7 @@ function saveRecordingToFile(recordingData, file) {
 /**
  * Loads a recording stored as JSON from a file.
  *
- * @param nsILocalFile file
+ * @param nsIFile file
  *        The file to import the data from.
  * @return object
  *         A promise that is resolved once importing finishes, or rejected
@@ -108,7 +108,7 @@ function loadRecordingFromFile(file) {
       // If the recording has no label, set it to be the
       // filename without its extension.
       if (!recordingData.label) {
-        recordingData.label = file.leafName.replace(/\..+$/, "");
+        recordingData.label = file.leafName.replace(/\.[^.]+$/, "");
       }
 
       resolve(recordingData);

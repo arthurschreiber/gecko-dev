@@ -41,7 +41,7 @@ void
 DragEvent::InitDragEvent(const nsAString& aType,
                          bool aCanBubble,
                          bool aCancelable,
-                         nsGlobalWindow* aView,
+                         nsGlobalWindowInner* aView,
                          int32_t aDetail,
                          int32_t aScreenX,
                          int32_t aScreenY,
@@ -55,6 +55,8 @@ DragEvent::InitDragEvent(const nsAString& aType,
                          EventTarget* aRelatedTarget,
                          DataTransfer* aDataTransfer)
 {
+  NS_ENSURE_TRUE_VOID(!mEvent->mFlags.mIsBeingDispatched);
+
   MouseEvent::InitMouseEvent(aType, aCanBubble, aCancelable,
                              aView, aDetail, aScreenX, aScreenY,
                              aClientX, aClientY, aCtrlKey, aAltKey,
@@ -111,6 +113,7 @@ DragEvent::Constructor(const GlobalObject& aGlobal,
                    aParam.mDataTransfer);
   e->InitializeExtraMouseEventDictionaryMembers(aParam);
   e->SetTrusted(trusted);
+  e->SetComposed(aParam.mComposed);
   return e.forget();
 }
 
@@ -123,7 +126,7 @@ using namespace mozilla::dom;
 already_AddRefed<DragEvent>
 NS_NewDOMDragEvent(EventTarget* aOwner,
                    nsPresContext* aPresContext,
-                   WidgetDragEvent* aEvent) 
+                   WidgetDragEvent* aEvent)
 {
   RefPtr<DragEvent> event =
     new DragEvent(aOwner, aPresContext, aEvent);

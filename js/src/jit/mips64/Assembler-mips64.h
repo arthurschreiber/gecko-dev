@@ -39,18 +39,27 @@ class ABIArgGenerator
     }
 };
 
+// These registers may be volatile or nonvolatile.
 static constexpr Register ABINonArgReg0 = t0;
 static constexpr Register ABINonArgReg1 = t1;
 static constexpr Register ABINonArgReg2 = t2;
+
+// These registers may be volatile or nonvolatile.
+// Note: these three registers are all guaranteed to be different
 static constexpr Register ABINonArgReturnReg0 = t0;
 static constexpr Register ABINonArgReturnReg1 = t1;
+
+// This register is guaranteed to be clobberable during the prologue and
+// epilogue of an ABI call which must preserve both ABI argument, return
+// and non-volatile registers.
+static constexpr Register ABINonArgReturnVolatileReg = t0;
 
 // TLS pointer argument register for WebAssembly functions. This must not alias
 // any other register used for passing function arguments or return values.
 // Preserved by WebAssembly functions.
 static constexpr Register WasmTlsReg = s5;
 
-// Registers used for asm.js/wasm table calls. These registers must be disjoint
+// Registers used for wasm table calls. These registers must be disjoint
 // from the ABI argument registers, WasmTlsReg and each other.
 static constexpr Register WasmTableCallScratchReg = ABINonArgReg0;
 static constexpr Register WasmTableCallSigReg = ABINonArgReg1;
@@ -69,8 +78,9 @@ static constexpr FloatRegister SecondScratchDoubleReg = { FloatRegisters::f21, F
 
 // Registers used in the GenerateFFIIonExit Disable Activation block.
 // None of these may be the second scratch register (t8).
-static constexpr Register AsmJSIonExitRegReturnData = JSReturnReg_Data;
-static constexpr Register AsmJSIonExitRegReturnType = JSReturnReg_Type;
+static constexpr Register WasmIonExitRegReturnData = JSReturnReg_Data;
+static constexpr Register WasmIonExitRegReturnType = JSReturnReg_Type;
+static constexpr Register WasmIonExitTlsReg = s5;
 
 static constexpr FloatRegister f0  = { FloatRegisters::f0, FloatRegisters::Double };
 static constexpr FloatRegister f1  = { FloatRegisters::f1, FloatRegisters::Double };
@@ -119,7 +129,7 @@ static_assert(JitStackAlignment % sizeof(Value) == 0 && JitStackValueAlignment >
 // TODO Copy the static_asserts from x64/x86 assembler files.
 static constexpr uint32_t SimdMemoryAlignment = 16;
 
-static constexpr uint32_t AsmJSStackAlignment = SimdMemoryAlignment;
+static constexpr uint32_t WasmStackAlignment = SimdMemoryAlignment;
 
 // Does this architecture support SIMD conversions between Uint32x4 and Float32x4?
 static constexpr bool SupportsUint32x4FloatConversions = false;
@@ -146,7 +156,9 @@ class Assembler : public AssemblerMIPSShared
     using AssemblerMIPSShared::bind;
 
     void bind(RepatchLabel* label);
-    void Bind(uint8_t* rawCode, CodeOffset* label, const void* address);
+    static void Bind(uint8_t* rawCode, CodeOffset label, CodeOffset target);
+
+    void processCodeLabels(uint8_t* rawCode);
 
     static void TraceJumpRelocations(JSTracer* trc, JitCode* code, CompactBufferReader& reader);
     static void TraceDataRelocations(JSTracer* trc, JitCode* code, CompactBufferReader& reader);
@@ -155,7 +167,7 @@ class Assembler : public AssemblerMIPSShared
 
     // Copy the assembly code to the given buffer, and perform any pending
     // relocations relying on the target address.
-    void executableCopy(uint8_t* buffer);
+    void executableCopy(uint8_t* buffer, bool flushICache = true);
 
     static uint32_t PatchWrite_NearCallSize();
 
@@ -170,7 +182,6 @@ class Assembler : public AssemblerMIPSShared
     static void PatchDataWithValueCheck(CodeLocationLabel label, PatchedImmPtr newValue,
                                         PatchedImmPtr expectedValue);
 
-    static void PatchInstructionImmediate(uint8_t* code, PatchedImmPtr imm);
     static uint64_t ExtractInstructionImmediate(uint8_t* code);
 
     static void ToggleCall(CodeLocationLabel inst_, bool enabled);

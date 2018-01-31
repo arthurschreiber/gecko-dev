@@ -39,7 +39,7 @@ NS_IMETHODIMP
 nsViewSourceHandler::GetProtocolFlags(uint32_t *result)
 {
     *result = URI_NORELATIVE | URI_NOAUTH | URI_DANGEROUS_TO_LOAD |
-        URI_NON_PERSISTABLE;
+        URI_LOADABLE_BY_EXTENSIONS | URI_NON_PERSISTABLE;
     return NS_OK;
 }
 
@@ -75,18 +75,19 @@ nsViewSourceHandler::NewURI(const nsACString &aSpec,
 
     // We can't swap() from an RefPtr<nsSimpleNestedURI> to an nsIURI**,
     // sadly.
-    nsSimpleNestedURI* ourURI = new nsSimpleNestedURI(innerURI);
-    nsCOMPtr<nsIURI> uri = ourURI;
-    if (!uri)
-        return NS_ERROR_OUT_OF_MEMORY;
+    RefPtr<nsSimpleNestedURI> ourURI = new nsSimpleNestedURI(innerURI);
 
-    rv = ourURI->SetSpec(asciiSpec);
-    if (NS_FAILED(rv))
+    nsCOMPtr<nsIURI> uri;
+    rv = NS_MutateURI(ourURI)
+           .SetSpec(asciiSpec)
+           .Finalize(uri);
+    if (NS_FAILED(rv)) {
         return rv;
+    }
 
     // Make the URI immutable so it's impossible to get it out of sync
     // with its inner URI.
-    ourURI->SetMutable(false);
+    NS_TryToSetImmutable(uri);
 
     uri.swap(*aResult);
     return rv;
@@ -145,10 +146,10 @@ nsViewSourceHandler::NewSrcdocChannel(nsIURI *aURI,
     return NS_OK;
 }
 
-NS_IMETHODIMP 
+NS_IMETHODIMP
 nsViewSourceHandler::AllowPort(int32_t port, const char *scheme, bool *_retval)
 {
-    // don't override anything.  
+    // don't override anything.
     *_retval = false;
     return NS_OK;
 }

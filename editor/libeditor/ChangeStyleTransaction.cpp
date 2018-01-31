@@ -6,7 +6,7 @@
 #include "mozilla/ChangeStyleTransaction.h"
 
 #include "mozilla/dom/Element.h"        // for Element
-#include "nsAString.h"                  // for nsAString_internal::Append, etc.
+#include "nsAString.h"                  // for nsAString::Append, etc.
 #include "nsCRT.h"                      // for nsCRT::IsAsciiSpace
 #include "nsDebug.h"                    // for NS_ENSURE_SUCCESS, etc.
 #include "nsError.h"                    // for NS_ERROR_NULL_POINTER, etc.
@@ -21,6 +21,44 @@
 namespace mozilla {
 
 using namespace dom;
+
+// static
+already_AddRefed<ChangeStyleTransaction>
+ChangeStyleTransaction::Create(Element& aElement,
+                               nsAtom& aProperty,
+                               const nsAString& aValue)
+{
+  RefPtr<ChangeStyleTransaction> transaction =
+    new ChangeStyleTransaction(aElement, aProperty, aValue, false);
+  return transaction.forget();
+}
+
+// static
+already_AddRefed<ChangeStyleTransaction>
+ChangeStyleTransaction::CreateToRemove(Element& aElement,
+                                       nsAtom& aProperty,
+                                       const nsAString& aValue)
+{
+  RefPtr<ChangeStyleTransaction> transaction =
+    new ChangeStyleTransaction(aElement, aProperty, aValue, true);
+  return transaction.forget();
+}
+
+ChangeStyleTransaction::ChangeStyleTransaction(Element& aElement,
+                                               nsAtom& aProperty,
+                                               const nsAString& aValue,
+                                               bool aRemove)
+  : EditTransactionBase()
+  , mElement(&aElement)
+  , mProperty(&aProperty)
+  , mValue(aValue)
+  , mRemoveProperty(aRemove)
+  , mUndoValue()
+  , mRedoValue()
+  , mUndoAttributeWasSet(false)
+  , mRedoAttributeWasSet(false)
+{
+}
 
 #define kNullCh (char16_t('\0'))
 
@@ -119,22 +157,6 @@ ChangeStyleTransaction::RemoveValueFromListOfValues(
   aValues.Assign(outString);
 }
 
-ChangeStyleTransaction::ChangeStyleTransaction(Element& aElement,
-                                               nsIAtom& aProperty,
-                                               const nsAString& aValue,
-                                               EChangeType aChangeType)
-  : EditTransactionBase()
-  , mElement(&aElement)
-  , mProperty(&aProperty)
-  , mValue(aValue)
-  , mRemoveProperty(aChangeType == eRemove)
-  , mUndoValue()
-  , mRedoValue()
-  , mUndoAttributeWasSet(false)
-  , mRedoAttributeWasSet(false)
-{
-}
-
 NS_IMETHODIMP
 ChangeStyleTransaction::DoTransaction()
 {
@@ -150,8 +172,8 @@ ChangeStyleTransaction::DoTransaction()
                                            nsGkAtoms::style);
 
   nsAutoString values;
-  nsresult result = cssDecl->GetPropertyValue(propertyNameString, values);
-  NS_ENSURE_SUCCESS(result, result);
+  nsresult rv = cssDecl->GetPropertyValue(propertyNameString, values);
+  NS_ENSURE_SUCCESS(rv, rv);
   mUndoValue.Assign(values);
 
   // Does this property accept more than one value? (bug 62682)
@@ -168,18 +190,17 @@ ChangeStyleTransaction::DoTransaction()
       RemoveValueFromListOfValues(values, NS_LITERAL_STRING("none"));
       RemoveValueFromListOfValues(values, mValue);
       if (values.IsEmpty()) {
-        result = cssDecl->RemoveProperty(propertyNameString, returnString);
-        NS_ENSURE_SUCCESS(result, result);
+        rv = cssDecl->RemoveProperty(propertyNameString, returnString);
+        NS_ENSURE_SUCCESS(rv, rv);
       } else {
         nsAutoString priority;
         cssDecl->GetPropertyPriority(propertyNameString, priority);
-        result = cssDecl->SetProperty(propertyNameString, values,
-                                      priority);
-        NS_ENSURE_SUCCESS(result, result);
+        rv = cssDecl->SetProperty(propertyNameString, values, priority);
+        NS_ENSURE_SUCCESS(rv, rv);
       }
     } else {
-      result = cssDecl->RemoveProperty(propertyNameString, returnString);
-      NS_ENSURE_SUCCESS(result, result);
+      rv = cssDecl->RemoveProperty(propertyNameString, returnString);
+      NS_ENSURE_SUCCESS(rv, rv);
     }
   } else {
     nsAutoString priority;
@@ -194,18 +215,15 @@ ChangeStyleTransaction::DoTransaction()
     } else {
       values.Assign(mValue);
     }
-    result = cssDecl->SetProperty(propertyNameString, values,
-                                  priority);
-    NS_ENSURE_SUCCESS(result, result);
+    rv = cssDecl->SetProperty(propertyNameString, values, priority);
+    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   // Let's be sure we don't keep an empty style attribute
-  uint32_t length;
-  result = cssDecl->GetLength(&length);
-  NS_ENSURE_SUCCESS(result, result);
+  uint32_t length = cssDecl->Length();
   if (!length) {
-    result = mElement->UnsetAttr(kNameSpaceID_None, nsGkAtoms::style, true);
-    NS_ENSURE_SUCCESS(result, result);
+    rv = mElement->UnsetAttr(kNameSpaceID_None, nsGkAtoms::style, true);
+    NS_ENSURE_SUCCESS(rv, rv);
   } else {
     mRedoAttributeWasSet = true;
   }
@@ -217,7 +235,6 @@ nsresult
 ChangeStyleTransaction::SetStyle(bool aAttributeWasSet,
                                  nsAString& aValue)
 {
-  nsresult result = NS_OK;
   if (aAttributeWasSet) {
     // The style attribute was not empty, let's recreate the declaration
     nsAutoString propertyNameString;
@@ -230,18 +247,14 @@ ChangeStyleTransaction::SetStyle(bool aAttributeWasSet,
     if (aValue.IsEmpty()) {
       // An empty value means we have to remove the property
       nsAutoString returnString;
-      result = cssDecl->RemoveProperty(propertyNameString, returnString);
-    } else {
-      // Let's recreate the declaration as it was
-      nsAutoString priority;
-      cssDecl->GetPropertyPriority(propertyNameString, priority);
-      result = cssDecl->SetProperty(propertyNameString, aValue, priority);
+      return cssDecl->RemoveProperty(propertyNameString, returnString);
     }
-  } else {
-    result = mElement->UnsetAttr(kNameSpaceID_None, nsGkAtoms::style, true);
+    // Let's recreate the declaration as it was
+    nsAutoString priority;
+    cssDecl->GetPropertyPriority(propertyNameString, priority);
+    return cssDecl->SetProperty(propertyNameString, aValue, priority);
   }
-
-  return result;
+  return mElement->UnsetAttr(kNameSpaceID_None, nsGkAtoms::style, true);
 }
 
 NS_IMETHODIMP
@@ -256,23 +269,9 @@ ChangeStyleTransaction::RedoTransaction()
   return SetStyle(mRedoAttributeWasSet, mRedoValue);
 }
 
-NS_IMETHODIMP
-ChangeStyleTransaction::GetTxnDescription(nsAString& aString)
-{
-  aString.AssignLiteral("ChangeStyleTransaction: [mRemoveProperty == ");
-
-  if (mRemoveProperty) {
-    aString.AppendLiteral("true] ");
-  } else {
-    aString.AppendLiteral("false] ");
-  }
-  aString += nsDependentAtomString(mProperty);
-  return NS_OK;
-}
-
 // True if the CSS property accepts more than one value
 bool
-ChangeStyleTransaction::AcceptsMoreThanOneValue(nsIAtom& aCSSProperty)
+ChangeStyleTransaction::AcceptsMoreThanOneValue(nsAtom& aCSSProperty)
 {
   return &aCSSProperty == nsGkAtoms::text_decoration;
 }

@@ -5,9 +5,8 @@
 
 const { Cc, Ci, Cu } = require("chrome");
 const Services = require("Services");
-const { Class } = require("sdk/core/heritage");
-loader.lazyRequireGetter(this, "events", "sdk/event/core");
-loader.lazyRequireGetter(this, "EventTarget", "sdk/event/target", true);
+
+loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
 loader.lazyRequireGetter(this, "DevToolsUtils", "devtools/shared/DevToolsUtils");
 loader.lazyRequireGetter(this, "DeferredTask", "resource://gre/modules/DeferredTask.jsm", true);
 loader.lazyRequireGetter(this, "Task", "devtools/shared/task", true);
@@ -19,8 +18,8 @@ const PROFILER_SYSTEM_EVENTS = [
   "profiler-stopped"
 ];
 
-// How often the "profiler-status" is emitted by default
-const BUFFER_STATUS_INTERVAL_DEFAULT = 5000; // ms
+// How often the "profiler-status" is emitted by default (in ms)
+const BUFFER_STATUS_INTERVAL_DEFAULT = 5000;
 
 loader.lazyGetter(this, "nsIProfilerModule", () => {
   return Cc["@mozilla.org/tools/profiler;1"].getService(Ci.nsIProfiler);
@@ -50,6 +49,9 @@ const ProfilerManager = (function () {
 
     // How many subscribers there
     _profilerStatusSubscribers: 0,
+
+    // Has the profiler ever been started by the actor?
+    started: false,
 
     /**
      * The nsIProfiler is target agnostic and interacts with the whole platform.
@@ -125,6 +127,7 @@ const ProfilerManager = (function () {
         Cu.reportError(`Could not start the profiler module: ${e.message}`);
         return { started: false, reason: e, currentTime };
       }
+      this.started = true;
 
       this._updateProfilerStatusPolling();
 
@@ -140,8 +143,12 @@ const ProfilerManager = (function () {
       // Since this is used as a root actor, and the profiler module interacts
       // with the whole platform, we need to avoid a case in which the profiler
       // is stopped when there might be other clients still profiling.
-      if (this.length <= 1) {
+      // Also check for `started` to only stop the profiler when the actor
+      // actually started it. This is to prevent stopping the profiler initiated
+      // by some other code, like Talos.
+      if (this.length <= 1 && this.started) {
         nsIProfilerModule.StopProfiler();
+        this.started = false;
       }
       this._updateProfilerStatusPolling();
       return { started: false };
@@ -174,12 +181,12 @@ const ProfilerManager = (function () {
      *
      * @param number startTime
      *        Since the circular buffer will only grow as long as the profiler lives,
-     *        the buffer can contain unwanted samples. Pass in a `startTime` to only retrieve
-     *        samples that took place after the `startTime`, with 0 being when the profiler
-     *        just started.
+     *        the buffer can contain unwanted samples. Pass in a `startTime` to only
+     *        retrieve samples that took place after the `startTime`, with 0 being
+     *        when the profiler just started.
      * @param boolean stringify
-     *        Whether or not the returned profile object should be a string or not to save
-     *        JSON parse/stringify cycle if emitting over RDP.
+     *        Whether or not the returned profile object should be a string or not to
+     *        save JSON parse/stringify cycle if emitting over RDP.
      */
     getProfile: function (options) {
       let startTime = options.startTime || 0;
@@ -238,16 +245,24 @@ const ProfilerManager = (function () {
       let isActive = nsIProfilerModule.IsActive();
       let elapsedTime = isActive ? nsIProfilerModule.getElapsedTime() : undefined;
       let { position, totalSize, generation } = this.getBufferInfo();
-      return { isActive: isActive, currentTime: elapsedTime, position, totalSize, generation };
+      return {
+        isActive,
+        currentTime: elapsedTime,
+        position,
+        totalSize,
+        generation
+      };
     },
 
     /**
-     * Returns a stringified JSON object that describes the shared libraries
+     * Returns an array of objects that describes the shared libraries
      * which are currently loaded into our process. Can be called while the
      * profiler is stopped.
      */
-    getSharedLibraryInformation: function () {
-      return { sharedLibraryInformation: nsIProfilerModule.getSharedLibraryInformation() };
+    get sharedLibraries() {
+      return {
+        sharedLibraries: nsIProfilerModule.sharedLibraries
+      };
     },
 
     /**
@@ -276,7 +291,8 @@ const ProfilerManager = (function () {
       // If the event was generated from `console.profile` or `console.profileEnd`
       // we need to start the profiler right away and then just notify the client.
       // Otherwise, we'll lose precious samples.
-      if (topic === "console-api-profiler" && (action === "profile" || action === "profileEnd")) {
+      if (topic === "console-api-profiler" &&
+          (action === "profile" || action === "profileEnd")) {
         let { isActive, currentTime } = this.isActive();
 
         // Start the profiler only if it wasn't already active. Otherwise, any
@@ -284,10 +300,9 @@ const ProfilerManager = (function () {
         if (!isActive && action === "profile") {
           this.start();
           details = { profileLabel, currentTime: 0 };
-        }
-        // Otherwise, if inactive and a call to profile end, do nothing
-        // and don't emit event.
-        else if (!isActive) {
+        } else if (!isActive) {
+          // Otherwise, if inactive and a call to profile end, do nothing
+          // and don't emit event.
           return;
         }
 
@@ -316,7 +331,7 @@ const ProfilerManager = (function () {
     registerEventListeners: function () {
       if (!this._eventsRegistered) {
         PROFILER_SYSTEM_EVENTS.forEach(eventName =>
-          Services.obs.addObserver(this, eventName, false));
+          Services.obs.addObserver(this, eventName));
         this._eventsRegistered = true;
       }
     },
@@ -340,10 +355,12 @@ const ProfilerManager = (function () {
      * @param {object} data
      */
     emitEvent: function (eventName, data) {
-      let subscribers = Array.from(consumers).filter(c => c.subscribedEvents.has(eventName));
+      let subscribers = Array.from(consumers).filter(c => {
+        return c.subscribedEvents.has(eventName);
+      });
 
       for (let subscriber of subscribers) {
-        events.emit(subscriber, eventName, data);
+        subscriber.emit(eventName, data);
       }
     },
 
@@ -377,12 +394,12 @@ const ProfilerManager = (function () {
     _updateProfilerStatusPolling: function () {
       if (this._profilerStatusSubscribers > 0 && nsIProfilerModule.IsActive()) {
         if (!this._poller) {
-          this._poller = new DeferredTask(this._emitProfilerStatus.bind(this), this._profilerStatusInterval);
+          this._poller = new DeferredTask(this._emitProfilerStatus.bind(this),
+                                          this._profilerStatusInterval, 0);
         }
         this._poller.arm();
-      }
-      // No subscribers; turn off if it exists.
-      else if (this._poller) {
+      } else if (this._poller) {
+        // No subscribers; turn off if it exists.
         this._poller.disarm();
       }
     },
@@ -397,64 +414,83 @@ const ProfilerManager = (function () {
 /**
  * The profiler actor provides remote access to the built-in nsIProfiler module.
  */
-var Profiler = exports.Profiler = Class({
-  extends: EventTarget,
+class Profiler {
+  constructor() {
+    EventEmitter.decorate(this);
 
-  initialize: function () {
     this.subscribedEvents = new Set();
     ProfilerManager.addInstance(this);
-  },
+  }
 
-  destroy: function () {
+  destroy() {
     this.unregisterEventNotifications({ events: Array.from(this.subscribedEvents) });
     this.subscribedEvents = null;
+
     ProfilerManager.removeInstance(this);
-  },
+  }
 
   /**
    * @see ProfilerManager.start
    */
-  start: function (options) { return ProfilerManager.start(options); },
+  start(options) {
+    return ProfilerManager.start(options);
+  }
 
   /**
    * @see ProfilerManager.stop
    */
-  stop: function () { return ProfilerManager.stop(); },
+  stop() {
+    return ProfilerManager.stop();
+  }
 
   /**
    * @see ProfilerManager.getProfile
    */
-  getProfile: function (request = {}) { return ProfilerManager.getProfile(request); },
+  getProfile(request = {}) {
+    return ProfilerManager.getProfile(request);
+  }
 
   /**
    * @see ProfilerManager.getFeatures
    */
-  getFeatures: function () { return ProfilerManager.getFeatures(); },
+  getFeatures() {
+    return ProfilerManager.getFeatures();
+  }
 
   /**
    * @see ProfilerManager.getBufferInfo
    */
-  getBufferInfo: function () { return ProfilerManager.getBufferInfo(); },
+  getBufferInfo() {
+    return ProfilerManager.getBufferInfo();
+  }
 
   /**
    * @see ProfilerManager.getStartOptions
    */
-  getStartOptions: function () { return ProfilerManager.getStartOptions(); },
+  getStartOptions() {
+    return ProfilerManager.getStartOptions();
+  }
 
   /**
    * @see ProfilerManager.isActive
    */
-  isActive: function () { return ProfilerManager.isActive(); },
+  isActive() {
+    return ProfilerManager.isActive();
+  }
 
   /**
-   * @see ProfilerManager.isActive
+   * @see ProfilerManager.sharedLibraries
    */
-  getSharedLibraryInformation: function () { return ProfilerManager.getSharedLibraryInformation(); },
+  sharedLibraries() {
+    return ProfilerManager.sharedLibraries;
+  }
 
   /**
    * @see ProfilerManager.setProfilerStatusInterval
    */
-  setProfilerStatusInterval: function (interval) { return ProfilerManager.setProfilerStatusInterval(interval); },
+  setProfilerStatusInterval(interval) {
+    return ProfilerManager.setProfilerStatusInterval(interval);
+  }
 
   /**
    * Subscribes this instance to one of several events defined in
@@ -467,7 +503,7 @@ var Profiler = exports.Profiler = Class({
    * @param {Array<string>} data.event
    * @return {object}
    */
-  registerEventNotifications: function (data = {}) {
+  registerEventNotifications(data = {}) {
     let response = [];
     (data.events || []).forEach(e => {
       if (!this.subscribedEvents.has(e)) {
@@ -479,7 +515,7 @@ var Profiler = exports.Profiler = Class({
       }
     });
     return { registered: response };
-  },
+  }
 
   /**
    * Unsubscribes this instance to one of several events defined in
@@ -488,7 +524,7 @@ var Profiler = exports.Profiler = Class({
    * @param {Array<string>} data.event
    * @return {object}
    */
-  unregisterEventNotifications: function (data = {}) {
+  unregisterEventNotifications(data = {}) {
     let response = [];
     (data.events || []).forEach(e => {
       if (this.subscribedEvents.has(e)) {
@@ -500,16 +536,16 @@ var Profiler = exports.Profiler = Class({
       }
     });
     return { registered: response };
-  },
-});
+  }
 
-/**
- * Checks whether or not the profiler module can currently run.
- * @return boolean
- */
-Profiler.canProfile = function () {
-  return nsIProfilerModule.CanProfile();
-};
+  /**
+   * Checks whether or not the profiler module can currently run.
+   * @return boolean
+   */
+  static canProfile() {
+    return nsIProfilerModule.CanProfile();
+  }
+}
 
 /**
  * JSON.stringify callback used in Profiler.prototype.observe.
@@ -535,7 +571,8 @@ function cycleBreaker(key, value) {
  */
 function sanitizeHandler(handler, identifier) {
   return DevToolsUtils.makeInfallible(function (subject, topic, data) {
-    subject = (subject && !Cu.isXrayWrapper(subject) && subject.wrappedJSObject) || subject;
+    subject = (subject && !Cu.isXrayWrapper(subject) && subject.wrappedJSObject)
+              || subject;
     subject = JSON.parse(JSON.stringify(subject, cycleBreaker));
     data = (data && !Cu.isXrayWrapper(data) && data.wrappedJSObject) || data;
     data = JSON.parse(JSON.stringify(data, cycleBreaker));
@@ -544,3 +581,5 @@ function sanitizeHandler(handler, identifier) {
     return handler.call(this, subject, topic, data);
   }, identifier);
 }
+
+exports.Profiler = Profiler;

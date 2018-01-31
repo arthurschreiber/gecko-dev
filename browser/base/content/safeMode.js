@@ -3,13 +3,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* import-globals-from ../../../toolkit/content/resetProfile.js */
+
 var Cc = Components.classes;
 var Ci = Components.interfaces;
 var Cu = Components.utils;
 
 const appStartup = Services.startup;
 
-Cu.import("resource://gre/modules/ResetProfile.jsm");
+ChromeUtils.import("resource://gre/modules/ResetProfile.jsm");
 
 var defaultToReset = false;
 
@@ -65,7 +67,6 @@ function onExtra1() {
 }
 
 function onLoad() {
-  let dialog = document.documentElement;
   if (appStartup.automaticSafeModeNecessary) {
     document.getElementById("autoSafeMode").hidden = false;
     document.getElementById("safeMode").hidden = true;

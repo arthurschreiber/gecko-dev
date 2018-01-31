@@ -20,14 +20,13 @@ function test() {
   waitForExplicitFinish();
 
   let windowObserver = {
-    observe: function(aSubject, aTopic, aData) {
+    observe(aSubject, aTopic, aData) {
       if (aTopic == "domwindowopened") {
         ok(false, "Alert window opened");
         let win = aSubject.QueryInterface(Ci.nsIDOMEventTarget);
         win.addEventListener("load", function() {
-          win.removeEventListener("load", arguments.callee, false);
           win.close();
-        }, false);
+        }, {once: true});
         executeSoon(finish);
       }
     }
@@ -35,7 +34,46 @@ function test() {
 
   Services.ww.registerNotification(windowObserver);
 
-  let tab = gBrowser.selectedTab = gBrowser.addTab();
+  let tab = gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+
+  // We use a web progress listener in the content process to cancel
+  // the request. For everything else, we can do the work in the
+  // parent, since it's easier.
+  ContentTask.spawn(gBrowser.selectedBrowser, null, function* gen() {
+    const Ci = Components.interfaces;
+
+    let listener = {
+      onStateChange: function onLocationChange(webProgress, req, flags, status) {
+        let docStart = Ci.nsIWebProgressListener.STATE_IS_DOCUMENT |
+                       Ci.nsIWebProgressListener.STATE_START;
+        if (!(flags & docStart)) {
+          return;
+        }
+
+        req.cancel(Components.results.NS_ERROR_FAILURE);
+      },
+
+      QueryInterface: function QueryInterface(aIID) {
+        if (aIID.equals(Ci.nsIWebProgressListener) ||
+            aIID.equals(Ci.nsIWebProgressListener2) ||
+            aIID.equals(Ci.nsISupportsWeakReference) ||
+            aIID.equals(Ci.nsISupports)) {
+          return this;
+        }
+
+        throw Components.results.NS_ERROR_NO_INTERFACE;
+      }
+    };
+
+    let webProgress = docShell.QueryInterface(Ci.nsIInterfaceRequestor)
+        .getInterface(Ci.nsIWebProgress);
+    webProgress.addProgressListener(listener,
+                                    Ci.nsIWebProgress.NOTIFY_STATE_DOCUMENT);
+
+    addEventListener("unload", () => {
+      webProgress.removeProgressListener(listener);
+    });
+  });
 
   let listener = {
     onStateChange: function onLocationChange(webProgress, req, flags, status) {
@@ -51,14 +89,13 @@ function test() {
       is(req.originalURI.spec, gCurrTest.searchURL, "search URL was loaded");
       info("Actual URI: " + req.URI.spec);
 
-      req.cancel(Components.results.NS_ERROR_FAILURE);
-
       executeSoon(nextTest);
     }
   };
+
   gBrowser.addProgressListener(listener);
 
-  registerCleanupFunction(function () {
+  registerCleanupFunction(function() {
     Services.ww.unregisterNotification(windowObserver);
 
     gBrowser.removeProgressListener(listener);

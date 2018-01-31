@@ -9,17 +9,25 @@ this.EXPORTED_SYMBOLS = [
 
 var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://services-sync/constants.js");
-Cu.import("resource://services-sync/engines.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://services-common/logmanager.js");
-Cu.import("resource://services-common/async.js");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://services-sync/constants.js");
+ChromeUtils.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://services-common/logmanager.js");
+ChromeUtils.import("resource://services-common/async.js");
+ChromeUtils.import("resource://services-common/utils.js");
 
-XPCOMUtils.defineLazyModuleGetter(this, "Status",
-                                  "resource://services-sync/status.js");
-XPCOMUtils.defineLazyModuleGetter(this, "AddonManager",
-                                  "resource://gre/modules/AddonManager.jsm");
+ChromeUtils.defineModuleGetter(this, "Status",
+                               "resource://services-sync/status.js");
+ChromeUtils.defineModuleGetter(this, "AddonManager",
+                               "resource://gre/modules/AddonManager.jsm");
+XPCOMUtils.defineLazyServiceGetter(this, "IdleService",
+                                   "@mozilla.org/widget/idleservice;1",
+                                   "nsIIdleService");
+XPCOMUtils.defineLazyServiceGetter(this, "CaptivePortalService",
+                                   "@mozilla.org/network/captive-portal-service;1",
+                                   "nsICaptivePortalService");
 
 // Get the value for an interval that's stored in preferences. To save users
 // from themselves (and us from them!) the minimum time they can specify
@@ -31,13 +39,11 @@ function getThrottledIntervalPreference(prefName) {
 this.SyncScheduler = function SyncScheduler(service) {
   this.service = service;
   this.init();
-}
+};
 SyncScheduler.prototype = {
   _log: Log.repository.getLogger("Sync.SyncScheduler"),
 
-  _fatalLoginStatus: [LOGIN_FAILED_NO_USERNAME,
-                      LOGIN_FAILED_NO_PASSWORD,
-                      LOGIN_FAILED_NO_PASSPHRASE,
+  _fatalLoginStatus: [LOGIN_FAILED_NO_PASSPHRASE,
                       LOGIN_FAILED_INVALID_PASSPHRASE,
                       LOGIN_FAILED_LOGIN_REJECTED],
 
@@ -49,14 +55,7 @@ SyncScheduler.prototype = {
   setDefaults: function setDefaults() {
     this._log.trace("Setting SyncScheduler policy values to defaults.");
 
-    let service = Cc["@mozilla.org/weave/service;1"]
-                    .getService(Ci.nsISupports)
-                    .wrappedJSObject;
-
-    let part = service.fxAccountsEnabled ? "fxa" : "sync11";
-    let prefSDInterval = "scheduler." + part + ".singleDeviceInterval";
-    this.singleDeviceInterval = getThrottledIntervalPreference(prefSDInterval);
-
+    this.singleDeviceInterval = getThrottledIntervalPreference("scheduler.fxa.singleDeviceInterval");
     this.idleInterval         = getThrottledIntervalPreference("scheduler.idleInterval");
     this.activeInterval       = getThrottledIntervalPreference("scheduler.activeInterval");
     this.immediateInterval    = getThrottledIntervalPreference("scheduler.immediateInterval");
@@ -66,6 +65,13 @@ SyncScheduler.prototype = {
     this.idle = false;
 
     this.hasIncomingItems = false;
+    // This is the last number of clients we saw when previously updating the
+    // client mode. If this != currentNumClients (obtained from prefs written
+    // by the clients engine) then we need to transition to and from
+    // single and multi-device mode.
+    this.numClientsLastSync = 0;
+
+    this._resyncs = 0;
 
     this.clearSyncTriggers();
   },
@@ -79,38 +85,93 @@ SyncScheduler.prototype = {
   },
 
   get syncInterval() {
-    return Svc.Prefs.get("syncInterval", this.singleDeviceInterval);
+    return this._syncInterval;
   },
   set syncInterval(value) {
-    Svc.Prefs.set("syncInterval", value);
+    if (value != this._syncInterval) {
+      Services.prefs.setIntPref("services.sync.syncInterval", value);
+    }
   },
 
   get syncThreshold() {
-    return Svc.Prefs.get("syncThreshold", SINGLE_USER_THRESHOLD);
+    return this._syncThreshold;
   },
   set syncThreshold(value) {
-    Svc.Prefs.set("syncThreshold", value);
+    if (value != this._syncThreshold) {
+      Services.prefs.setIntPref("services.sync.syncThreshold", value);
+    }
   },
 
   get globalScore() {
-    return Svc.Prefs.get("globalScore", 0);
+    return this._globalScore;
   },
   set globalScore(value) {
-    Svc.Prefs.set("globalScore", value);
+    if (this._globalScore != value) {
+      Services.prefs.setIntPref("services.sync.globalScore", value);
+    }
   },
 
+  // Managed by the clients engine (by way of prefs)
   get numClients() {
-    return Svc.Prefs.get("numClients", 0);
+    return this.numDesktopClients + this.numMobileClients;
   },
   set numClients(value) {
-    Svc.Prefs.set("numClients", value);
+    throw new Error("Don't set numClients - the clients engine manages it.");
+  },
+
+  get offline() {
+    // Services.io.offline has slowly become fairly useless over the years - it
+    // no longer attempts to track the actual network state by default, but one
+    // thing stays true: if it says we're offline then we are definitely not online.
+    //
+    // We also ask the captive portal service if we are behind a locked captive
+    // portal.
+    //
+    // We don't check on the NetworkLinkService however, because it gave us
+    // false positives in the past in a vm environment.
+    try {
+      if (Services.io.offline ||
+          CaptivePortalService.state == CaptivePortalService.LOCKED_PORTAL) {
+        return true;
+      }
+    } catch (ex) {
+      this._log.warn("Could not determine network status.", ex);
+    }
+    return false;
+  },
+
+  _initPrefGetters() {
+
+    XPCOMUtils.defineLazyPreferenceGetter(this,
+      "idleTime", "services.sync.scheduler.idleTime");
+    XPCOMUtils.defineLazyPreferenceGetter(this,
+      "maxResyncs", "services.sync.maxResyncs", 0);
+
+    // The number of clients we have is maintained in preferences via the
+    // clients engine, and only updated after a successsful sync.
+    XPCOMUtils.defineLazyPreferenceGetter(this,
+      "numDesktopClients", "services.sync.clients.devices.desktop", 0);
+    XPCOMUtils.defineLazyPreferenceGetter(this,
+      "numMobileClients", "services.sync.clients.devices.mobile", 0);
+
+    // Scheduler state that seems to be read more often than it's written.
+    // We also check if the value has changed before writing in the setters.
+    XPCOMUtils.defineLazyPreferenceGetter(this,
+      "_syncThreshold", "services.sync.syncThreshold", SINGLE_USER_THRESHOLD);
+    XPCOMUtils.defineLazyPreferenceGetter(this,
+      "_syncInterval", "services.sync.syncInterval", this.singleDeviceInterval);
+    XPCOMUtils.defineLazyPreferenceGetter(this,
+      "_globalScore", "services.sync.globalScore", 0);
   },
 
   init: function init() {
-    this._log.level = Log.Level[Svc.Prefs.get("log.logger.service.main")];
+    this._log.manageLevelFromPref("services.sync.log.logger.service.main");
     this.setDefaults();
+    this._initPrefGetters();
     Svc.Obs.add("weave:engine:score:updated", this);
     Svc.Obs.add("network:offline-status-changed", this);
+    Svc.Obs.add("network:link-status-changed", this);
+    Svc.Obs.add("captive-portal-detected", this);
     Svc.Obs.add("weave:service:sync:start", this);
     Svc.Obs.add("weave:service:sync:finish", this);
     Svc.Obs.add("weave:engine:sync:finish", this);
@@ -127,20 +188,30 @@ SyncScheduler.prototype = {
 
     if (Status.checkSetup() == STATUS_OK) {
       Svc.Obs.add("wake_notification", this);
-      Svc.Idle.addIdleObserver(this, Svc.Prefs.get("scheduler.idleTime"));
+      Svc.Obs.add("captive-portal-login-success", this);
+      Svc.Obs.add("sleep_notification", this);
+      IdleService.addIdleObserver(this, this.idleTime);
     }
   },
 
+  // eslint-disable-next-line complexity
   observe: function observe(subject, topic, data) {
     this._log.trace("Handling " + topic);
-    switch(topic) {
+    switch (topic) {
       case "weave:engine:score:updated":
         if (Status.login == LOGIN_SUCCEEDED) {
-          Utils.namedTimer(this.calculateScore, SCORE_UPDATE_DELAY, this,
+          CommonUtils.namedTimer(this.calculateScore, SCORE_UPDATE_DELAY, this,
                            "_scoreTimer");
         }
         break;
+      case "network:link-status-changed":
+        if (!this.offline) {
+          this._log.debug("Network link looks up. Syncing.");
+          this.scheduleNextSync(0, {why: topic});
+        }
+        // Intended fallthrough
       case "network:offline-status-changed":
+      case "captive-portal-detected":
         // Whether online or offline, we'll reschedule syncs
         this._log.trace("Network offline status change: " + data);
         this.checkSyncStatus();
@@ -166,12 +237,32 @@ SyncScheduler.prototype = {
         }
 
         let sync_interval;
+        this.updateGlobalScore();
+        if (this.globalScore > 0 && Status.service == STATUS_OK) {
+          // The global score should be 0 after a sync. If it's not, items were
+          // changed during the last sync, and we should schedule an immediate
+          // follow-up sync.
+          this._resyncs++;
+          if (this._resyncs <= this.maxResyncs) {
+            sync_interval = 0;
+          } else {
+            this._log.warn(`Resync attempt ${this._resyncs} exceeded ` +
+                           `maximum ${this.maxResyncs}`);
+            Svc.Obs.notify("weave:service:resyncs-finished");
+          }
+        } else {
+          this._resyncs = 0;
+          Svc.Obs.notify("weave:service:resyncs-finished");
+        }
+
         this._syncErrors = 0;
         if (Status.sync == NO_SYNC_NODE_FOUND) {
+          // If we don't have a Sync node, override the interval, even if we've
+          // scheduled a follow-up sync.
           this._log.trace("Scheduling a sync at interval NO_SYNC_NODE_FOUND.");
           sync_interval = NO_SYNC_NODE_INTERVAL;
         }
-        this.scheduleNextSync(sync_interval);
+        this.scheduleNextSync(sync_interval, {why: "schedule"});
         break;
       case "weave:engine:sync:finish":
         if (data == "clients") {
@@ -239,16 +330,21 @@ SyncScheduler.prototype = {
         if (numItems) {
           this.hasIncomingItems = true;
         }
+        if (subject.newFailed) {
+          this._log.error(`Engine ${data} found ${subject.newFailed} new records that failed to apply`);
+        }
         break;
       case "weave:service:setup-complete":
          Services.prefs.savePrefFile(null);
-         Svc.Idle.addIdleObserver(this, Svc.Prefs.get("scheduler.idleTime"));
+         IdleService.addIdleObserver(this, this.idleTime);
          Svc.Obs.add("wake_notification", this);
+         Svc.Obs.add("captive-portal-login-success", this);
+         Svc.Obs.add("sleep_notification", this);
          break;
       case "weave:service:start-over":
          this.setDefaults();
          try {
-           Svc.Idle.removeIdleObserver(this, Svc.Prefs.get("scheduler.idleTime"));
+           IdleService.removeIdleObserver(this, this.idleTime);
          } catch (ex) {
            if (ex.result != Cr.NS_ERROR_FAILURE) {
              throw ex;
@@ -268,7 +364,7 @@ SyncScheduler.prototype = {
       case "active":
         this._log.trace("Received notification that we're back from idle.");
         this.idle = false;
-        Utils.namedTimer(function onBack() {
+        CommonUtils.namedTimer(function onBack() {
           if (this.idle) {
             this._log.trace("... and we're idle again. " +
                             "Ignoring spurious back notification.");
@@ -278,20 +374,35 @@ SyncScheduler.prototype = {
           this._log.trace("Genuine return from idle. Syncing.");
           // Trigger a sync if we have multiple clients.
           if (this.numClients > 1) {
-            this.scheduleNextSync(0);
+            this.scheduleNextSync(0, {why: topic});
           }
         }, IDLE_OBSERVER_BACK_DELAY, this, "idleDebouncerTimer");
         break;
       case "wake_notification":
         this._log.debug("Woke from sleep.");
-        Utils.nextTick(() => {
-          // Trigger a sync if we have multiple clients. We give it 5 seconds
-          // incase the network is still in the process of coming back up.
+        CommonUtils.nextTick(() => {
+          // Trigger a sync if we have multiple clients. We give it 2 seconds
+          // so the browser can recover from the wake and do more important
+          // operations first (timers etc).
           if (this.numClients > 1) {
-            this._log.debug("More than 1 client. Will sync in 5s.");
-            this.scheduleNextSync(5000);
+            if (!this.offline) {
+              this._log.debug("Online, will sync in 2s.");
+              this.scheduleNextSync(2000, {why: topic});
+            }
           }
         });
+        break;
+      case "captive-portal-login-success":
+        this._log.debug("Captive portal login success. Scheduling a sync.");
+        CommonUtils.nextTick(() => {
+          this.scheduleNextSync(3000, {why: topic});
+        });
+        break;
+      case "sleep_notification":
+        if (this.service.engineManager.get("tabs")._tracker.modified) {
+          this._log.debug("Going to sleep, doing a quick sync.");
+          this.scheduleNextSync(0, {engines: ["tabs"], why: "sleep"});
+        }
         break;
     }
   },
@@ -327,29 +438,34 @@ SyncScheduler.prototype = {
     }
   },
 
-  calculateScore: function calculateScore() {
+  updateGlobalScore() {
     let engines = [this.service.clientsEngine].concat(this.service.engineManager.getEnabled());
+    let globalScore = this.globalScore;
     for (let i = 0;i < engines.length;i++) {
       this._log.trace(engines[i].name + ": score: " + engines[i].score);
-      this.globalScore += engines[i].score;
+      globalScore += engines[i].score;
       engines[i]._tracker.resetScore();
     }
+    this.globalScore = globalScore;
+    this._log.trace("Global score updated: " + globalScore);
+  },
 
-    this._log.trace("Global score updated: " + this.globalScore);
+  calculateScore() {
+    this.updateGlobalScore();
     this.checkSyncStatus();
   },
 
   /**
-   * Process the locally stored clients list to figure out what mode to be in
+   * Query the number of known clients to figure out what mode to be in
    */
   updateClientMode: function updateClientMode() {
     // Nothing to do if it's the same amount
-    let numClients = this.service.clientsEngine.stats.numClients;
-    if (this.numClients == numClients)
+    let numClients = this.numClients;
+    if (numClients == this.numClientsLastSync)
       return;
 
-    this._log.debug("Client count: " + this.numClients + " -> " + numClients);
-    this.numClients = numClients;
+    this._log.debug(`Client count: ${this.numClientsLastSync} -> ${numClients}`);
+    this.numClientsLastSync = numClients;
 
     if (numClients <= 1) {
       this._log.trace("Adjusting syncThreshold to SINGLE_USER_THRESHOLD");
@@ -375,13 +491,15 @@ SyncScheduler.prototype = {
       return;
     }
 
+    let why = "schedule";
     // Only set the wait time to 0 if we need to sync right away
     let wait;
     if (this.globalScore > this.syncThreshold) {
       this._log.debug("Global Score threshold hit, triggering sync.");
       wait = 0;
+      why = "score";
     }
-    this.scheduleNextSync(wait);
+    this.scheduleNextSync(wait, {why});
   },
 
   /**
@@ -389,7 +507,7 @@ SyncScheduler.prototype = {
    *
    * Otherwise, reschedule a sync for later.
    */
-  syncIfMPUnlocked: function syncIfMPUnlocked() {
+  syncIfMPUnlocked(engines, why) {
     // No point if we got kicked out by the master password dialog.
     if (Status.login == MASTER_PASSWORD_LOCKED &&
         Utils.mpLocked()) {
@@ -401,13 +519,19 @@ SyncScheduler.prototype = {
       return;
     }
 
-    Utils.nextTick(this.service.sync, this.service);
+    if (!Async.isAppReady()) {
+      this._log.debug("Not initiating sync: app is shutting down");
+      return;
+    }
+    Services.tm.dispatchToMainThread(() => {
+      this.service.sync({engines, why});
+    });
   },
 
   /**
    * Set a timer for the next sync
    */
-  scheduleNextSync: function scheduleNextSync(interval) {
+  scheduleNextSync(interval, {engines = null, why = null} = {}) {
     // If no interval was specified, use the current sync interval.
     if (interval == null) {
       interval = this.syncInterval;
@@ -421,11 +545,11 @@ SyncScheduler.prototype = {
                       Status.backoffInterval + " ms instead.");
       interval = Status.backoffInterval;
     }
-
-    if (this.nextSync != 0) {
+    let nextSync = this.nextSync;
+    if (nextSync != 0) {
       // There's already a sync scheduled. Don't reschedule if there's already
       // a timer scheduled for sooner than requested.
-      let currentInterval = this.nextSync - Date.now();
+      let currentInterval = nextSync - Date.now();
       this._log.trace("There's already a sync scheduled in " +
                       currentInterval + " ms.");
       if (currentInterval < interval && this.syncTimer) {
@@ -437,13 +561,14 @@ SyncScheduler.prototype = {
 
     // Start the sync right away if we're already late.
     if (interval <= 0) {
-      this._log.trace("Requested sync should happen right away.");
-      this.syncIfMPUnlocked();
+      this._log.trace(`Requested sync should happen right away. (why=${why})`);
+      this.syncIfMPUnlocked(engines, why);
       return;
     }
 
-    this._log.debug("Next sync in " + interval + " ms.");
-    Utils.namedTimer(this.syncIfMPUnlocked, interval, this, "syncTimer");
+    this._log.debug(`Next sync in ${interval} ms. (why=${why})`);
+    CommonUtils.namedTimer(() => { this.syncIfMPUnlocked(engines, why); },
+                           interval, this, "syncTimer");
 
     // Save the next sync time in-case sync is disabled (logout/offline/etc.)
     this.nextSync = Date.now() + interval;
@@ -464,7 +589,7 @@ SyncScheduler.prototype = {
 
     this._log.debug("Starting client-initiated backoff. Next sync in " +
                     interval + " ms.");
-    this.scheduleNextSync(interval);
+    this.scheduleNextSync(interval, {why: "client-backoff-schedule"});
   },
 
  /**
@@ -477,7 +602,7 @@ SyncScheduler.prototype = {
   */
   delayedAutoConnect: function delayedAutoConnect(delay) {
     if (this.service._checkSetup() == STATUS_OK) {
-      Utils.namedTimer(this.autoConnect, delay * 1000, this, "_autoTimer");
+      CommonUtils.namedTimer(this.autoConnect, delay * 1000, this, "_autoTimer");
     }
   },
 
@@ -486,7 +611,7 @@ SyncScheduler.prototype = {
       // Schedule a sync based on when a previous sync was scheduled.
       // scheduleNextSync() will do the right thing if that time lies in
       // the past.
-      this.scheduleNextSync(this.nextSync - Date.now());
+      this.scheduleNextSync(this.nextSync - Date.now(), {why: "startup"});
     }
 
     // Once autoConnect is called we no longer need _autoTimer.
@@ -507,7 +632,7 @@ SyncScheduler.prototype = {
     // backoff due to 5xx errors.
     if (!Status.enforceBackoff) {
       if (this._syncErrors < MAX_ERROR_COUNT_BEFORE_BACKOFF) {
-        this.scheduleNextSync();
+        this.scheduleNextSync(null, {why: "reschedule"});
         return;
       }
       this._log.debug("Sync error count has exceeded " +
@@ -536,7 +661,7 @@ SyncScheduler.prototype = {
 this.ErrorHandler = function ErrorHandler(service) {
   this.service = service;
   this.init();
-}
+};
 ErrorHandler.prototype = {
   MINIMUM_ALERT_INTERVAL_MSEC: 604800000,   // One week.
 
@@ -558,21 +683,21 @@ ErrorHandler.prototype = {
     Svc.Obs.add("weave:service:login:error", this);
     Svc.Obs.add("weave:service:sync:error", this);
     Svc.Obs.add("weave:service:sync:finish", this);
+    Svc.Obs.add("weave:service:start-over:finish", this);
 
     this.initLogs();
   },
 
   initLogs: function initLogs() {
+    // Set the root Sync logger level based on a pref. All other logs will
+    // inherit this level unless they specifically override it.
+    Log.repository.getLogger("Sync").manageLevelFromPref(`services.sync.log.logger`);
+    // And allow our specific log to have a custom level via a pref.
     this._log = Log.repository.getLogger("Sync.ErrorHandler");
-    this._log.level = Log.Level[Svc.Prefs.get("log.logger.service.main")];
+    this._log.manageLevelFromPref("services.sync.log.logger.service.main");
 
-    let root = Log.repository.getLogger("Sync");
-    root.level = Log.Level[Svc.Prefs.get("log.rootLogger")];
-
-    let logs = ["Sync", "FirefoxAccounts", "Hawk", "Common.TokenServerClient",
-                "Sync.SyncMigration", "browserwindow.syncui",
-                "Services.Common.RESTRequest", "Services.Common.RESTRequest",
-                "BookmarkSyncUtils"
+    let logs = ["Sync", "Services.Common", "FirefoxAccounts", "Hawk",
+                "browserwindow.syncui", "BookmarkSyncUtils", "addons.xpi",
                ];
 
     this._logManager = new LogManager(Svc.Prefs, logs, "sync");
@@ -580,7 +705,7 @@ ErrorHandler.prototype = {
 
   observe: function observe(subject, topic, data) {
     this._log.trace("Handling " + topic);
-    switch(topic) {
+    switch (topic) {
       case "weave:engine:sync:applied":
         if (subject.newFailed) {
           // An engine isn't able to apply one or more incoming records.
@@ -591,8 +716,8 @@ ErrorHandler.prototype = {
         }
         break;
       case "weave:engine:sync:error": {
-        let exception = subject;  // exception thrown by engine's sync() method
-        let engine_name = data;   // engine name that threw the exception
+        let exception = subject; // exception thrown by engine's sync() method
+        let engine_name = data; // engine name that threw the exception
 
         this.checkServerError(exception);
 
@@ -652,7 +777,7 @@ ErrorHandler.prototype = {
         // engine, Status.service will be SYNC_FAILED_PARTIAL despite
         // Status.sync being SYNC_SUCCEEDED.
         // *facepalm*
-        if (Status.sync    == SYNC_SUCCEEDED &&
+        if (Status.sync == SYNC_SUCCEEDED &&
             Status.service == STATUS_OK) {
           // Great. Let's clear our mid-sync 401 note.
           this._log.trace("Clearing lastSyncReassigned.");
@@ -674,11 +799,15 @@ ErrorHandler.prototype = {
         this.dontIgnoreErrors = false;
         this.notifyOnNextTick("weave:ui:sync:finish");
         break;
+      case "weave:service:start-over:finish":
+        // ensure we capture any logs between the last sync and the reset completing.
+        this.resetFileLog();
+        break;
     }
   },
 
   notifyOnNextTick: function notifyOnNextTick(topic) {
-    Utils.nextTick(function() {
+    CommonUtils.nextTick(function() {
       this._log.trace("Notifying " + topic +
                       ". Status.login is " + Status.login +
                       ". Status.sync is " + Status.sync);
@@ -693,28 +822,26 @@ ErrorHandler.prototype = {
     this._log.debug("Beginning user-triggered sync.");
 
     this.dontIgnoreErrors = true;
-    Utils.nextTick(this.service.sync, this.service);
+    CommonUtils.nextTick(() => {
+      this.service.sync({why: "user"});
+    }, this);
   },
 
-  _dumpAddons: function _dumpAddons() {
+  async _dumpAddons() {
     // Just dump the items that sync may be concerned with. Specifically,
     // active extensions that are not hidden.
-    let addonPromise = new Promise(resolve => {
-      try {
-        AddonManager.getAddonsByTypes(["extension"], resolve);
-      } catch (e) {
-        this._log.warn("Failed to dump addons", e)
-        resolve([])
-      }
-    });
+    let addons = [];
+    try {
+      addons = await AddonManager.getAddonsByTypes(["extension"]);
+    } catch (e) {
+      this._log.warn("Failed to dump addons", e);
+    }
 
-    return addonPromise.then(addons => {
-      let relevantAddons = addons.filter(x => x.isActive && !x.hidden);
-      this._log.debug("Addons installed", relevantAddons.length);
-      for (let addon of relevantAddons) {
-        this._log.debug(" - ${name}, version ${version}, id ${id}", addon);
-      }
-    });
+    let relevantAddons = addons.filter(x => x.isActive && !x.hidden);
+    this._log.debug("Addons installed", relevantAddons.length);
+    for (let addon of relevantAddons) {
+      this._log.debug(" - ${name}, version ${version}, id ${id}", addon);
+    }
   },
 
   /**
@@ -841,7 +968,7 @@ ErrorHandler.prototype = {
     return Svc.Prefs.set("errorhandler.alert.earliestNext", msec / 1000);
   },
 
-  clearServerAlerts: function () {
+  clearServerAlerts() {
     // If we have any outstanding alerts, apparently they're no longer relevant.
     Svc.Prefs.resetBranch("errorhandler.alert");
   },
@@ -855,7 +982,7 @@ ErrorHandler.prototype = {
    *    "message": // Logged in Sync logs.
    *   }
    */
-  handleServerAlert: function (xwa) {
+  handleServerAlert(xwa) {
     if (!xwa.code) {
       this._log.warn("Got structured X-Weave-Alert, but no alert code.");
       return;
@@ -874,7 +1001,7 @@ ErrorHandler.prototype = {
         // in with your Firefox Account" storage alerts.
         if ((this.currentAlertMode != xwa.code) ||
             (this.earliestNextAlert < Date.now())) {
-          Utils.nextTick(function() {
+          CommonUtils.nextTick(function() {
             Svc.Obs.notify("weave:eol", xwa);
           }, this);
           this._log.error("X-Weave-Alert: " + xwa.code + ": " + xwa.message);
@@ -893,12 +1020,13 @@ ErrorHandler.prototype = {
    *
    * This method also looks for "side-channel" warnings.
    */
-  checkServerError: function (resp) {
+  checkServerError(resp) {
+    // In this case we were passed a resolved value of Resource#_doRequest.
     switch (resp.status) {
       case 200:
       case 404:
       case 513:
-        let xwa = resp.headers['x-weave-alert'];
+        let xwa = resp.headers["x-weave-alert"];
 
         // Only process machine-readable alerts.
         if (!xwa || !xwa.startsWith("{")) {
@@ -941,7 +1069,7 @@ ErrorHandler.prototype = {
           Svc.Prefs.set("lastSyncReassigned", true);
         }
         this._log.info("Attempting to schedule another sync.");
-        this.service.scheduler.scheduleNextSync(delay);
+        this.service.scheduler.scheduleNextSync(delay, {why: "reschedule"});
         break;
 
       case 500:
@@ -963,6 +1091,7 @@ ErrorHandler.prototype = {
         break;
     }
 
+    // In this other case we were passed a rejection value.
     switch (resp.result) {
       case Cr.NS_ERROR_UNKNOWN_HOST:
       case Cr.NS_ERROR_CONNECTION_REFUSED:

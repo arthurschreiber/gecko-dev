@@ -36,13 +36,13 @@ public:
   public:
     MockAccessibleCaret() : AccessibleCaret(nullptr) {}
 
-    virtual void SetAppearance(Appearance aAppearance) override
+    void SetAppearance(Appearance aAppearance) override
     {
       // A simplified version without touching CaretElement().
       mAppearance = aAppearance;
     }
 
-    virtual void SetSelectionBarEnabled(bool aEnabled) override
+    void SetSelectionBarEnabled(bool aEnabled) override
     {
       // A simplified version without touching CaretElement().
       mSelectionBarEnabled = aEnabled;
@@ -80,22 +80,22 @@ public:
       return static_cast<MockAccessibleCaret&>(*mSecondCaret);
     }
 
-    virtual bool CompareTreePosition(nsIFrame* aStartFrame,
-                                     nsIFrame* aEndFrame) const override
+    bool CompareTreePosition(nsIFrame* aStartFrame,
+                             nsIFrame* aEndFrame) const override
     {
       return true;
     }
 
-    virtual bool IsCaretDisplayableInCursorMode(
-      nsIFrame** aOutFrame = nullptr, int32_t* aOutOffset = nullptr) const override
+    bool IsCaretDisplayableInCursorMode(nsIFrame** aOutFrame = nullptr,
+                                        int32_t* aOutOffset = nullptr) const override
     {
       return true;
     }
 
-    virtual void UpdateCaretsForOverlappingTilt() override {}
+    bool UpdateCaretsForOverlappingTilt() override { return true; }
 
-    virtual void UpdateCaretsForAlwaysTilt(nsIFrame* aStartFrame,
-                                           nsIFrame* aEndFrame)
+    void UpdateCaretsForAlwaysTilt(nsIFrame* aStartFrame,
+                                   nsIFrame* aEndFrame) override
     {
       if (mFirstCaret->IsVisuallyVisible()) {
         mFirstCaret->SetAppearance(Appearance::Left);
@@ -105,11 +105,11 @@ public:
       }
     }
 
-    virtual bool IsTerminated() const override { return false; }
+    bool IsTerminated() const override { return false; }
 
     MOCK_CONST_METHOD0(GetCaretMode, CaretMode());
-    MOCK_CONST_METHOD1(DispatchCaretStateChangedEvent,
-                       void(CaretChangedReason aReason));
+    MOCK_METHOD1(DispatchCaretStateChangedEvent,
+                 void(CaretChangedReason aReason));
     MOCK_CONST_METHOD1(HasNonEmptyTextContent, bool(nsINode* aNode));
 
   }; // class MockAccessibleCaretManager
@@ -350,7 +350,7 @@ TEST_F(AccessibleCaretManagerTester, TestTypingAtEndOfInput)
 
 TEST_F(AccessibleCaretManagerTester, TestScrollInSelectionMode)
 {
-  // Simulate B2G preference.
+  // Simulate caret hiding when scrolling.
   AutoRestore<bool> savesCaretsAlwaysShowWhenScrolling(
     MockAccessibleCaretManager::sCaretsAlwaysShowWhenScrolling);
   MockAccessibleCaretManager::sCaretsAlwaysShowWhenScrolling = false;
@@ -453,6 +453,9 @@ TEST_F(AccessibleCaretManagerTester, TestScrollInSelectionModeWithAlwaysTiltPref
                   CaretChangedReason::Scroll));
     EXPECT_CALL(check, Call("scrollstart1"));
 
+    EXPECT_CALL(mManager, DispatchCaretStateChangedEvent(_)).Times(0);
+    EXPECT_CALL(check, Call("scrollPositionChanged1"));
+
     EXPECT_CALL(mManager, DispatchCaretStateChangedEvent(
                   CaretChangedReason::Updateposition));
     EXPECT_CALL(check, Call("reflow1"));
@@ -469,6 +472,9 @@ TEST_F(AccessibleCaretManagerTester, TestScrollInSelectionModeWithAlwaysTiltPref
     EXPECT_CALL(mManager, DispatchCaretStateChangedEvent(
                   CaretChangedReason::Scroll));
     EXPECT_CALL(check, Call("scrollstart2"));
+
+    EXPECT_CALL(mManager, DispatchCaretStateChangedEvent(_)).Times(0);
+    EXPECT_CALL(check, Call("scrollPositionChanged2"));
 
     EXPECT_CALL(mManager, DispatchCaretStateChangedEvent(
                   CaretChangedReason::Updateposition));
@@ -490,6 +496,11 @@ TEST_F(AccessibleCaretManagerTester, TestScrollInSelectionModeWithAlwaysTiltPref
   EXPECT_EQ(SecondCaretAppearance(), Appearance::Right);
   check.Call("scrollstart1");
 
+  mManager.OnScrollPositionChanged();
+  EXPECT_EQ(FirstCaretAppearance(), Appearance::NormalNotShown);
+  EXPECT_EQ(SecondCaretAppearance(), Appearance::Right);
+  check.Call("scrollPositionChanged1");
+
   mManager.OnReflow();
   EXPECT_EQ(FirstCaretAppearance(), Appearance::NormalNotShown);
   EXPECT_EQ(SecondCaretAppearance(), Appearance::Right);
@@ -505,6 +516,11 @@ TEST_F(AccessibleCaretManagerTester, TestScrollInSelectionModeWithAlwaysTiltPref
   EXPECT_EQ(SecondCaretAppearance(), Appearance::NormalNotShown);
   check.Call("scrollstart2");
 
+  mManager.OnScrollPositionChanged();
+  EXPECT_EQ(FirstCaretAppearance(), Appearance::Left);
+  EXPECT_EQ(SecondCaretAppearance(), Appearance::NormalNotShown);
+  check.Call("scrollPositionChanged2");
+
   mManager.OnReflow();
   EXPECT_EQ(FirstCaretAppearance(), Appearance::Left);
   EXPECT_EQ(SecondCaretAppearance(), Appearance::NormalNotShown);
@@ -518,7 +534,7 @@ TEST_F(AccessibleCaretManagerTester, TestScrollInSelectionModeWithAlwaysTiltPref
 
 TEST_F(AccessibleCaretManagerTester, TestScrollInCursorModeWhenLogicallyVisible)
 {
-  // Simulate B2G preference.
+  // Simulate caret hiding when scrolling.
   AutoRestore<bool> savesCaretsAlwaysShowWhenScrolling(
     MockAccessibleCaretManager::sCaretsAlwaysShowWhenScrolling);
   MockAccessibleCaretManager::sCaretsAlwaysShowWhenScrolling = false;
@@ -583,7 +599,7 @@ TEST_F(AccessibleCaretManagerTester, TestScrollInCursorModeWhenLogicallyVisible)
 
 TEST_F(AccessibleCaretManagerTester, TestScrollInCursorModeWhenHidden)
 {
-  // Simulate B2G preference.
+  // Simulate caret hiding when scrolling.
   AutoRestore<bool> savesCaretsAlwaysShowWhenScrolling(
     MockAccessibleCaretManager::sCaretsAlwaysShowWhenScrolling);
   MockAccessibleCaretManager::sCaretsAlwaysShowWhenScrolling = false;
@@ -642,7 +658,7 @@ TEST_F(AccessibleCaretManagerTester, TestScrollInCursorModeWhenHidden)
 
 TEST_F(AccessibleCaretManagerTester, TestScrollInCursorModeOnEmptyContent)
 {
-  // Simulate B2G preference.
+  // Simulate caret hiding when scrolling.
   AutoRestore<bool> savesCaretsAlwaysShowWhenScrolling(
     MockAccessibleCaretManager::sCaretsAlwaysShowWhenScrolling);
   MockAccessibleCaretManager::sCaretsAlwaysShowWhenScrolling = false;
@@ -795,6 +811,7 @@ TEST_F(AccessibleCaretManagerTester,
   // Scroll the caret into the viewport.
   mManager.OnScrollStart();
   check.Call("longtap scrollstart2");
+  mManager.OnScrollPositionChanged();
   mManager.OnScrollEnd();
   EXPECT_EQ(FirstCaretAppearance(), Appearance::Normal);
   check.Call("longtap scrollend2");
@@ -802,6 +819,7 @@ TEST_F(AccessibleCaretManagerTester,
   // Scroll the caret within the viewport.
   mManager.OnScrollStart();
   check.Call("longtap scrollstart3");
+  mManager.OnScrollPositionChanged();
   mManager.OnScrollEnd();
   EXPECT_EQ(FirstCaretAppearance(), Appearance::Normal);
   check.Call("longtap scrollend3");

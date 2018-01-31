@@ -1,4 +1,4 @@
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var permChangedObs = {
   observe: function(subject, topic, data) {
@@ -10,4 +10,4 @@ var permChangedObs = {
   }
 };
 
-Services.obs.addObserver(permChangedObs, 'perm-changed', false);
+Services.obs.addObserver(permChangedObs, 'perm-changed');

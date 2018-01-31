@@ -473,8 +473,7 @@ ER3(SSL_ERROR_RX_MALFORMED_PRE_SHARED_KEY, (SSL_ERROR_BASE + 147),
 ER3(SSL_ERROR_RX_MALFORMED_EARLY_DATA, (SSL_ERROR_BASE + 148),
     "SSL received an invalid EarlyData extension.")
 
-ER3(SSL_ERROR_END_OF_EARLY_DATA_ALERT, (SSL_ERROR_BASE + 149),
-    "SSL received an unexpected end of early data alert.")
+UNUSED_ERROR(149)
 
 ER3(SSL_ERROR_MISSING_ALPN_EXTENSION, (SSL_ERROR_BASE + 150),
     "SSL didn't receive an expected ALPN extension.")
@@ -487,3 +486,60 @@ ER3(SSL_ERROR_MISSING_SUPPORTED_GROUPS, (SSL_ERROR_BASE + 152),
 
 ER3(SSL_ERROR_TOO_MANY_RECORDS, (SSL_ERROR_BASE + 153),
     "SSL sent or received too many records with the same symmetric key.")
+
+ER3(SSL_ERROR_RX_UNEXPECTED_HELLO_RETRY_REQUEST, (SSL_ERROR_BASE + 154),
+    "SSL received an unexpected Hello Retry Request handshake message.")
+
+ER3(SSL_ERROR_RX_MALFORMED_HELLO_RETRY_REQUEST, (SSL_ERROR_BASE + 155),
+    "SSL received a malformed Hello Retry Request handshake message.")
+
+ER3(SSL_ERROR_BAD_2ND_CLIENT_HELLO, (SSL_ERROR_BASE + 156),
+    "SSL received a second Client Hello message without a usable key share.")
+
+ER3(SSL_ERROR_MISSING_SIGNATURE_ALGORITHMS_EXTENSION, (SSL_ERROR_BASE + 157),
+    "SSL expected a signature algorithms extension.")
+
+ER3(SSL_ERROR_MALFORMED_PSK_KEY_EXCHANGE_MODES, (SSL_ERROR_BASE + 158),
+    "SSL received a malformed PSK key exchange modes extension.")
+
+ER3(SSL_ERROR_MISSING_PSK_KEY_EXCHANGE_MODES, (SSL_ERROR_BASE + 159),
+    "SSL expected a PSK key exchange modes extension.")
+
+ER3(SSL_ERROR_DOWNGRADE_WITH_EARLY_DATA, (SSL_ERROR_BASE + 160),
+    "SSL got a pre-TLS 1.3 version even though we sent early data.")
+
+ER3(SSL_ERROR_TOO_MUCH_EARLY_DATA, (SSL_ERROR_BASE + 161),
+    "SSL received more early data than permitted.")
+
+ER3(SSL_ERROR_RX_UNEXPECTED_END_OF_EARLY_DATA, (SSL_ERROR_BASE + 162),
+    "SSL received an unexpected End of Early Data message.")
+
+ER3(SSL_ERROR_RX_MALFORMED_END_OF_EARLY_DATA, (SSL_ERROR_BASE + 163),
+    "SSL received a malformed End of Early Data message.")
+
+ER3(SSL_ERROR_UNSUPPORTED_EXPERIMENTAL_API, (SSL_ERROR_BASE + 164),
+    "An experimental API was called, but not supported.")
+
+ER3(SSL_ERROR_APPLICATION_ABORT, (SSL_ERROR_BASE + 165),
+    "SSL handshake aborted by the application.")
+
+ER3(SSL_ERROR_APP_CALLBACK_ERROR, (SSL_ERROR_BASE + 166),
+    "An application callback produced an invalid response.")
+
+ER3(SSL_ERROR_NO_TIMERS_ERROR, (SSL_ERROR_BASE + 167),
+    "No timers are currently running.")
+
+ER3(SSL_ERROR_MISSING_COOKIE_EXTENSION, (SSL_ERROR_BASE + 168),
+    "A second ClientHello was received without a cookie extension.")
+
+ER3(SSL_ERROR_RX_UNEXPECTED_KEY_UPDATE, (SSL_ERROR_BASE + 169),
+    "SSL received an unexpected key update message.")
+
+ER3(SSL_ERROR_RX_MALFORMED_KEY_UPDATE, (SSL_ERROR_BASE + 170),
+    "SSL received a malformed key update message.")
+
+ER3(SSL_ERROR_TOO_MANY_KEY_UPDATES, (SSL_ERROR_BASE + 171),
+    "SSL attempted too many key updates.")
+
+ER3(SSL_ERROR_HANDSHAKE_FAILED, (SSL_ERROR_BASE + 172),
+    "SSL handshake has already failed. No more operations possible.")

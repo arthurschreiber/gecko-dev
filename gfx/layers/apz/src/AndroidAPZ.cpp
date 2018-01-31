@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -80,20 +80,21 @@ AndroidFlingAnimation::AndroidFlingAnimation(AsyncPanZoomController& aApzc,
   , mFlingDuration(0)
 {
   MOZ_ASSERT(mOverscrollHandoffChain);
-  MOZ_ASSERT(aPlatformSpecificState->AsAndroidSpecificState());
-  mOverScroller = aPlatformSpecificState->AsAndroidSpecificState()->mOverScroller;
+  AndroidSpecificState* state = aPlatformSpecificState->AsAndroidSpecificState();
+  MOZ_ASSERT(state);
+  mOverScroller = state->mOverScroller;
   MOZ_ASSERT(mOverScroller);
 
   // Drop any velocity on axes where we don't have room to scroll anyways
   // (in this APZC, or an APZC further in the handoff chain).
   // This ensures that we don't take the 'overscroll' path in Sample()
   // on account of one axis which can't scroll having a velocity.
-  if (!mOverscrollHandoffChain->CanScrollInDirection(&mApzc, Layer::HORIZONTAL)) {
-    ReentrantMonitorAutoEnter lock(mApzc.mMonitor);
+  if (!mOverscrollHandoffChain->CanScrollInDirection(&mApzc, ScrollDirection::eHorizontal)) {
+    RecursiveMutexAutoLock lock(mApzc.mRecursiveMutex);
     mApzc.mX.SetVelocity(0);
   }
-  if (!mOverscrollHandoffChain->CanScrollInDirection(&mApzc, Layer::VERTICAL)) {
-    ReentrantMonitorAutoEnter lock(mApzc.mMonitor);
+  if (!mOverscrollHandoffChain->CanScrollInDirection(&mApzc, ScrollDirection::eVertical)) {
+    RecursiveMutexAutoLock lock(mApzc.mRecursiveMutex);
     mApzc.mY.SetVelocity(0);
   }
 
@@ -118,12 +119,27 @@ AndroidFlingAnimation::AndroidFlingAnimation(AsyncPanZoomController& aApzc,
 
   int32_t originX = ClampStart(mStartOffset.x, scrollRangeStartX, scrollRangeEndX);
   int32_t originY = ClampStart(mStartOffset.y, scrollRangeStartY, scrollRangeEndY);
+  if (!state->mLastFling.IsNull()) {
+    // If it's been too long since the previous fling, or if the new fling's
+    // velocity is too low, don't allow flywheel to kick in. If we do allow
+    // flywheel to kick in, then we need to update the timestamp on the
+    // StackScroller because otherwise it might use a stale velocity.
+    TimeDuration flingDuration = TimeStamp::Now() - state->mLastFling;
+    if (flingDuration.ToMilliseconds() < gfxPrefs::APZFlingAccelInterval()
+        && velocity.Length() >= gfxPrefs::APZFlingAccelMinVelocity()) {
+      bool unused = false;
+      mOverScroller->ComputeScrollOffset(flingDuration.ToMilliseconds(), &unused);
+    } else {
+      mOverScroller->ForceFinished(true);
+    }
+  }
   mOverScroller->Fling(originX, originY,
                        // Android needs the velocity in pixels per second and it is in pixels per ms.
                        (int32_t)(velocity.x * 1000.0f), (int32_t)(velocity.y * 1000.0f),
                        (int32_t)floor(scrollRangeStartX), (int32_t)ceil(scrollRangeEndX),
                        (int32_t)floor(scrollRangeStartY), (int32_t)ceil(scrollRangeEndY),
                        0, 0, 0);
+  state->mLastFling = TimeStamp::Now();
 }
 
 /**
@@ -229,7 +245,8 @@ AndroidFlingAnimation::DeferHandleFlingOverscroll(ParentLayerPoint& aVelocity)
   mDeferredTasks.AppendElement(
       NewRunnableMethod<ParentLayerPoint,
                         RefPtr<const OverscrollHandoffChain>,
-                        RefPtr<const AsyncPanZoomController>>(&mApzc,
+                        RefPtr<const AsyncPanZoomController>>("layers::AsyncPanZoomController::HandleFlingOverscroll",
+                                                              &mApzc,
                                                               &AsyncPanZoomController::HandleFlingOverscroll,
                                                               aVelocity,
                                                               mOverscrollHandoffChain,

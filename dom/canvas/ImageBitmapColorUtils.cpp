@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ImageBitmapColorUtils.h"
+#include "libyuv.h"
 
 namespace mozilla {
 namespace dom {
@@ -414,17 +415,6 @@ BGRA32ToBGR24(const uint8_t* aSrcBuffer, int aSrcStride,
 /*
  * Among RGB family.
  */
-int
-RGB24Copy(const uint8_t* aSrcBuffer, int aSrcStride,
-          uint8_t* aDstBuffer, int aDstStride,
-          int aWidth, int aHeight)
-{
-  MOZ_ASSERT(aSrcStride == aDstStride, "RGB24Copy: aSrcStride != aDstStride");
-
-  const uint32_t length = aHeight * aDstStride;
-  memcpy(aDstBuffer, aSrcBuffer, length);
-  return 0;
-}
 
 int
 RGB24ToBGR24(const uint8_t* aSrcBuffer, int aSrcStride,

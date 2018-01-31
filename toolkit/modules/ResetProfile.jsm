@@ -8,8 +8,8 @@ this.EXPORTED_SYMBOLS = ["ResetProfile"];
 
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
 
 const MOZ_APP_NAME = AppConstants.MOZ_APP_NAME;
 const MOZ_BUILD_APP = AppConstants.MOZ_BUILD_APP;
@@ -20,7 +20,7 @@ this.ResetProfile = {
    *
    * @return boolean whether reset is supported.
    */
-  resetSupported: function() {
+  resetSupported() {
     // Reset is only supported if the self-migrator used for reset exists.
     let migrator = "@mozilla.org/profile/migrator;1?app=" + MOZ_BUILD_APP +
                    "&type=" + MOZ_APP_NAME;
@@ -44,7 +44,7 @@ this.ResetProfile = {
   /**
    * Ask the user if they wish to restart the application to reset the profile.
    */
-  openConfirmationDialog: function(window) {
+  openConfirmationDialog(window) {
     // Prompt the user to confirm.
     let params = {
       reset: false,
@@ -59,7 +59,6 @@ this.ResetProfile = {
                 .getService(Ci.nsIEnvironment);
     env.set("MOZ_RESET_PROFILE_RESTART", "1");
 
-    let appStartup = Cc["@mozilla.org/toolkit/app-startup;1"].getService(Ci.nsIAppStartup);
-    appStartup.quit(Ci.nsIAppStartup.eForceQuit | Ci.nsIAppStartup.eRestart);
+    Services.startup.quit(Ci.nsIAppStartup.eForceQuit | Ci.nsIAppStartup.eRestart);
   },
 };

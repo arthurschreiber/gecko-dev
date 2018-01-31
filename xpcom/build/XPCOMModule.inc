@@ -16,13 +16,11 @@
 
     COMPONENT(PERSISTENTPROPERTIES, nsPersistentProperties::Create)
 
-    COMPONENT(SUPPORTSARRAY, nsSupportsArray::Create)
     COMPONENT(ARRAY, nsArrayBase::XPCOMConstructor)
     COMPONENT(CONSOLESERVICE, nsConsoleServiceConstructor)
-    COMPONENT(ATOMSERVICE, nsAtomServiceConstructor)
     COMPONENT_M(OBSERVERSERVICE, nsObserverService::Create, Module::ALLOW_IN_GPU_PROCESS)
 
-    COMPONENT_M(TIMER, nsTimerImplConstructor, Module::ALLOW_IN_GPU_PROCESS)
+    COMPONENT_M(TIMER, nsTimerConstructor, Module::ALLOW_IN_GPU_PROCESS)
 
 #define COMPONENT_SUPPORTS(TYPE, Type)                                         \
   COMPONENT(SUPPORTS_##TYPE, nsSupports##Type##Constructor)
@@ -42,7 +40,6 @@
     COMPONENT_SUPPORTS(PRINT64, PRInt64)
     COMPONENT_SUPPORTS(FLOAT, Float)
     COMPONENT_SUPPORTS(DOUBLE, Double)
-    COMPONENT_SUPPORTS(VOID, Void)
     COMPONENT_SUPPORTS(INTERFACE_POINTER, InterfacePointer)
 
 #undef COMPONENT_SUPPORTS
@@ -52,7 +49,7 @@
     COMPONENT(ENVIRONMENT, nsEnvironment::Create)
 
     COMPONENT(THREADMANAGER, nsThreadManagerGetSingleton)
-    COMPONENT(THREADPOOL, nsThreadPoolConstructor)
+    COMPONENT_M(THREADPOOL, nsThreadPoolConstructor, Module::ALLOW_IN_GPU_PROCESS)
 
     COMPONENT(STRINGINPUTSTREAM, nsStringInputStreamConstructor)
     COMPONENT(MULTIPLEXINPUTSTREAM, nsMultiplexInputStreamConstructor)
@@ -73,9 +70,8 @@
 #endif
 
     COMPONENT(SYSTEMINFO, nsSystemInfoConstructor)
-    COMPONENT(MEMORY_REPORTER_MANAGER, nsMemoryReporterManagerConstructor)
+    COMPONENT_M(MEMORY_REPORTER_MANAGER, nsMemoryReporterManagerConstructor, Module::ALLOW_IN_GPU_PROCESS)
     COMPONENT(MEMORY_INFO_DUMPER, nsMemoryInfoDumperConstructor)
     COMPONENT(IOUTIL, nsIOUtilConstructor)
     COMPONENT(CYCLE_COLLECTOR_LOGGER, nsCycleCollectorLoggerConstructor)
     COMPONENT(MESSAGE_LOOP, nsMessageLoopConstructor)
-    COMPONENT(STATUS_REPORTER_MANAGER, nsStatusReporterManagerConstructor)

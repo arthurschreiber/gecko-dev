@@ -10,7 +10,7 @@ var Cc = Components.classes;
 var Ci = Components.interfaces;
 var Cu = Components.utils;
 
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const rph = Services.io.getProtocolHandler("resource").QueryInterface(Ci.nsIResProtocolHandler);
 
@@ -72,14 +72,14 @@ function load_modules_under(spec, uri) {
   for (let entry of entries) {
     try {
       dump(spec + entry + "\n");
-      Cu.import(spec + entry, null);
+      ChromeUtils.import(spec + entry, null);
     } catch (e) {}
   }
 }
 
 function resolveResource(spec) {
-  var uri = Services.io.newURI(spec, null, null);
-  return Services.io.newURI(rph.resolveURI(uri), null, null);
+  var uri = Services.io.newURI(spec);
+  return Services.io.newURI(rph.resolveURI(uri));
 }
 
 function precompile_startupcache(uri) {

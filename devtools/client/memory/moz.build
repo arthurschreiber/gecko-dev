@@ -16,12 +16,10 @@ DevToolsModules(
     'app.js',
     'constants.js',
     'dominator-tree-lazy-children.js',
-    'initializer.js',
     'models.js',
     'panel.js',
     'reducers.js',
     'store.js',
-    'telemetry.js',
     'utils.js',
 )
 

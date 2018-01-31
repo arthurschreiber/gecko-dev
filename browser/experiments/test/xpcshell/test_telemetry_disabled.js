@@ -3,19 +3,18 @@
 
 "use strict";
 
-Cu.import("resource:///modules/experiments/Experiments.jsm");
+ChromeUtils.import("resource:///modules/experiments/Experiments.jsm");
 
 add_test(function test_experiments_activation() {
   do_get_profile();
   loadAddonManager();
 
   Services.prefs.setBoolPref(PREF_EXPERIMENTS_ENABLED, true);
-  Services.prefs.setBoolPref(PREF_TELEMETRY_ENABLED, false);
+  Services.telemetry.canRecordExtended = false;
 
   let experiments = Experiments.instance();
-  Assert.ok(!experiments.enabled, "Experiments must be disabled if Telemetry is disabled.");
 
-  // TODO: Test that Experiments are turned back on when bug 1232648 lands.
+  Assert.ok(!experiments.enabled, "Experiments must be disabled if Telemetry is disabled.");
 
   run_next_test();
 });

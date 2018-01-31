@@ -32,9 +32,9 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/TypedArray.h"
+#include "mozilla/dom/DOMPrefs.h"
 
 #include "nsCOMPtr.h"
-#include "nsContentUtils.h" // Required for nsContentUtils::PushEnabled
 #include "mozilla/RefPtr.h"
 
 class nsIGlobalObject;
@@ -47,6 +47,7 @@ namespace workers {
 class WorkerPrivate;
 }
 
+class OwningArrayBufferViewOrArrayBufferOrString;
 class Promise;
 class PushManagerImpl;
 struct PushSubscriptionOptionsInit;
@@ -103,6 +104,10 @@ public:
 
 private:
   ~PushManager();
+
+  nsresult
+  NormalizeAppServerKey(const OwningArrayBufferViewOrArrayBufferOrString& aSource,
+                        nsTArray<uint8_t>& aAppServerKey);
 
   // The following are only set and accessed on the main thread.
   nsCOMPtr<nsIGlobalObject> mGlobal;

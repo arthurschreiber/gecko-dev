@@ -1,17 +1,15 @@
 #include "Utils.h"
 #include "Types.h"
 
+#include <android/log.h>
 #include <pthread.h>
 
 #include "mozilla/Assertions.h"
 
-#include "AndroidBridge.h"
 #include "GeneratedJNIWrappers.h"
+#include "AndroidBuild.h"
 #include "nsAppShell.h"
-
-#ifdef MOZ_CRASHREPORTER
 #include "nsExceptionHandler.h"
-#endif
 
 namespace mozilla {
 namespace jni {
@@ -52,6 +50,14 @@ template<> const char ObjectBase<Object, jobject>::name[] = "java/lang/Object";
 template<> const char ObjectBase<TypedObject<jstring>, jstring>::name[] = "java/lang/String";
 template<> const char ObjectBase<TypedObject<jclass>, jclass>::name[] = "java/lang/Class";
 template<> const char ObjectBase<TypedObject<jthrowable>, jthrowable>::name[] = "java/lang/Throwable";
+template<> const char ObjectBase<BoxedObject<jboolean>, jobject>::name[] = "java/lang/Boolean";
+template<> const char ObjectBase<BoxedObject<jbyte>, jobject>::name[] = "java/lang/Byte";
+template<> const char ObjectBase<BoxedObject<jchar>, jobject>::name[] = "java/lang/Character";
+template<> const char ObjectBase<BoxedObject<jshort>, jobject>::name[] = "java/lang/Short";
+template<> const char ObjectBase<BoxedObject<jint>, jobject>::name[] = "java/lang/Integer";
+template<> const char ObjectBase<BoxedObject<jlong>, jobject>::name[] = "java/lang/Long";
+template<> const char ObjectBase<BoxedObject<jfloat>, jobject>::name[] = "java/lang/Float";
+template<> const char ObjectBase<BoxedObject<jdouble>, jobject>::name[] = "java/lang/Double";
 template<> const char ObjectBase<TypedObject<jbooleanArray>, jbooleanArray>::name[] = "[Z";
 template<> const char ObjectBase<TypedObject<jbyteArray>, jbyteArray>::name[] = "[B";
 template<> const char ObjectBase<TypedObject<jcharArray>, jcharArray>::name[] = "[C";
@@ -63,14 +69,16 @@ template<> const char ObjectBase<TypedObject<jdoubleArray>, jdoubleArray>::name[
 template<> const char ObjectBase<TypedObject<jobjectArray>, jobjectArray>::name[] = "[Ljava/lang/Object;";
 template<> const char ObjectBase<ByteBuffer, jobject>::name[] = "java/nio/ByteBuffer";
 
-
+JavaVM* sJavaVM;
 JNIEnv* sGeckoThreadEnv;
 
 namespace {
 
-JavaVM* sJavaVM;
 pthread_key_t sThreadEnvKey;
 jclass sOOMErrorClass;
+jobject sClassLoader;
+jmethodID sClassLoaderLoadClass;
+bool sIsFennec;
 
 void UnregisterThreadEnv(void* env)
 {
@@ -106,6 +114,23 @@ void SetGeckoThreadEnv(JNIEnv* aEnv)
     sOOMErrorClass = Class::GlobalRef(Class::LocalRef::Adopt(
             aEnv->FindClass("java/lang/OutOfMemoryError"))).Forget();
     aEnv->ExceptionClear();
+
+    sClassLoader = Object::GlobalRef(java::GeckoThread::ClsLoader()).Forget();
+    sClassLoaderLoadClass = aEnv->GetMethodID(
+            Class::LocalRef::Adopt(aEnv->GetObjectClass(sClassLoader)).Get(),
+            "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
+    MOZ_ASSERT(sClassLoader && sClassLoaderLoadClass);
+
+    if (java::GeckoThread::IsChildProcess()) {
+        // Disallow Fennec-only classes from being used in child processes.
+        sIsFennec = false;
+        return;
+    }
+
+    auto geckoAppClass = Class::LocalRef::Adopt(
+            aEnv->FindClass("org/mozilla/gecko/GeckoApp"));
+    aEnv->ExceptionClear();
+    sIsFennec = !!geckoAppClass;
 }
 
 JNIEnv* GetEnvForThread()
@@ -178,11 +203,18 @@ bool ReportException(JNIEnv* aEnv, jthrowable aExc, jstring aStack)
 {
     bool result = true;
 
-#ifdef MOZ_CRASHREPORTER
     result &= NS_SUCCEEDED(CrashReporter::AnnotateCrashReport(
             NS_LITERAL_CSTRING("JavaStackTrace"),
             String::Ref::From(aStack)->ToCString()));
-#endif // MOZ_CRASHREPORTER
+
+    auto appNotes = java::GeckoAppShell::GetAppNotes();
+    if (NS_WARN_IF(aEnv->ExceptionCheck())) {
+        aEnv->ExceptionDescribe();
+        aEnv->ExceptionClear();
+    } else if (appNotes) {
+        CrashReporter::AppendAppNotesToCrashReport(NS_LITERAL_CSTRING("\n") +
+                                                   appNotes->ToCString());
+    }
 
     if (sOOMErrorClass && aEnv->IsInstanceOf(aExc, sOOMErrorClass)) {
         NS_ABORT_OOM(0); // Unknown OOM size
@@ -197,11 +229,11 @@ jfieldID sJNIObjectHandleField;
 
 bool EnsureJNIObject(JNIEnv* env, jobject instance) {
     if (!sJNIObjectClass) {
-        sJNIObjectClass = AndroidBridge::GetClassGlobalRef(
-                env, "org/mozilla/gecko/mozglue/JNIObject");
+        sJNIObjectClass = Class::GlobalRef(Class::LocalRef::Adopt(GetClassRef(
+                env, "org/mozilla/gecko/mozglue/JNIObject"))).Forget();
 
-        sJNIObjectHandleField = AndroidBridge::GetFieldID(
-                env, sJNIObjectClass, "mHandle", "J");
+        sJNIObjectHandleField = env->GetFieldID(
+                sJNIObjectClass, "mHandle", "J");
     }
 
     MOZ_ASSERT(env->IsInstanceOf(instance, sJNIObjectClass));
@@ -230,30 +262,69 @@ void SetNativeHandle(JNIEnv* env, jobject instance, uintptr_t handle)
                       static_cast<jlong>(handle));
 }
 
-jclass GetClassGlobalRef(JNIEnv* aEnv, const char* aClassName)
+jclass GetClassRef(JNIEnv* aEnv, const char* aClassName)
 {
-    return AndroidBridge::GetClassGlobalRef(aEnv, aClassName);
+    // First try the default class loader.
+    auto classRef = Class::LocalRef::Adopt(aEnv, aEnv->FindClass(aClassName));
+
+    if ((!classRef || aEnv->ExceptionCheck()) && sClassLoader) {
+        // If the default class loader failed but we have an app class loader, try that.
+        // Clear the pending exception from failed FindClass call above.
+        aEnv->ExceptionClear();
+        classRef = Class::LocalRef::Adopt(aEnv, jclass(
+                aEnv->CallObjectMethod(sClassLoader, sClassLoaderLoadClass,
+                                       StringParam(aClassName, aEnv).Get())));
+    }
+
+    if (classRef && !aEnv->ExceptionCheck()) {
+        return classRef.Forget();
+    }
+
+    __android_log_print(
+            ANDROID_LOG_ERROR, "Gecko",
+            ">>> FATAL JNI ERROR! FindClass(\"%s\") failed. "
+            "Does the class require a newer API version? "
+            "Or did ProGuard optimize away something it shouldn't have?",
+            aClassName);
+    aEnv->ExceptionDescribe();
+    MOZ_CRASH("Cannot find JNI class");
+    return nullptr;
 }
 
-
-void DispatchToGeckoThread(UniquePtr<AbstractCall>&& aCall)
+void DispatchToGeckoPriorityQueue(already_AddRefed<nsIRunnable> aCall)
 {
-    class AbstractCallEvent : public nsAppShell::Event
+    class RunnableEvent : public nsAppShell::Event
     {
-        UniquePtr<AbstractCall> mCall;
-
+        nsCOMPtr<nsIRunnable> mCall;
     public:
-        AbstractCallEvent(UniquePtr<AbstractCall>&& aCall)
-            : mCall(Move(aCall))
-        {}
-
-        void Run() override
-        {
-            (*mCall)();
-        }
+        RunnableEvent(already_AddRefed<nsIRunnable> aCall) : mCall(aCall) {}
+        void Run() override { NS_ENSURE_SUCCESS_VOID(mCall->Run()); }
     };
 
-    nsAppShell::PostEvent(MakeUnique<AbstractCallEvent>(Move(aCall)));
+    nsAppShell::PostEvent(MakeUnique<RunnableEvent>(Move(aCall)));
+}
+
+bool IsFennec()
+{
+    return sIsFennec;
+}
+
+int GetAPIVersion()
+{
+    static int32_t apiVersion = 0;
+    if (!apiVersion && IsAvailable()) {
+        apiVersion = java::sdk::VERSION::SDK_INT();
+    }
+    return apiVersion;
+}
+
+pid_t GetUIThreadId()
+{
+    static pid_t uiThreadId;
+    if (!uiThreadId) {
+        uiThreadId = pid_t(java::GeckoThread::UiThreadId());
+    }
+    return uiThreadId;
 }
 
 } // jni

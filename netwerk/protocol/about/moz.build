@@ -16,7 +16,6 @@ EXPORTS += [
 
 UNIFIED_SOURCES += [
     'nsAboutBlank.cpp',
-    'nsAboutBloat.cpp',
     'nsAboutCache.cpp',
     'nsAboutCacheEntry.cpp',
     'nsAboutProtocolHandler.cpp',
@@ -31,5 +30,5 @@ LOCAL_INCLUDES += [
     '/netwerk/cache2',
 ]
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

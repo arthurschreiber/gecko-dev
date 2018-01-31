@@ -6,7 +6,7 @@
 
 #include "URLSearchParams.h"
 #include "mozilla/dom/URLSearchParamsBinding.h"
-#include "mozilla/dom/EncodingUtils.h"
+#include "mozilla/Encoding.h"
 #include "nsDOMString.h"
 #include "nsIInputStream.h"
 #include "nsStringStream.h"
@@ -86,61 +86,27 @@ URLParams::Set(const nsAString& aName, const nsAString& aValue)
   param->mValue = aValue;
 }
 
-bool
+void
 URLParams::Delete(const nsAString& aName)
 {
-  bool found = false;
   for (uint32_t i = 0; i < mParams.Length();) {
     if (mParams[i].mKey.Equals(aName)) {
       mParams.RemoveElementAt(i);
-      found = true;
     } else {
       ++i;
     }
   }
-
-  return found;
 }
 
-void
+/* static */ void
 URLParams::ConvertString(const nsACString& aInput, nsAString& aOutput)
 {
-  aOutput.Truncate();
-
-  if (!mDecoder) {
-    mDecoder = EncodingUtils::DecoderForEncoding("UTF-8");
-    if (!mDecoder) {
-      MOZ_ASSERT(mDecoder, "Failed to create a decoder.");
-      return;
-    }
-  }
-
-  int32_t inputLength = aInput.Length();
-  int32_t outputLength = 0;
-
-  nsresult rv = mDecoder->GetMaxLength(aInput.BeginReading(), inputLength,
-                                       &outputLength);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
-
-  if (!aOutput.SetLength(outputLength, fallible)) {
-    return;
-  }
-
-  int32_t newOutputLength = outputLength;
-  rv = mDecoder->Convert(aInput.BeginReading(), &inputLength,
-                         aOutput.BeginWriting(), &newOutputLength);
-  if (NS_FAILED(rv)) {
-    aOutput.Truncate();
-    return;
-  }
-  if (newOutputLength < outputLength) {
-    aOutput.Truncate(newOutputLength);
+  if (NS_FAILED(UTF_8_ENCODING->DecodeWithoutBOMHandling(aInput, aOutput))) {
+    MOZ_CRASH("Out of memory when converting URL params.");
   }
 }
 
-void
+/* static */ void
 URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput)
 {
   nsACString::const_iterator start, end;
@@ -197,12 +163,9 @@ URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput)
   ConvertString(unescaped, aOutput);
 }
 
-void
-URLParams::ParseInput(const nsACString& aInput)
+/* static */ bool
+URLParams::Parse(const nsACString& aInput, ForEachIterator& aIterator)
 {
-  // Remove all the existing data before parsing a new input.
-  DeleteAll();
-
   nsACString::const_iterator start, end;
   aInput.BeginReading(start);
   aInput.EndReading(end);
@@ -246,8 +209,83 @@ URLParams::ParseInput(const nsACString& aInput)
     nsAutoString decodedValue;
     DecodeString(value, decodedValue);
 
-    Append(decodedName, decodedValue);
+    if (!aIterator.URLParamsIterator(decodedName, decodedValue)) {
+      return false;
+    }
   }
+  return true;
+}
+
+class MOZ_STACK_CLASS ExtractURLParam final
+  : public URLParams::ForEachIterator
+{
+public:
+  explicit ExtractURLParam(const nsAString& aName, nsAString& aValue)
+    : mName(aName), mValue(aValue)
+  {}
+
+  bool URLParamsIterator(const nsAString& aName,
+                         const nsAString& aValue) override
+  {
+    if (mName == aName) {
+      mValue = aValue;
+      return false;
+    }
+    return true;
+  }
+
+private:
+  const nsAString& mName;
+  nsAString& mValue;
+};
+
+
+/**
+ * Extracts the first form-urlencoded parameter named `aName` from `aInput`.
+ * @param aRange The input to parse.
+ * @param aName The name of the parameter to extract.
+ * @param aValue The value of the extracted parameter, void if not found.
+ * @return Whether the parameter was found in the form-urlencoded.
+ */
+/* static */ bool
+URLParams::Extract(const nsACString& aInput,
+                   const nsAString& aName,
+                   nsAString& aValue)
+{
+  aValue.SetIsVoid(true);
+  ExtractURLParam iterator(aName, aValue);
+  return !URLParams::Parse(aInput, iterator);
+}
+
+class MOZ_STACK_CLASS PopulateIterator final
+  : public URLParams::ForEachIterator
+{
+public:
+  explicit PopulateIterator(URLParams* aParams)
+    : mParams(aParams)
+  {
+    MOZ_ASSERT(aParams);
+  }
+
+  bool URLParamsIterator(const nsAString& aName,
+                         const nsAString& aValue) override
+  {
+    mParams->Append(aName, aValue);
+    return true;
+  }
+
+private:
+  URLParams* mParams;
+};
+
+void
+URLParams::ParseInput(const nsACString& aInput)
+{
+  // Remove all the existing data before parsing a new input.
+  DeleteAll();
+
+  PopulateIterator iter(this);
+  URLParams::Parse(aInput, iter);
 }
 
 namespace {
@@ -314,14 +352,6 @@ URLSearchParams::URLSearchParams(nsISupports* aParent,
 {
 }
 
-URLSearchParams::URLSearchParams(nsISupports* aParent,
-                                 const URLSearchParams& aOther)
-  : mParams(new URLParams(*aOther.mParams.get()))
-  , mParent(aParent)
-  , mObserver(nullptr)
-{
-}
-
 URLSearchParams::~URLSearchParams()
 {
   DeleteAll();
@@ -335,30 +365,39 @@ URLSearchParams::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto)
 
 /* static */ already_AddRefed<URLSearchParams>
 URLSearchParams::Constructor(const GlobalObject& aGlobal,
-                             const nsAString& aInit,
+                             const USVStringSequenceSequenceOrUSVStringUSVStringRecordOrUSVString& aInit,
                              ErrorResult& aRv)
 {
   RefPtr<URLSearchParams> sp =
     new URLSearchParams(aGlobal.GetAsSupports(), nullptr);
 
-  NS_ConvertUTF16toUTF8 input(aInit);
-
-  if (StringBeginsWith(input, NS_LITERAL_CSTRING("?"))) {
-    sp->ParseInput(Substring(input, 1, input.Length() - 1));
+  if (aInit.IsUSVString()) {
+    NS_ConvertUTF16toUTF8 input(aInit.GetAsUSVString());
+    if (StringBeginsWith(input, NS_LITERAL_CSTRING("?"))) {
+      sp->ParseInput(Substring(input, 1, input.Length() - 1));
+    } else {
+      sp->ParseInput(input);
+    }
+  } else if (aInit.IsUSVStringSequenceSequence()) {
+    const Sequence<Sequence<nsString>>& list =
+      aInit.GetAsUSVStringSequenceSequence();
+    for (uint32_t i = 0; i < list.Length(); ++i) {
+      const Sequence<nsString>& item = list[i];
+      if (item.Length() != 2) {
+        aRv.Throw(NS_ERROR_DOM_TYPE_ERR);
+        return nullptr;
+      }
+      sp->Append(item[0], item[1]);
+    }
+  } else if (aInit.IsUSVStringUSVStringRecord()) {
+    const Record<nsString, nsString>& record =
+      aInit.GetAsUSVStringUSVStringRecord();
+    for (auto& entry : record.Entries()) {
+      sp->Append(entry.mKey, entry.mValue);
+    }
   } else {
-    sp->ParseInput(input);
+    MOZ_CRASH("This should not happen.");
   }
-
-  return sp.forget();
-}
-
-/* static */ already_AddRefed<URLSearchParams>
-URLSearchParams::Constructor(const GlobalObject& aGlobal,
-                             URLSearchParams& aInit,
-                             ErrorResult& aRv)
-{
-  RefPtr<URLSearchParams> sp =
-    new URLSearchParams(aGlobal.GetAsSupports(), aInit);
 
   return sp.forget();
 }
@@ -404,9 +443,8 @@ URLSearchParams::Has(const nsAString& aName)
 void
 URLSearchParams::Delete(const nsAString& aName)
 {
-  if (mParams->Delete(aName)) {
-    NotifyObserver();
-  }
+  mParams->Delete(aName);
+  NotifyObserver();
 }
 
 void
@@ -447,6 +485,15 @@ URLSearchParams::GetValueAtIndex(uint32_t aIndex) const
   return mParams->GetValueAtIndex(aIndex);
 }
 
+void
+URLSearchParams::Sort(ErrorResult& aRv)
+{
+  aRv = mParams->Sort();
+  if (!aRv.Failed()) {
+    NotifyObserver();
+  }
+}
+
 // Helper functions for structured cloning
 inline bool
 ReadString(JSStructuredCloneReader* aReader, nsString& aString)
@@ -469,6 +516,39 @@ ReadString(JSStructuredCloneReader* aReader, nsString& aString)
   }
 
   return true;
+}
+
+nsresult
+URLParams::Sort()
+{
+  // Unfortunately we cannot use nsTArray<>.Sort() because it doesn't keep the
+  // correct order of the values for equal keys.
+
+  // Let's sort the keys, without duplicates.
+  FallibleTArray<nsString> keys;
+  for (const Param& param : mParams) {
+    if (!keys.Contains(param.mKey) &&
+        !keys.InsertElementSorted(param.mKey, fallible)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+  }
+
+  FallibleTArray<Param> params;
+
+  // Here we recreate the array starting from the sorted keys.
+  for (uint32_t keyId = 0, keysLength = keys.Length(); keyId < keysLength;
+       ++keyId) {
+    const nsString& key = keys[keyId];
+    for (const Param& param : mParams) {
+      if (param.mKey.Equals(key) &&
+          !params.AppendElement(param, fallible)) {
+        return NS_ERROR_OUT_OF_MEMORY;
+      }
+    }
+  }
+
+  mParams.SwapElements(params);
+  return NS_OK;
 }
 
 inline bool
@@ -533,9 +613,10 @@ URLSearchParams::ReadStructuredClone(JSStructuredCloneReader* aReader)
 
 NS_IMETHODIMP
 URLSearchParams::GetSendInfo(nsIInputStream** aBody, uint64_t* aContentLength,
-                             nsACString& aContentType, nsACString& aCharset)
+                             nsACString& aContentTypeWithCharset,
+                             nsACString& aCharset)
 {
-  aContentType.AssignLiteral("application/x-www-form-urlencoded");
+  aContentTypeWithCharset.AssignLiteral("application/x-www-form-urlencoded;charset=UTF-8");
   aCharset.AssignLiteral("UTF-8");
 
   nsAutoString serialized;

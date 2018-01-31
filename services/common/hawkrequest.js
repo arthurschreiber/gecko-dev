@@ -11,16 +11,16 @@ this.EXPORTED_SYMBOLS = [
   "deriveHawkCredentials"
 ];
 
-Cu.import("resource://gre/modules/Preferences.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Log.jsm");
-Cu.import("resource://services-common/rest.js");
-Cu.import("resource://services-common/utils.js");
-Cu.import("resource://gre/modules/Credentials.jsm");
+ChromeUtils.import("resource://gre/modules/Preferences.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Log.jsm");
+ChromeUtils.import("resource://services-common/rest.js");
+ChromeUtils.import("resource://services-common/utils.js");
+ChromeUtils.import("resource://gre/modules/Credentials.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "CryptoUtils",
-                                  "resource://services-crypto/utils.js");
+ChromeUtils.defineModuleGetter(this, "CryptoUtils",
+                               "resource://services-crypto/utils.js");
 
 const Prefs = new Preferences("services.common.rest.");
 
@@ -53,7 +53,7 @@ const Prefs = new Preferences("services.common.rest.");
  */
 
 this.HAWKAuthenticatedRESTRequest =
- function HawkAuthenticatedRESTRequest(uri, credentials, extra={}) {
+ function HawkAuthenticatedRESTRequest(uri, credentials, extra = {}) {
   RESTRequest.call(this, uri);
 
   this.credentials = credentials;
@@ -79,7 +79,7 @@ HAWKAuthenticatedRESTRequest.prototype = {
         localtimeOffsetMsec: this.localtimeOffsetMsec,
         credentials: this.credentials,
         payload: data && JSON.stringify(data) || "",
-        contentType: contentType,
+        contentType,
       };
       let header = CryptoUtils.computeHAWK(this.uri, method, options);
       this.setHeader("Authorization", header.field);
@@ -141,7 +141,7 @@ this.deriveHawkCredentials = function deriveHawkCredentials(tokenHex,
   }
 
   return result;
-}
+};
 
 // With hawk request, we send the user's accepted-languages with each request.
 // To keep the number of times we read this pref at a minimum, maintain the
@@ -151,25 +151,25 @@ this.Intl = function Intl() {
   // We won't actually query the pref until the first time we need it
   this._accepted = "";
   this._everRead = false;
-  this._log = Log.repository.getLogger("Services.common.RESTRequest");
+  this._log = Log.repository.getLogger("Services.Common.RESTRequest");
   this._log.level = Log.Level[Prefs.get("log.logger.rest.request")];
   this.init();
 };
 
 this.Intl.prototype = {
-  init: function() {
-    Services.prefs.addObserver("intl.accept_languages", this, false);
+  init() {
+    Services.prefs.addObserver("intl.accept_languages", this);
   },
 
-  uninit: function() {
+  uninit() {
     Services.prefs.removeObserver("intl.accept_languages", this);
   },
 
-  observe: function(subject, topic, data) {
+  observe(subject, topic, data) {
     this.readPref();
   },
 
-  readPref: function() {
+  readPref() {
     this._everRead = true;
     try {
       this._accepted = Services.prefs.getComplexValue(
@@ -195,4 +195,3 @@ function getIntl() {
   }
   return intl;
 }
-

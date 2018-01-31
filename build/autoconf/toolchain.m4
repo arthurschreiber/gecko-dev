@@ -2,10 +2,19 @@ dnl This Source Code Form is subject to the terms of the Mozilla Public
 dnl License, v. 2.0. If a copy of the MPL was not distributed with this
 dnl file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+dnl Several autoconf functions AC_REQUIRE AC_PROG_CPP/AC_PROG_CXXCPP
+dnl or AC_HEADER_STDC, meaning they are called even when we don't call
+dnl them explicitly.
+dnl However, theses checks are not necessary and python configure sets
+dnl the corresponding variables already, so just skip those tests
+dnl entirely.
+define([AC_PROG_CPP],[])
+define([AC_PROG_CXXCPP],[])
+define([AC_HEADER_STDC], [])
+
 AC_DEFUN([MOZ_TOOL_VARIABLES],
 [
 GNU_AS=
-GNU_LD=
 
 GNU_CC=
 GNU_CXX=
@@ -18,9 +27,6 @@ if test "`echo | $AS -o conftest.out -v 2>&1 | grep -c GNU`" != "0"; then
     GNU_AS=1
 fi
 rm -f conftest.out
-if test "`echo | $LD -v 2>&1 | grep -c GNU`" != "0"; then
-    GNU_LD=1
-fi
 
 CLANG_CC=
 CLANG_CXX=
@@ -72,10 +78,11 @@ AC_PROG_CXX
 AC_CHECK_PROGS(RANLIB, "${TOOLCHAIN_PREFIX}ranlib", :)
 AC_CHECK_PROGS(AR, "${TOOLCHAIN_PREFIX}ar", :)
 AC_CHECK_PROGS(AS, "${TOOLCHAIN_PREFIX}as", :)
-AC_CHECK_PROGS(LD, "${TOOLCHAIN_PREFIX}ld", :)
+AC_CHECK_PROGS(LIPO, "${TOOLCHAIN_PREFIX}lipo", :)
 AC_CHECK_PROGS(STRIP, "${TOOLCHAIN_PREFIX}strip", :)
 AC_CHECK_PROGS(WINDRES, "${TOOLCHAIN_PREFIX}windres", :)
 AC_CHECK_PROGS(OTOOL, "${TOOLCHAIN_PREFIX}otool", :)
+AC_CHECK_PROGS(INSTALL_NAME_TOOL, "${TOOLCHAIN_PREFIX}install_name_tool", :)
 AC_CHECK_PROGS(OBJCOPY, "${TOOLCHAIN_PREFIX}objcopy", :)
 PATH=$_SAVE_PATH
 ])
@@ -88,21 +95,31 @@ AC_LANG_CPLUSPLUS
 if test "$GNU_CXX"; then
     AC_CACHE_CHECK([whether 64-bits std::atomic requires -latomic],
         ac_cv_needs_atomic,
-        AC_TRY_LINK(
-            [#include <cstdint>
-             #include <atomic>],
-            [ std::atomic<uint64_t> foo; foo = 1; ],
-            ac_cv_needs_atomic=no,
-            _SAVE_LIBS="$LIBS"
-            LIBS="$LIBS -latomic"
+        dnl x86 with clang is a little peculiar.  std::atomic does not require
+        dnl linking with libatomic, but using atomic intrinsics does, so we
+        dnl force the setting on for such systems.  (This setting is probably
+        dnl applicable to all x86 systems using clang, but Android is currently
+        dnl the one we care most about, and nobody has reported problems on
+        dnl other platforms before this point.)
+        if test "$CC_TYPE" = "clang" -a "$CPU_ARCH" = "x86" -a "$OS_TARGET" = "Android"; then
+            ac_cv_needs_atomic=yes
+        else
             AC_TRY_LINK(
                 [#include <cstdint>
                  #include <atomic>],
                 [ std::atomic<uint64_t> foo; foo = 1; ],
-                ac_cv_needs_atomic=yes,
-                ac_cv_needs_atomic="do not know; assuming no")
-            LIBS="$_SAVE_LIBS"
-        )
+                ac_cv_needs_atomic=no,
+                _SAVE_LIBS="$LIBS"
+                LIBS="$LIBS -latomic"
+                AC_TRY_LINK(
+                    [#include <cstdint>
+                     #include <atomic>],
+                    [ std::atomic<uint64_t> foo; foo = 1; ],
+                    ac_cv_needs_atomic=yes,
+                    ac_cv_needs_atomic="do not know; assuming no")
+                LIBS="$_SAVE_LIBS"
+            )
+        fi
     )
     if test "$ac_cv_needs_atomic" = yes; then
       MOZ_NEEDS_LIBATOMIC=1

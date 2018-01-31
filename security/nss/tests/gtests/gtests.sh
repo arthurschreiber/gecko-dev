@@ -24,7 +24,7 @@ gtest_init()
 {
   cd "$(dirname "$1")"
   if [ -z "${INIT_SOURCED}" -o "${INIT_SOURCED}" != "TRUE" ]; then
-      cd common
+      cd ../common
       . ./init.sh
   fi
 
@@ -42,6 +42,10 @@ gtest_start()
 {
   echo "gtests: ${GTESTS}"
   for i in ${GTESTS}; do
+    if [ ! -f ${BINDIR}/$i ]; then
+      html_unknown "Skipping $i (not built)"
+      continue
+    fi
     GTESTDIR="${HOSTDIR}/$i"
     html_head "$i"
     if [ ! -d "$GTESTDIR" ]; then
@@ -51,9 +55,11 @@ gtest_start()
     GTESTREPORT="$GTESTDIR/report.xml"
     PARSED_REPORT="$GTESTDIR/report.parsed"
     echo "executing $i"
-    ${BINDIR}/$i -d "$GTESTDIR" --gtest_output=xml:"${GTESTREPORT}"
-    echo "test output dir: ${GTESTREPORT}"
+    ${BINDIR}/$i "${SOURCE_DIR}/gtests/freebl_gtest/kat/Hash_DRBG.rsp" \
+                 -d "$GTESTDIR" --gtest_output=xml:"${GTESTREPORT}" \
+                                --gtest_filter="${GTESTFILTER-*}"
     html_msg $? 0 "$i run successfully"
+    echo "test output dir: ${GTESTREPORT}"
     echo "executing sed to parse the xml report"
     sed -f ${COMMON}/parsegtestreport.sed "${GTESTREPORT}" > "${PARSED_REPORT}"
     echo "processing the parsed report"
@@ -77,7 +83,8 @@ gtest_cleanup()
 }
 
 ################## main #################################################
-GTESTS="der_gtest pk11_gtest util_gtest"
+GTESTS="prng_gtest certhigh_gtest certdb_gtest der_gtest pk11_gtest util_gtest freebl_gtest softoken_gtest blake2b_gtest"
+SOURCE_DIR="$PWD"/../..
 gtest_init $0
 gtest_start
 gtest_cleanup

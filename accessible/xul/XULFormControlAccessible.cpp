@@ -112,7 +112,7 @@ XULButtonAccessible::NativeState()
       if (checked) {
         state |= states::PRESSED;
         xulButtonElement->GetCheckState(&checkState);
-        if (checkState == nsIDOMXULButtonElement::CHECKSTATE_MIXED) { 
+        if (checkState == nsIDOMXULButtonElement::CHECKSTATE_MIXED) {
           state |= states::MIXED;
         }
       }
@@ -122,7 +122,7 @@ XULButtonAccessible::NativeState()
   if (ContainsMenu())
     state |= states::HASPOPUP;
 
-  if (mContent->HasAttr(kNameSpaceID_None, nsGkAtoms::_default))
+  if (mContent->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::_default))
     state |= states::DEFAULT;
 
   return state;
@@ -189,8 +189,8 @@ XULButtonAccessible::IsAcceptableChild(nsIContent* aEl) const
     return false;
   }
 
-  return mContent->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
-                               nsGkAtoms::menuButton, eCaseMatters);
+  return mContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
+                                            nsGkAtoms::menuButton, eCaseMatters);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -199,12 +199,12 @@ XULButtonAccessible::IsAcceptableChild(nsIContent* aEl) const
 bool
 XULButtonAccessible::ContainsMenu() const
 {
-  static nsIContent::AttrValuesArray strings[] =
+  static Element::AttrValuesArray strings[] =
     {&nsGkAtoms::menu, &nsGkAtoms::menuButton, nullptr};
 
-  return mContent->FindAttrValueIn(kNameSpaceID_None,
-                                   nsGkAtoms::type,
-                                   strings, eCaseMatters) >= 0;
+  return mContent->AsElement()->FindAttrValueIn(kNameSpaceID_None,
+                                                nsGkAtoms::type,
+                                                strings, eCaseMatters) >= 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -337,9 +337,9 @@ XULCheckboxAccessible::NativeState()
   // Possible states: focused, focusable, unavailable(disabled), checked
   // Get focus and disable status from base class
   uint64_t state = LeafAccessible::NativeState();
-  
+
   state |= states::CHECKABLE;
-  
+
   // Determine Checked state
   nsCOMPtr<nsIDOMXULCheckboxElement> xulCheckboxElement =
     do_QueryInterface(mContent);
@@ -467,7 +467,7 @@ XULRadioButtonAccessible::ContainerWidget() const
   * XUL Radio Group
   *   The Radio Group proxies for the Radio Buttons themselves. The Group gets
   *   focus whereas the Buttons do not. So we only have an accessible object for
-  *   this for the purpose of getting the proper RadioButton. Need this here to 
+  *   this for the purpose of getting the proper RadioButton. Need this here to
   *   avoid circular reference problems when navigating the accessible tree and
   *   for getting to the radiobuttons.
   */
@@ -475,7 +475,7 @@ XULRadioButtonAccessible::ContainerWidget() const
 XULRadioGroupAccessible::
   XULRadioGroupAccessible(nsIContent* aContent, DocAccessible* aDoc) :
   XULSelectControlAccessible(aContent, aDoc)
-{ 
+{
 }
 
 role
@@ -603,7 +603,7 @@ XULToolbarAccessible::NativeRole()
 ENameValueFlag
 XULToolbarAccessible::NativeName(nsString& aName)
 {
-  if (mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::toolbarname, aName))
+  if (mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::toolbarname, aName))
     aName.CompressWhitespace();
 
   return eNameOK;

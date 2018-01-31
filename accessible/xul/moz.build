@@ -24,6 +24,8 @@ LOCAL_INCLUDES += [
     '/accessible/generic',
     '/accessible/html',
     '/accessible/xpcom',
+    '/dom/base',
+    '/dom/xul',
     '/layout/generic',
     '/layout/xul',
     '/layout/xul/tree',
@@ -47,7 +49,9 @@ else:
         '/accessible/other',
     ]
 
+include('/ipc/chromium/chromium-config.mozbuild')
+
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

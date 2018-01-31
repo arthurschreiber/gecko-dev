@@ -6,14 +6,90 @@
 
 "use strict";
 
+const { getAllUi } = require("devtools/client/webconsole/new-console-output/selectors/ui");
+const { getMessage } = require("devtools/client/webconsole/new-console-output/selectors/messages");
+const Services = require("Services");
+
 const {
   FILTER_BAR_TOGGLE,
-} = require("../constants");
+  INITIALIZE,
+  PERSIST_TOGGLE,
+  PREFS,
+  SELECT_NETWORK_MESSAGE_TAB,
+  SIDEBAR_CLOSE,
+  SHOW_OBJECT_IN_SIDEBAR,
+  TIMESTAMPS_TOGGLE,
+} = require("devtools/client/webconsole/new-console-output/constants");
 
 function filterBarToggle(show) {
-  return {
-    type: FILTER_BAR_TOGGLE
+  return (dispatch, getState) => {
+    dispatch({
+      type: FILTER_BAR_TOGGLE,
+    });
+    const uiState = getAllUi(getState());
+    Services.prefs.setBoolPref(PREFS.UI.FILTER_BAR, uiState.filterBarVisible);
   };
 }
 
-exports.filterBarToggle = filterBarToggle;
+function persistToggle(show) {
+  return (dispatch, getState) => {
+    dispatch({
+      type: PERSIST_TOGGLE,
+    });
+    const uiState = getAllUi(getState());
+    Services.prefs.setBoolPref(PREFS.UI.PERSIST, uiState.persistLogs);
+  };
+}
+
+function timestampsToggle(visible) {
+  return {
+    type: TIMESTAMPS_TOGGLE,
+    visible,
+  };
+}
+
+function selectNetworkMessageTab(id) {
+  return {
+    type: SELECT_NETWORK_MESSAGE_TAB,
+    id,
+  };
+}
+
+function initialize() {
+  return {
+    type: INITIALIZE
+  };
+}
+
+function sidebarClose(show) {
+  return {
+    type: SIDEBAR_CLOSE,
+  };
+}
+
+function showObjectInSidebar(actorId, messageId) {
+  return (dispatch, getState) => {
+    let { parameters } = getMessage(getState(), messageId);
+    if (Array.isArray(parameters)) {
+      for (let parameter of parameters) {
+        if (parameter.actor === actorId) {
+          dispatch({
+            type: SHOW_OBJECT_IN_SIDEBAR,
+            grip: parameter
+          });
+          return;
+        }
+      }
+    }
+  };
+}
+
+module.exports = {
+  filterBarToggle,
+  initialize,
+  persistToggle,
+  selectNetworkMessageTab,
+  sidebarClose,
+  showObjectInSidebar,
+  timestampsToggle,
+};

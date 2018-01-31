@@ -3,16 +3,23 @@
 
 const PREF_NEWTAB_ENABLED = "browser.newtabpage.enabled";
 const PREF_NEWTAB_DIRECTORYSOURCE = "browser.newtabpage.directory.source";
+const PREF_NEWTAB_ACTIVITY_STREAM = "browser.newtabpage.activity-stream.enabled";
 
 Services.prefs.setBoolPref(PREF_NEWTAB_ENABLED, true);
+Services.prefs.setBoolPref(PREF_NEWTAB_ACTIVITY_STREAM, false);
+
+// Opens and closes a new tab to clear any existing preloaded ones. This is
+// necessary to prevent any left-over activity-stream preloaded new tabs from
+// affecting these tests.
+BrowserOpenTab();
+const initialTab = gBrowser.selectedTab;
+gBrowser.removeTab(initialTab);
 
 var tmp = {};
-Cu.import("resource://gre/modules/NewTabUtils.jsm", tmp);
-Cu.import("resource:///modules/DirectoryLinksProvider.jsm", tmp);
-Cu.import("resource://testing-common/PlacesTestUtils.jsm", tmp);
-Cc["@mozilla.org/moz/jssubscript-loader;1"]
-  .getService(Ci.mozIJSSubScriptLoader)
-  .loadSubScript("chrome://browser/content/sanitize.js", tmp);
+ChromeUtils.import("resource://gre/modules/NewTabUtils.jsm", tmp);
+ChromeUtils.import("resource:///modules/DirectoryLinksProvider.jsm", tmp);
+ChromeUtils.import("resource://testing-common/PlacesTestUtils.jsm", tmp);
+Services.scriptloader.loadSubScript("chrome://browser/content/sanitize.js", tmp);
 var {NewTabUtils, Sanitizer, DirectoryLinksProvider, PlacesTestUtils} = tmp;
 
 var gWindow = window;
@@ -33,66 +40,68 @@ requiredSize.innerWidth =
   (3 * (290 + 20)) + // 3 cols * (tile width + side margins)
   100; // breathing room
 
-var oldSize = {};
-Object.keys(requiredSize).forEach(prop => {
-  info([prop, gBrowser.contentWindow[prop], requiredSize[prop]]);
-  if (gBrowser.contentWindow[prop] < requiredSize[prop]) {
-    oldSize[prop] = gBrowser.contentWindow[prop];
-    info("Changing browser " + prop + " from " + oldSize[prop] + " to " +
-         requiredSize[prop]);
-    gBrowser.contentWindow[prop] = requiredSize[prop];
-  }
-});
-
-var screenHeight = {};
-var screenWidth = {};
-Cc["@mozilla.org/gfx/screenmanager;1"].
-  getService(Ci.nsIScreenManager).
-  primaryScreen.
-  GetAvailRectDisplayPix({}, {}, screenWidth, screenHeight);
-screenHeight = screenHeight.value;
-screenWidth = screenWidth.value;
-
-if (screenHeight < gBrowser.contentWindow.outerHeight) {
-  info("Warning: Browser outer height is now " +
-       gBrowser.contentWindow.outerHeight + ", which is larger than the " +
-       "available screen height, " + screenHeight +
-       ". That may cause problems.");
-}
-
-if (screenWidth < gBrowser.contentWindow.outerWidth) {
-  info("Warning: Browser outer width is now " +
-       gBrowser.contentWindow.outerWidth + ", which is larger than the " +
-       "available screen width, " + screenWidth +
-       ". That may cause problems.");
-}
-
-registerCleanupFunction(function () {
-  while (gWindow.gBrowser.tabs.length > 1)
-    gWindow.gBrowser.removeTab(gWindow.gBrowser.tabs[1]);
-
-  Object.keys(oldSize).forEach(prop => {
-    if (oldSize[prop]) {
-      gBrowser.contentWindow[prop] = oldSize[prop];
-    }
+add_task(async function setupWindowSize() {
+  let [oldSize, curWidth, curHeight] = await ContentTask.spawn(gBrowser.selectedBrowser, requiredSize, (requiredSizeArg) => {
+    var oldSizeVar = {};
+    Object.keys(requiredSizeArg).forEach(prop => {
+      info([prop, content[prop], requiredSizeArg[prop]]);
+      if (content[prop] < requiredSizeArg[prop]) {
+        oldSizeVar[prop] = content[prop];
+        info("Changing browser " + prop + " from " + oldSizeVar[prop] + " to " +
+             requiredSizeArg[prop]);
+        content[prop] = requiredSizeArg[prop];
+      }
+    });
+    return [oldSizeVar, content.outerWidth, content.outerHeight];
   });
 
-  // Stop any update timers to prevent unexpected updates in later tests
-  let timer = NewTabUtils.allPages._scheduleUpdateTimeout;
-  if (timer) {
-    clearTimeout(timer);
-    delete NewTabUtils.allPages._scheduleUpdateTimeout;
+  var screenHeight = {};
+  var screenWidth = {};
+  Cc["@mozilla.org/gfx/screenmanager;1"].
+    getService(Ci.nsIScreenManager).
+    primaryScreen.
+    GetAvailRectDisplayPix({}, {}, screenWidth, screenHeight);
+  screenHeight = screenHeight.value;
+  screenWidth = screenWidth.value;
+
+  if (screenHeight < curHeight) {
+    info("Warning: Browser outer height is now " +
+         curHeight + ", which is larger than the " +
+         "available screen height, " + screenHeight +
+         ". That may cause problems.");
   }
 
+  if (screenWidth < curWidth) {
+    info("Warning: Browser outer width is now " +
+         curWidth + ", which is larger than the " +
+         "available screen width, " + screenWidth +
+         ". That may cause problems.");
+  }
+
+  registerCleanupFunction(function() {
+    while (gWindow.gBrowser.tabs.length > 1)
+      gWindow.gBrowser.removeTab(gWindow.gBrowser.tabs[1]);
+
+    ContentTask.spawn(gBrowser.selectedBrowser, oldSize, (oldSizeArg) => {
+      Object.keys(oldSizeArg).forEach(prop => {
+        if (oldSizeArg[prop]) {
+          content[prop] = oldSizeArg[prop];
+        }
+      });
+    });
+  });
+});
+
+registerCleanupFunction(function() {
   Services.prefs.clearUserPref(PREF_NEWTAB_ENABLED);
+  Services.prefs.clearUserPref(PREF_NEWTAB_ACTIVITY_STREAM);
   Services.prefs.setCharPref(PREF_NEWTAB_DIRECTORYSOURCE, gOrigDirectorySource);
 
   return watchLinksChangeOnce();
 });
 
 function pushPrefs(...aPrefs) {
-  return new Promise(resolve =>
-                     SpecialPowers.pushPrefEnv({"set": aPrefs}, resolve));
+  return SpecialPowers.pushPrefEnv({"set": aPrefs});
 }
 
 /**
@@ -111,7 +120,7 @@ function watchLinksChangeOnce() {
   });
 }
 
-add_task(function* setup() {
+add_task(async function setup() {
   registerCleanupFunction(function() {
     return new Promise(resolve => {
       function cleanupAndFinish() {
@@ -131,15 +140,15 @@ add_task(function* setup() {
     });
   });
 
-  let promiseReady = Task.spawn(function*() {
-    yield watchLinksChangeOnce();
-    yield whenPagesUpdated();
-  });
+  let promiseReady = (async function() {
+    await watchLinksChangeOnce();
+    await whenPagesUpdated();
+  })();
 
   // Save the original directory source (which is set globally for tests)
   gOrigDirectorySource = Services.prefs.getCharPref(PREF_NEWTAB_DIRECTORYSOURCE);
   Services.prefs.setCharPref(PREF_NEWTAB_DIRECTORYSOURCE, gDirectorySource);
-  yield promiseReady;
+  await promiseReady;
 });
 
 /** Perform an action on a cell within the newtab page.
@@ -149,9 +158,10 @@ add_task(function* setup() {
   */
 function performOnCell(aIndex, aFn) {
   return ContentTask.spawn(gWindow.gBrowser.selectedBrowser,
-                           { index: aIndex, fn: aFn.toString() }, function* (args) {
+                           { index: aIndex, fn: aFn.toString() }, async function(args) {
     let cell = content.gGrid.cells[args.index];
-    return eval("(" + args.fn + ")(cell)");
+    // eslint-disable-next-line no-eval
+    return eval(args.fn)(cell);
   });
 }
 
@@ -171,7 +181,7 @@ function setLinks(aLinks) {
     let links = aLinks;
 
     if (typeof links == "string") {
-      links = aLinks.split(/\s*,\s*/).map(function (id) {
+      links = aLinks.split(/\s*,\s*/).map(function(id) {
         return {url: "http://example" + (id != "-1" ? id : "") + ".com/",
                 title: "site#" + id};
       });
@@ -181,10 +191,10 @@ function setLinks(aLinks) {
     // currently in progress has ended. We clear the history, fill it with the
     // given entries and call populateCache() now again to make sure the cache
     // has the desired contents.
-    NewTabUtils.links.populateCache(function () {
+    NewTabUtils.links.populateCache(function() {
       PlacesTestUtils.clearHistory().then(() => {
         fillHistory(links).then(() => {
-          NewTabUtils.links.populateCache(function () {
+          NewTabUtils.links.populateCache(function() {
             NewTabUtils.allPages.update();
             resolve();
           }, true);
@@ -221,8 +231,8 @@ function fillHistory(aLinks) {
 
       PlacesUtils.asyncHistory.updatePlaces(place, {
         handleError: () => ok(false, "couldn't add visit to history"),
-        handleResult: function () {},
-        handleCompletion: function () {
+        handleResult() {},
+        handleCompletion() {
           if (--numLinks == 0) {
             resolve();
           }
@@ -245,7 +255,7 @@ function setPinnedLinks(aLinks) {
   let links = aLinks;
 
   if (typeof links == "string") {
-    links = aLinks.split(/\s*,\s*/).map(function (id) {
+    links = aLinks.split(/\s*,\s*/).map(function(id) {
       if (id)
         return {url: "http://example" + (id != "-1" ? id : "") + ".com/",
                 title: "site#" + id,
@@ -254,11 +264,7 @@ function setPinnedLinks(aLinks) {
     });
   }
 
-  let string = Cc["@mozilla.org/supports-string;1"]
-                 .createInstance(Ci.nsISupportsString);
-  string.data = JSON.stringify(links);
-  Services.prefs.setComplexValue("browser.newtabpage.pinned",
-                                 Ci.nsISupportsString, string);
+  Services.prefs.setStringPref("browser.newtabpage.pinned", JSON.stringify(links));
 
   NewTabUtils.pinnedLinks.resetCache();
   NewTabUtils.allPages.update();
@@ -277,7 +283,7 @@ function restore() {
 /**
  * Wait until a given condition becomes true.
  */
-function waitForCondition(aConditionFn, aMaxTries=50, aCheckInterval=100) {
+function waitForCondition(aConditionFn, aMaxTries = 50, aCheckInterval = 100) {
   return new Promise((resolve, reject) => {
     let tries = 0;
 
@@ -304,17 +310,17 @@ function waitForCondition(aConditionFn, aMaxTries=50, aCheckInterval=100) {
 /**
  * Creates a new tab containing 'about:newtab'.
  */
-function* addNewTabPageTab() {
-  let tab = yield BrowserTestUtils.openNewForegroundTab(gWindow.gBrowser, "about:newtab", false);
+async function addNewTabPageTab() {
+  let tab = await BrowserTestUtils.openNewForegroundTab(gWindow.gBrowser, "about:newtab", false);
   let browser = tab.linkedBrowser;
 
   // Wait for the document to become visible in case it was preloaded.
-  yield waitForCondition(() => !browser.contentDocument.hidden)
+  await waitForCondition(() => !browser.contentDocument.hidden);
 
-  yield new Promise(resolve => {
+  await new Promise(resolve => {
     if (NewTabUtils.allPages.enabled) {
       // Continue when the link cache has been populated.
-      NewTabUtils.links.populateCache(function () {
+      NewTabUtils.links.populateCache(function() {
         whenSearchInitDone().then(resolve);
       });
     } else {
@@ -329,20 +335,20 @@ function* addNewTabPageTab() {
  * Compares the current grid arrangement with the given pattern.
  * @param the pattern (see below)
  *
- * Example: checkGrid("3p,2,,1p")
+ * Example: checkGrid("3p,2,,4p")
  * Result: We expect the first cell to contain the pinned site 'http://example3.com/'.
  *         The second cell contains 'http://example2.com/'. The third cell is empty.
  *         The fourth cell contains the pinned site 'http://example4.com/'.
  */
-function* checkGrid(pattern) {
+async function checkGrid(pattern) {
   let length = pattern.split(",").length;
 
-  yield ContentTask.spawn(gWindow.gBrowser.selectedBrowser,
-                          { length, pattern }, function* (args) {
+  await ContentTask.spawn(gWindow.gBrowser.selectedBrowser,
+                          { length, pattern }, async function(args) {
     let grid = content.wrappedJSObject.gGrid;
 
     let sites = grid.sites.slice(0, args.length);
-    let foundPattern = sites.map(function (aSite) {
+    let foundPattern = sites.map(function(aSite) {
       if (!aSite)
         return "";
 
@@ -402,10 +408,10 @@ function unpinCell(aIndex) {
  * an external link onto the grid e.g. the text from the URL bar.
  * @param aDestIndex The cell index of the drop target.
  */
-function* simulateExternalDrop(aDestIndex) {
+async function simulateExternalDrop(aDestIndex) {
   let pagesUpdatedPromise = whenPagesUpdated();
 
-  yield ContentTask.spawn(gWindow.gBrowser.selectedBrowser, aDestIndex, function*(dropIndex) {
+  await ContentTask.spawn(gWindow.gBrowser.selectedBrowser, aDestIndex, async function(dropIndex) {
     return new Promise(resolve => {
       const url = "data:text/html;charset=utf-8," +
                   "<a id='link' href='http://example99.com/'>link</a>";
@@ -414,8 +420,6 @@ function* simulateExternalDrop(aDestIndex) {
       let iframe = doc.createElement("iframe");
 
       function iframeLoaded() {
-        let link = iframe.contentDocument.getElementById("link");
-
         let dataTransfer = new iframe.contentWindow.DataTransfer("dragstart", false);
         dataTransfer.mozSetDataAt("text/x-moz-url", "http://example99.com/", 0);
 
@@ -431,10 +435,9 @@ function* simulateExternalDrop(aDestIndex) {
         resolve();
       }
 
-      iframe.addEventListener("load", function onLoad() {
-        iframe.removeEventListener("load", onLoad);
+      iframe.addEventListener("load", function() {
         content.setTimeout(iframeLoaded, 0);
-      });
+      }, {once: true});
 
       iframe.setAttribute("src", url);
       iframe.style.width = "50px";
@@ -448,7 +451,7 @@ function* simulateExternalDrop(aDestIndex) {
     });
   });
 
-  yield pagesUpdatedPromise;
+  await pagesUpdatedPromise;
 }
 
 /**
@@ -466,7 +469,7 @@ function whenPagesUpdated() {
     };
 
     NewTabUtils.allPages.register(page);
-    registerCleanupFunction(function () {
+    registerCleanupFunction(function() {
       NewTabUtils.allPages.unregister(page);
     });
   });
@@ -476,7 +479,7 @@ function whenPagesUpdated() {
  * Waits for the response to the page's initial search state request.
  */
 function whenSearchInitDone() {
-  return ContentTask.spawn(gWindow.gBrowser.selectedBrowser, {}, function*() {
+  return ContentTask.spawn(gWindow.gBrowser.selectedBrowser, {}, async function() {
     return new Promise(resolve => {
       if (content.gSearch) {
         let searchController = content.gSearch._contentSearchController;
@@ -494,9 +497,8 @@ function whenSearchInitDone() {
             // Wait for the search controller to receive the event, then resolve.
             if (content.gSearch._contentSearchController.defaultEngine) {
               resolve();
-              return;
             }
-          }
+          };
           content.setTimeout(resolver, 0);
         }
       });
@@ -511,7 +513,7 @@ function whenSearchInitDone() {
  *        Can be any of("blank"|"classic"|"enhanced")
  */
 function customizeNewTabPage(aTheme) {
-  return ContentTask.spawn(gWindow.gBrowser.selectedBrowser, aTheme, function*(aTheme) {
+  return ContentTask.spawn(gWindow.gBrowser.selectedBrowser, aTheme, async function(contentTheme) {
 
     let document = content.document;
     let panel = document.getElementById("newtab-customize-panel");
@@ -522,7 +524,7 @@ function customizeNewTabPage(aTheme) {
         let options = {attributes: true, oldValue: true};
         let observer = new content.MutationObserver(function(mutations) {
           mutations.forEach(function(mutation) {
-            document.getElementById("newtab-customize-" + aTheme).click();
+            document.getElementById("newtab-customize-" + contentTheme).click();
             observer.disconnect();
             if (opened == panel.hasAttribute("open")) {
               resolve();
@@ -535,11 +537,11 @@ function customizeNewTabPage(aTheme) {
 
     let opened = panelOpened(true);
     customizeButton.click();
-    yield opened;
+    await opened;
 
     let closed = panelOpened(false);
     customizeButton.click();
-    yield closed;
+    await closed;
   });
 }
 
@@ -547,7 +549,7 @@ function customizeNewTabPage(aTheme) {
  * Reports presence of a scrollbar
  */
 function hasScrollbar() {
-  return ContentTask.spawn(gWindow.gBrowser.selectedBrowser, {}, function* () {
+  return ContentTask.spawn(gWindow.gBrowser.selectedBrowser, {}, async function() {
     let docElement = content.document.documentElement;
     return docElement.scrollHeight > docElement.clientHeight;
   });

@@ -44,7 +44,7 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_END
 NS_IMPL_ADDREF_INHERITED(CustomEvent, Event)
 NS_IMPL_RELEASE_INHERITED(CustomEvent, Event)
 
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(CustomEvent)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(CustomEvent)
   NS_INTERFACE_MAP_ENTRY(nsIDOMCustomEvent)
 NS_INTERFACE_MAP_END_INHERITING(Event)
 
@@ -60,6 +60,7 @@ CustomEvent::Constructor(const GlobalObject& aGlobal,
   JS::Rooted<JS::Value> detail(aGlobal.Context(), aParam.mDetail);
   e->InitCustomEvent(aGlobal.Context(), aType, aParam.mBubbles, aParam.mCancelable, detail, aRv);
   e->SetTrusted(trusted);
+  e->SetComposed(aParam.mComposed);
   return e.forget();
 }
 
@@ -75,6 +76,8 @@ CustomEvent::InitCustomEvent(const nsAString& aType,
                              bool aCancelable,
                              nsIVariant* aDetail)
 {
+  NS_ENSURE_TRUE(!mEvent->mFlags.mIsBeingDispatched, NS_OK);
+
   AutoJSAPI jsapi;
   NS_ENSURE_STATE(jsapi.Init(GetParentObject()));
   JSContext* cx = jsapi.cx();
@@ -101,6 +104,8 @@ CustomEvent::InitCustomEvent(JSContext* aCx,
                              JS::Handle<JS::Value> aDetail,
                              ErrorResult& aRv)
 {
+  NS_ENSURE_TRUE_VOID(!mEvent->mFlags.mIsBeingDispatched);
+
   Event::InitEvent(aType, aCanBubble, aCancelable);
   mDetail = aDetail;
 }

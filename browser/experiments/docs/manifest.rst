@@ -194,7 +194,9 @@ locale
 
    A locale identifier is a string like ``en-US`` or ``zh-CN`` and is
    obtained by looking at
-   ``nsIXULChromeRegistry.getSelectedLocale("global")``.
+   ``LocaleService.getAppLocaleAsLangTag()``.
+   For infamous `ja-JP-mac` case, this will return it in
+   the language tag form (`ja-JP-mac`).
 
    The client should compare its locale identifier to members of this array.
    If a match is found, the experiment is applicable.
@@ -318,7 +320,7 @@ client should remember what the expiration events were for an experiment
 and honor them.
 
 The rationale here is that we want to prevent an accidental deletion
-or temporary failure on the server to inadvertantly deactivate
+or temporary failure on the server to inadvertently deactivate
 supposed-to-be-active experiments. We also don't want premature deletion
 of an experiment from the manifest to result in indefinite activation
 periods.

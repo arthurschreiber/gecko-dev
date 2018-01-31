@@ -1,7 +1,7 @@
 function makeURL(spec) {
   return Cc["@mozilla.org/network/io-service;1"].
            getService(Components.interfaces.nsIIOService).
-           newURI(spec, null, null).
+           newURI(spec).
            QueryInterface(Components.interfaces.nsIURL);
 }
 
@@ -39,6 +39,6 @@ function run_test() {
     let url1 = makeURL(tests[i][0]);
     let url2 = makeURL(tests[i][1]);
     let expected = tests[i][2];
-    do_check_eq(expected, url1.getRelativeSpec(url2));
+    Assert.equal(expected, url1.getRelativeSpec(url2));
   }
 }

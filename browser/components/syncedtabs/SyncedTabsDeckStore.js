@@ -6,7 +6,7 @@
 
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
-let { EventEmitter } = Cu.import("resource:///modules/syncedtabs/EventEmitter.jsm", {});
+let { EventEmitter } = ChromeUtils.import("resource:///modules/syncedtabs/EventEmitter.jsm", {});
 
 this.EXPORTED_SYMBOLS = [
   "SyncedTabsDeckStore"
@@ -31,7 +31,7 @@ Object.assign(SyncedTabsDeckStore.prototype, EventEmitter.prototype, {
     let panels = this._panels.map(panel => {
       return {id: panel, selected: panel === this._selectedPanel};
     });
-    this.emit("change", {panels, isUpdatable: isUpdatable});
+    this.emit("change", {panels, isUpdatable});
   },
 
   /**

@@ -5,9 +5,21 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 */
 
-/* Global Styles */
-.checkbox-check {
-  -moz-appearance: checkbox;
+/* Pref Window & Pane */
+.prefwindow {
+  padding: 0px;
+}
+
+.prefwindow[type="child"] {
+  padding: 8px;
+}
+
+.prefpane {
+  padding: 8px;
+}
+
+.prefwindow[type="child"] > .prefpane {
+  padding: 0px;
 }
 
 /* General Pane */
@@ -28,7 +40,7 @@
 
 /* Modeless Window Dialogs */
 .windowDialog,
-.windowDialog prefpane {
+.windowDialog .prefpane {
   padding: 0px;
 }
 
@@ -45,7 +57,7 @@
   width: 16px;
   height: 16px;
   margin: 0px 2px;
-  list-style-image: url("chrome://mozapps/skin/places/defaultFavicon.png");
+  list-style-image: url("chrome://mozapps/skin/places/defaultFavicon.svg");
 }
 
 #linksOpenInBox {
@@ -54,7 +66,7 @@
 
 #advancedPrefs {
   margin-left: 0;
-  margin-right: 0; 
+  margin-right: 0;
 }
 
 #cookiesChildren::-moz-tree-image(domainCol, container) {
@@ -83,21 +95,7 @@
 
 /* Sync Pane */
 
-#syncDesc {
-  padding: 0 8em;
-}
-
-#accountCaptionImage {
-  list-style-image: url("chrome://mozapps/skin/profile/profileicon.png");
-}
-
-#syncAddDeviceLabel {
-  margin-top: 1em;
-  margin-bottom: 1em;
-}
-
 #noFxaAccount {
-  margin: 5px;
   line-height: 1.2em;
 }
 

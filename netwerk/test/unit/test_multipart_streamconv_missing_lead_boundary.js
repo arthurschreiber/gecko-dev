@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = null;
 
@@ -11,7 +11,7 @@ function make_channel(url) {
   return NetUtil.newChannel({uri: url, loadUsingSystemPrincipal: true});
 }
 
-var multipartBody = "\r\nSome text\r\n--boundary\r\n\r\n<?xml version='1.0'?><root/>\r\n--boundary--";
+var multipartBody = "Preamble\r\n--boundary\r\n\r\nSome text\r\n--boundary\r\n\r\n<?xml version='1.0'?><root/>\r\n--boundary--";
 
 function contentHandler(metadata, response)
 {
@@ -30,8 +30,8 @@ var testData =
 
 function responseHandler(request, buffer)
 {
-    do_check_eq(buffer, testData[testNum].data);
-    do_check_eq(request.QueryInterface(Ci.nsIChannel).contentType,
+    Assert.equal(buffer, testData[testNum].data);
+    Assert.equal(request.QueryInterface(Ci.nsIChannel).contentType,
 		testData[testNum].type);
     if (++testNum == numTests)
 	httpserver.stop(do_test_finished);

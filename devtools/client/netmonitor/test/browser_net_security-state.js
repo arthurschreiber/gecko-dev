@@ -1,6 +1,6 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
 /**
@@ -17,19 +17,21 @@ add_task(function* () {
   };
 
   let { tab, monitor } = yield initNetMonitor(CUSTOM_GET_URL);
-  let { $, EVENTS, NetMonitorView } = monitor.panelWin;
-  let { RequestsMenu } = NetMonitorView;
-  RequestsMenu.lazyUpdate = false;
+  let { document, store, windowRequire } = monitor.panelWin;
+  let Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+
+  store.dispatch(Actions.batchEnable(false));
 
   yield performRequests();
 
-  for (let item of RequestsMenu.items) {
-    let domain = $(".requests-menu-domain", item.target).value;
+  for (let subitemNode of Array.from(document.querySelectorAll(
+    "requests-list-column.requests-list-security-and-domain"))) {
+    let domain = subitemNode.querySelector(".requests-list-domain").textContent;
 
     info("Found a request to " + domain);
     ok(domain in EXPECTED_SECURITY_STATES, "Domain " + domain + " was expected.");
 
-    let classes = $(".requests-security-state-icon", item.target).classList;
+    let classes = subitemNode.querySelector(".requests-security-state-icon").classList;
     let expectedClass = EXPECTED_SECURITY_STATES[domain];
 
     info("Classes of security state icon are: " + classes);
@@ -54,10 +56,7 @@ add_task(function* () {
       });
     }
 
-    // waitForNetworkEvents does not work for requests with security errors as
-    // those only emit 9/13 events of a successful request.
-    let done = waitForSecurityBrokenNetworkEvent();
-
+    let done = waitForNetworkEvents(monitor, 1);
     info("Requesting a resource that has a certificate problem.");
     yield executeRequests(1, "https://nocert.example.com");
 
@@ -78,42 +77,14 @@ add_task(function* () {
     yield executeRequests(1, "https://example.com" + CORS_SJS_PATH);
     yield done;
 
-    done = waitForSecurityBrokenNetworkEvent(true);
+    done = waitForNetworkEvents(monitor, 1);
     info("Requesting a resource over HTTP to localhost.");
     yield executeRequests(1, "http://localhost" + CORS_SJS_PATH);
     yield done;
 
     const expectedCount = Object.keys(EXPECTED_SECURITY_STATES).length;
-    is(RequestsMenu.itemCount, expectedCount, expectedCount + " events logged.");
-  }
-
-  /**
-   * Returns a promise that's resolved once a request with security issues is
-   * completed.
-   */
-  function waitForSecurityBrokenNetworkEvent(networkError) {
-    let awaitedEvents = [
-      "UPDATING_REQUEST_HEADERS",
-      "RECEIVED_REQUEST_HEADERS",
-      "UPDATING_REQUEST_COOKIES",
-      "RECEIVED_REQUEST_COOKIES",
-      "STARTED_RECEIVING_RESPONSE",
-      "UPDATING_RESPONSE_CONTENT",
-      "RECEIVED_RESPONSE_CONTENT",
-      "UPDATING_EVENT_TIMINGS",
-      "RECEIVED_EVENT_TIMINGS",
-    ];
-
-    // If the reason for breakage is a network error, then the
-    // STARTED_RECEIVING_RESPONSE event does not fire.
-    if (networkError) {
-      awaitedEvents = awaitedEvents.filter(e => e !== "STARTED_RECEIVING_RESPONSE");
-    }
-
-    let promises = awaitedEvents.map((event) => {
-      return monitor.panelWin.once(EVENTS[event]);
-    });
-
-    return Promise.all(promises);
+    is(store.getState().requests.requests.size,
+      expectedCount,
+      expectedCount + " events logged.");
   }
 });

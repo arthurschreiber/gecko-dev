@@ -3,15 +3,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/TelemetryStopwatch.jsm");
+ChromeUtils.import("resource://gre/modules/TelemetryStopwatch.jsm");
 
 var gHistoryTree;
 var gSearchBox;
 var gHistoryGrouping = "";
 var gSearching = false;
 
-function HistorySidebarInit()
-{
+function HistorySidebarInit() {
   gHistoryTree = document.getElementById("historyTree");
   gSearchBox = document.getElementById("search-box");
 
@@ -32,14 +31,12 @@ function HistorySidebarInit()
   searchHistory("");
 }
 
-function GroupBy(groupingType)
-{
+function GroupBy(groupingType) {
   gHistoryGrouping = groupingType;
   searchHistory(gSearchBox.value);
 }
 
-function searchHistory(aInput)
-{
+function searchHistory(aInput) {
   var query = PlacesUtils.history.getNewQuery();
   var options = PlacesUtils.history.getNewQueryOptions();
 
@@ -94,5 +91,4 @@ function searchHistory(aInput)
 }
 
 window.addEventListener("SidebarFocused",
-                        () => gSearchBox.focus(),
-                        false);
+                        () => gSearchBox.focus());

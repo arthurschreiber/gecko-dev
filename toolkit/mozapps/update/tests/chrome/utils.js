@@ -67,40 +67,41 @@
  *   checkPrefHasUserValue function.
  */
 
-'use strict';
+"use strict";
+
+/* globals TESTS, runTest, finishTest */
 
 const { classes: Cc, interfaces: Ci, manager: Cm, results: Cr,
         utils: Cu } = Components;
 
-Cu.import("resource://gre/modules/Services.jsm", this);
+ChromeUtils.import("resource://gre/modules/Services.jsm", this);
+
+/* import-globals-from testConstants.js */
+Services.scriptloader.loadSubScript("chrome://mochitests/content/chrome/toolkit/mozapps/update/tests/chrome/testConstants.js", this);
 
 const IS_MACOSX = ("nsILocalFileMac" in Ci);
 const IS_WIN = ("@mozilla.org/windows-registry-key;1" in Cc);
 
 // The tests have to use the pageid instead of the pageIndex due to the
 // app update wizard's access method being random.
-const PAGEID_DUMMY            = "dummy";                 // Done
-const PAGEID_CHECKING         = "checking";              // Done
-const PAGEID_NO_UPDATES_FOUND = "noupdatesfound";        // Done
-const PAGEID_MANUAL_UPDATE    = "manualUpdate";          // Done
-const PAGEID_UNSUPPORTED      = "unsupported";           // Done
-const PAGEID_FOUND_BASIC      = "updatesfoundbasic";     // Done
-const PAGEID_DOWNLOADING      = "downloading";           // Done
-const PAGEID_ERRORS           = "errors";                // Done
-const PAGEID_ERROR_EXTRA      = "errorextra";            // Done
-const PAGEID_ERROR_PATCHING   = "errorpatching";         // Done
-const PAGEID_FINISHED         = "finished";              // Done
-const PAGEID_FINISHED_BKGRD   = "finishedBackground";    // Done
+const PAGEID_DUMMY            = "dummy";
+const PAGEID_CHECKING         = "checking";
+const PAGEID_NO_UPDATES_FOUND = "noupdatesfound";
+const PAGEID_MANUAL_UPDATE    = "manualUpdate";
+const PAGEID_UNSUPPORTED      = "unsupported";
+const PAGEID_FOUND_BASIC      = "updatesfoundbasic";
+const PAGEID_DOWNLOADING      = "downloading";
+const PAGEID_ERRORS           = "errors";
+const PAGEID_ERROR_EXTRA      = "errorextra";
+const PAGEID_ERROR_PATCHING   = "errorpatching";
+const PAGEID_FINISHED         = "finished";
+const PAGEID_FINISHED_BKGRD   = "finishedBackground";
 
 const UPDATE_WINDOW_NAME = "Update:Wizard";
 
-const URL_HOST = "http://example.com";
-const URL_PATH_UPDATE_XML = "/chrome/toolkit/mozapps/update/tests/chrome/update.sjs";
-const REL_PATH_DATA = "chrome/toolkit/mozapps/update/tests/data";
-
 // These two URLs must not contain parameters since tests add their own
 // test specific parameters.
-const URL_HTTP_UPDATE_XML = URL_HOST + URL_PATH_UPDATE_XML;
+const URL_HTTP_UPDATE_XML = URL_HTTP_UPDATE_SJS;
 const URL_HTTPS_UPDATE_XML = "https://example.com" + URL_PATH_UPDATE_XML;
 
 const URI_UPDATE_PROMPT_DIALOG  = "chrome://mozapps/content/update/updates.xul";
@@ -128,11 +129,10 @@ var gCloseWindowTimeoutCounter = 0;
 
 // The following vars are for restoring previous preference values (if present)
 // when the test finishes.
-var gAppUpdateEnabled;            // app.update.enabled
-var gAppUpdateServiceEnabled;     // app.update.service.enabled
-var gAppUpdateStagingEnabled;     // app.update.staging.enabled
-var gAppUpdateURLDefault;         // app.update.url (default prefbranch)
-var gAppUpdateURL;                // app.update.url.override
+var gAppUpdateEnabled; // app.update.enabled
+var gAppUpdateServiceEnabled; // app.update.service.enabled
+var gAppUpdateStagingEnabled; // app.update.staging.enabled
+var gAppUpdateURLDefault; // app.update.url (default prefbranch)
 
 var gTestCounter = -1;
 var gWin;
@@ -146,6 +146,7 @@ var gUseTestUpdater = false;
 var DEBUG_AUS_TEST = true;
 
 const DATA_URI_SPEC = "chrome://mochitests/content/chrome/toolkit/mozapps/update/tests/data/";
+/* import-globals-from ../data/shared.js */
 Services.scriptloader.loadSubScript(DATA_URI_SPEC + "shared.js", this);
 
 /**
@@ -166,6 +167,54 @@ this.__defineGetter__("gCallback", function() {
 });
 
 /**
+ * nsIObserver for receiving window open and close notifications.
+ */
+const gWindowObserver = {
+  observe: function WO_observe(aSubject, aTopic, aData) {
+    let win = aSubject.QueryInterface(Ci.nsIDOMEventTarget);
+
+    if (aTopic == "domwindowclosed") {
+      if (win.location != URI_UPDATE_PROMPT_DIALOG) {
+        debugDump("domwindowclosed event for window not being tested - " +
+                  "location: " + win.location + "... returning early");
+        return;
+      }
+      // Allow tests the ability to provide their own function (it must be
+      // named finishTest) for finishing the test.
+      try {
+        finishTest();
+      } catch (e) {
+        finishTestDefault();
+      }
+      return;
+    }
+
+    win.addEventListener("load", function() {
+      // Ignore windows other than the update UI window.
+      if (win.location != URI_UPDATE_PROMPT_DIALOG) {
+        debugDump("load event for window not being tested - location: " +
+                  win.location + "... returning early");
+        return;
+      }
+
+      // The first wizard page should always be the dummy page.
+      let pageid = win.document.documentElement.currentPage.pageid;
+      if (pageid != PAGEID_DUMMY) {
+        // This should never happen but if it does this will provide a clue
+        // for diagnosing the cause.
+        ok(false, "Unexpected load event - pageid got: " + pageid +
+           ", expected: " + PAGEID_DUMMY + "... returning early");
+        return;
+      }
+
+      gWin = win;
+      gDocElem = gWin.document.documentElement;
+      gDocElem.addEventListener("pageshow", onPageShowDefault);
+    }, {once: true});
+  }
+};
+
+/**
  * Default test run function that can be used by most tests. This function uses
  * protective measures to prevent the test from failing provided by
  * |runTestDefaultWaitForWindowClosed| helper functions to prevent failure due
@@ -173,11 +222,6 @@ this.__defineGetter__("gCallback", function() {
  */
 function runTestDefault() {
   debugDump("entering");
-
-  if (!("@mozilla.org/zipwriter;1" in Cc)) {
-    ok(false, "nsIZipWriter is required to run these tests");
-    return;
-  }
 
   SimpleTest.waitForExplicitFinish();
 
@@ -196,8 +240,7 @@ function runTestDefaultWaitForWindowClosed() {
   if (gCloseWindowTimeoutCounter > CLOSE_WINDOW_TIMEOUT_MAXCOUNT) {
     try {
       finishTest();
-    }
-    catch (e) {
+    } catch (e) {
       finishTestDefault();
     }
     return;
@@ -251,7 +294,7 @@ function finishTestDefault() {
 
   Services.ww.unregisterNotification(gWindowObserver);
   if (gDocElem) {
-    gDocElem.removeEventListener("pageshow", onPageShowDefault, false);
+    gDocElem.removeEventListener("pageshow", onPageShowDefault);
   }
 
   finishTestRestoreUpdaterBackup();
@@ -271,8 +314,7 @@ function finishTestTimeout(aTimer) {
 
   try {
     finishTest();
-  }
-  catch (e) {
+  } catch (e) {
     finishTestDefault();
   }
 }
@@ -435,13 +477,11 @@ function delayedDefaultCallback() {
  * Gets the continue file used to signal the mock http server to continue
  * downloading for slow download mar file tests without creating it.
  *
- * @return nsILocalFile for the continue file.
+ * @return nsIFile for the continue file.
  */
 function getContinueFile() {
-  let continueFile = Cc["@mozilla.org/file/directory_service;1"].
-                     getService(Ci.nsIProperties).
-                     get("CurWorkD", Ci.nsILocalFile);
-  let continuePath = REL_PATH_DATA + "/continue";
+  let continueFile = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
+  let continuePath = REL_PATH_DATA + "continue";
   let continuePathParts = continuePath.split("/");
   for (let i = 0; i < continuePathParts.length; ++i) {
     continueFile.append(continuePathParts[i]);
@@ -507,29 +547,29 @@ function getExpectedButtonStates() {
 
   switch (gTest.pageid) {
     case PAGEID_CHECKING:
-      return { cancel: { disabled: false, hidden: false } };
+      return {cancel: {disabled: false, hidden: false}};
     case PAGEID_FOUND_BASIC:
       if (gTest.neverButton) {
-        return { extra1: { disabled: false, hidden: false },
-                 extra2: { disabled: false, hidden: false },
-                 next  : { disabled: false, hidden: false } }
+        return {extra1: {disabled: false, hidden: false},
+                extra2: {disabled: false, hidden: false},
+                next: {disabled: false, hidden: false}};
       }
-      return { extra1: { disabled: false, hidden: false },
-               next  : { disabled: false, hidden: false } };
+      return {extra1: {disabled: false, hidden: false},
+              next: {disabled: false, hidden: false}};
     case PAGEID_DOWNLOADING:
-      return { extra1: { disabled: false, hidden: false } };
+      return {extra1: {disabled: false, hidden: false}};
     case PAGEID_NO_UPDATES_FOUND:
     case PAGEID_MANUAL_UPDATE:
     case PAGEID_UNSUPPORTED:
     case PAGEID_ERRORS:
     case PAGEID_ERROR_EXTRA:
-      return { finish: { disabled: false, hidden: false } };
+      return {finish: {disabled: false, hidden: false}};
     case PAGEID_ERROR_PATCHING:
-      return { next  : { disabled: false, hidden: false } };
+      return {next: { disabled: false, hidden: false}};
     case PAGEID_FINISHED:
     case PAGEID_FINISHED_BKGRD:
-      return { extra1: { disabled: false, hidden: false },
-               finish: { disabled: false, hidden: false } };
+      return {extra1: { disabled: false, hidden: false},
+              finish: { disabled: false, hidden: false}};
   }
   return null;
 }
@@ -687,7 +727,7 @@ function copyTestUpdater() {
   try {
     // Copy the test updater
     let baseAppDir = getAppBaseDir();
-    let testUpdaterDir = Services.dirsvc.get("CurWorkD", Ci.nsILocalFile);
+    let testUpdaterDir = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
     let relPath = REL_PATH_DATA;
     let pathParts = relPath.split("/");
     for (let i = 0; i < pathParts.length; ++i) {
@@ -747,14 +787,14 @@ function setupPrefs() {
   Services.prefs.setIntPref(PREF_APP_UPDATE_LASTUPDATETIME, now);
   Services.prefs.setIntPref(PREF_APP_UPDATE_INTERVAL, 43200);
 
-  if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_URL_OVERRIDE)) {
-    gAppUpdateURL = Services.prefs.getCharPref(PREF_APP_UPDATE_URL_OVERRIDE);
-  }
-
   if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_ENABLED)) {
     gAppUpdateEnabled = Services.prefs.getBoolPref(PREF_APP_UPDATE_ENABLED);
   }
   Services.prefs.setBoolPref(PREF_APP_UPDATE_ENABLED, true);
+
+  if (!Services.prefs.getBoolPref(PREF_APP_UPDATE_AUTO), false) {
+    Services.prefs.setBoolPref(PREF_APP_UPDATE_AUTO, true);
+  }
 
   if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_SERVICE_ENABLED)) {
     gAppUpdateServiceEnabled = Services.prefs.getBoolPref(PREF_APP_UPDATE_SERVICE_ENABLED);
@@ -769,6 +809,7 @@ function setupPrefs() {
   Services.prefs.setIntPref(PREF_APP_UPDATE_IDLETIME, 0);
   Services.prefs.setIntPref(PREF_APP_UPDATE_PROMPTWAITTIME, 0);
   Services.prefs.setBoolPref(PREF_APP_UPDATE_SILENT, false);
+  Services.prefs.setBoolPref(PREF_APP_UPDATE_DOORHANGER, false);
 }
 
 /**
@@ -797,8 +838,7 @@ function resetFiles() {
   if (updatedDir.exists()) {
     try {
       removeDirRecursive(updatedDir);
-    }
-    catch (e) {
+    } catch (e) {
       logTestInfo("Unable to remove directory. Path: " + updatedDir.path +
                   ", Exception: " + e);
     }
@@ -809,12 +849,6 @@ function resetFiles() {
  * Resets the most common preferences used by tests to their original values.
  */
 function resetPrefs() {
-  if (gAppUpdateURL !== undefined) {
-    Services.prefs.setCharPref(PREF_APP_UPDATE_URL_OVERRIDE, gAppUpdateURL);
-  } else if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_URL_OVERRIDE)) {
-    Services.prefs.clearUserPref(PREF_APP_UPDATE_URL_OVERRIDE);
-  }
-
   if (gAppUpdateURLDefault) {
     gDefaultPrefBranch.setCharPref(PREF_APP_UPDATE_URL, gAppUpdateURLDefault);
   }
@@ -823,6 +857,10 @@ function resetPrefs() {
     Services.prefs.setBoolPref(PREF_APP_UPDATE_ENABLED, gAppUpdateEnabled);
   } else if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_ENABLED)) {
     Services.prefs.clearUserPref(PREF_APP_UPDATE_ENABLED);
+  }
+
+  if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_AUTO)) {
+    Services.prefs.clearUserPref(PREF_APP_UPDATE_AUTO);
   }
 
   if (gAppUpdateServiceEnabled !== undefined) {
@@ -869,14 +907,8 @@ function resetPrefs() {
     Services.prefs.clearUserPref(PREF_APP_UPDATE_BACKGROUNDMAXERRORS);
   }
 
-  if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_CERT_REQUIREBUILTIN)) {
-    Services.prefs.clearUserPref(PREF_APP_UPDATE_CERT_REQUIREBUILTIN);
-  }
-
-  try {
-    Services.prefs.deleteBranch(PREFBRANCH_APP_UPDATE_NEVER);
-  }
-  catch (e) {
+  if (Services.prefs.prefHasUserValue(PREF_APP_UPDATE_DOORHANGER)) {
+    Services.prefs.clearUserPref(PREF_APP_UPDATE_DOORHANGER);
   }
 }
 
@@ -938,13 +970,13 @@ const errorsPrefObserver = {
    * @param  aMaxErrorCount
    *         The value to set the maximum errors preference to.
    */
-  init: function(aObservePref, aMaxErrorPref, aMaxErrorCount) {
+  init(aObservePref, aMaxErrorPref, aMaxErrorCount) {
     this.observedPref = aObservePref;
     this.maxErrorPref = aMaxErrorPref;
 
     let maxErrors = aMaxErrorCount ? aMaxErrorCount : 2;
     Services.prefs.setIntPref(aMaxErrorPref, maxErrors);
-    Services.prefs.addObserver(aObservePref, this, false);
+    Services.prefs.addObserver(aObservePref, this);
   },
 
   /**
@@ -964,55 +996,5 @@ const errorsPrefObserver = {
         });
       }
     }
-  }
-};
-
-/**
- * nsIObserver for receiving window open and close notifications.
- */
-const gWindowObserver = {
-  observe: function WO_observe(aSubject, aTopic, aData) {
-    let win = aSubject.QueryInterface(Ci.nsIDOMEventTarget);
-
-    if (aTopic == "domwindowclosed") {
-      if (win.location != URI_UPDATE_PROMPT_DIALOG) {
-        debugDump("domwindowclosed event for window not being tested - " +
-                  "location: " + win.location + "... returning early");
-        return;
-      }
-      // Allow tests the ability to provide their own function (it must be
-      // named finishTest) for finishing the test.
-      try {
-        finishTest();
-      }
-      catch (e) {
-        finishTestDefault();
-      }
-      return;
-    }
-
-    win.addEventListener("load", function WO_observe_onLoad() {
-      win.removeEventListener("load", WO_observe_onLoad, false);
-      // Ignore windows other than the update UI window.
-      if (win.location != URI_UPDATE_PROMPT_DIALOG) {
-        debugDump("load event for window not being tested - location: " +
-                  win.location + "... returning early");
-        return;
-      }
-
-      // The first wizard page should always be the dummy page.
-      let pageid = win.document.documentElement.currentPage.pageid;
-      if (pageid != PAGEID_DUMMY) {
-        // This should never happen but if it does this will provide a clue
-        // for diagnosing the cause.
-        ok(false, "Unexpected load event - pageid got: " + pageid +
-           ", expected: " + PAGEID_DUMMY + "... returning early");
-        return;
-      }
-
-      gWin = win;
-      gDocElem = gWin.document.documentElement;
-      gDocElem.addEventListener("pageshow", onPageShowDefault, false);
-    }, false);
   }
 };

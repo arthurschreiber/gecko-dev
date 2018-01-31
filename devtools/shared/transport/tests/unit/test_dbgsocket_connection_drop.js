@@ -7,11 +7,12 @@
  * Bug 755412 - checks if the server drops the connection on an improperly
  * framed packet, i.e. when the length header is invalid.
  */
+"use strict";
 
 const { RawPacket } = require("devtools/shared/transport/packets");
 
 function run_test() {
-  do_print("Starting test at " + new Date().toTimeString());
+  info("Starting test at " + new Date().toTimeString());
   initTestDebuggerServer();
 
   add_task(test_socket_conn_drops_after_invalid_header);
@@ -61,8 +62,8 @@ var test_helper = Task.async(function* (payload) {
   });
   let closedDeferred = defer();
   transport.hooks = {
-    onPacket: function (aPacket) {
-      this.onPacket = function (aPacket) {
+    onPacket: function (packet) {
+      this.onPacket = function () {
         do_throw(new Error("This connection should be dropped."));
         transport.close();
       };
@@ -71,8 +72,8 @@ var test_helper = Task.async(function* (payload) {
       transport._outgoing.push(new RawPacket(transport, payload));
       transport._flushOutgoing();
     },
-    onClosed: function (aStatus) {
-      do_check_true(true);
+    onClosed: function (status) {
+      Assert.ok(true);
       closedDeferred.resolve();
     },
   };

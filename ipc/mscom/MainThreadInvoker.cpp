@@ -6,41 +6,70 @@
 
 #include "mozilla/mscom/MainThreadInvoker.h"
 
+#include "GeckoProfiler.h"
 #include "MainThreadUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/HangMonitor.h"
+#include "mozilla/mscom/SpinEvent.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/SystemGroup.h"
 #include "private/prpriv.h" // For PR_GetThreadID
-
-#include <winternl.h> // For NTSTATUS and NTAPI
+#include "WinUtils.h"
 
 namespace {
 
+/**
+ * SyncRunnable implements different code paths depending on whether or not
+ * we are running on a multiprocessor system. In the multiprocessor case, we
+ * leave the thread in a spin loop while waiting for the main thread to execute
+ * our runnable. Since spinning is pointless in the uniprocessor case, we block
+ * on an event that is set by the main thread once it has finished the runnable.
+ */
 class SyncRunnable : public mozilla::Runnable
 {
 public:
-  SyncRunnable(HANDLE aEvent, already_AddRefed<nsIRunnable>&& aRunnable)
-    : mDoneEvent(aEvent)
+  explicit SyncRunnable(already_AddRefed<nsIRunnable> aRunnable)
+    : mozilla::Runnable("MainThreadInvoker")
     , mRunnable(aRunnable)
-  {
-    MOZ_ASSERT(aEvent);
-    MOZ_ASSERT(mRunnable);
-  }
+  {}
+
+  ~SyncRunnable() = default;
 
   NS_IMETHOD Run() override
   {
+    if (mHasRun) {
+      return NS_OK;
+    }
+    mHasRun = true;
+
+    TimeStamp runStart(TimeStamp::Now());
     mRunnable->Run();
-    ::SetEvent(mDoneEvent);
+    TimeStamp runEnd(TimeStamp::Now());
+
+    mDuration = runEnd - runStart;
+
+    mEvent.Signal();
     return NS_OK;
   }
 
-private:
-  HANDLE                mDoneEvent;
-  nsCOMPtr<nsIRunnable> mRunnable;
-};
+  bool WaitUntilComplete()
+  {
+    return mEvent.Wait(mozilla::mscom::MainThreadInvoker::GetTargetThread());
+  }
 
-typedef NTSTATUS (NTAPI* NtTestAlertPtr)(VOID);
+  const mozilla::TimeDuration& GetDuration() const
+  {
+    return mDuration;
+  }
+
+private:
+  bool                      mHasRun = false;
+  nsCOMPtr<nsIRunnable>     mRunnable;
+  mozilla::mscom::SpinEvent mEvent;
+  mozilla::TimeDuration     mDuration;
+};
 
 } // anonymous namespace
 
@@ -48,7 +77,6 @@ namespace mozilla {
 namespace mscom {
 
 HANDLE MainThreadInvoker::sMainThread = nullptr;
-StaticRefPtr<nsIRunnable> MainThreadInvoker::sAlertRunnable;
 
 /* static */ bool
 MainThreadInvoker::InitStatics()
@@ -58,90 +86,67 @@ MainThreadInvoker::InitStatics()
   if (NS_FAILED(rv)) {
     return false;
   }
+
   PRThread* mainPrThread = nullptr;
   rv = mainThread->GetPRThread(&mainPrThread);
   if (NS_FAILED(rv)) {
     return false;
   }
+
   PRUint32 tid = ::PR_GetThreadID(mainPrThread);
   sMainThread = ::OpenThread(SYNCHRONIZE | THREAD_SET_CONTEXT, FALSE, tid);
-  if (!sMainThread) {
-    return false;
-  }
-  NtTestAlertPtr NtTestAlert =
-    reinterpret_cast<NtTestAlertPtr>(
-        ::GetProcAddress(::GetModuleHandleW(L"ntdll.dll"), "NtTestAlert"));
-  sAlertRunnable = ::NS_NewRunnableFunction([NtTestAlert]() -> void {
-    // We're using NtTestAlert() instead of SleepEx() so that the main thread
-    // never gives up its quantum if there are no APCs pending.
-    NtTestAlert();
-  }).take();
-  if (sAlertRunnable) {
-    ClearOnShutdown(&sAlertRunnable);
-  }
-  return !!sAlertRunnable;
+
+  return !!sMainThread;
 }
 
 MainThreadInvoker::MainThreadInvoker()
-  : mDoneEvent(::CreateEvent(nullptr, FALSE, FALSE, nullptr))
 {
   static const bool gotStatics = InitStatics();
   MOZ_ASSERT(gotStatics);
 }
 
-MainThreadInvoker::~MainThreadInvoker()
-{
-  if (mDoneEvent) {
-    ::CloseHandle(mDoneEvent);
-  }
-}
-
 bool
-MainThreadInvoker::WaitForCompletion(DWORD aTimeout)
-{
-  HANDLE handles[] = {mDoneEvent, sMainThread};
-  DWORD waitResult = ::WaitForMultipleObjects(ArrayLength(handles), handles,
-                                              FALSE, aTimeout);
-  return waitResult == WAIT_OBJECT_0;
-}
-
-bool
-MainThreadInvoker::Invoke(already_AddRefed<nsIRunnable>&& aRunnable,
-                          DWORD aTimeout)
+MainThreadInvoker::Invoke(already_AddRefed<nsIRunnable>&& aRunnable)
 {
   nsCOMPtr<nsIRunnable> runnable(Move(aRunnable));
   if (!runnable) {
     return false;
   }
+
   if (NS_IsMainThread()) {
     runnable->Run();
     return true;
   }
-  RefPtr<SyncRunnable> wrappedRunnable(new SyncRunnable(mDoneEvent,
-                                                        runnable.forget()));
-  // Make sure that wrappedRunnable remains valid while sitting in the APC queue
-  wrappedRunnable->AddRef();
-  if (!::QueueUserAPC(&MainThreadAPC, sMainThread,
-                      reinterpret_cast<UINT_PTR>(wrappedRunnable.get()))) {
-    // Enqueue failed so cancel the above AddRef
-    wrappedRunnable->Release();
+
+  RefPtr<SyncRunnable> syncRunnable = new SyncRunnable(runnable.forget());
+
+  if (NS_FAILED(SystemGroup::Dispatch(
+                  TaskCategory::Other, do_AddRef(syncRunnable)))) {
     return false;
   }
-  // We should enqueue a call to NtTestAlert() so that the main thread will
-  // check for APCs during event processing. If we omit this then the main
-  // thread will not check its APC queue until it is idle. Note that failing to
-  // dispatch this event is non-fatal, but it will delay execution of the APC.
-  Unused << NS_WARN_IF(NS_FAILED(NS_DispatchToMainThread(sAlertRunnable)));
-  return WaitForCompletion(aTimeout);
+
+  // This ref gets released in MainThreadAPC when it runs.
+  SyncRunnable* syncRunnableRef = syncRunnable.get();
+  NS_ADDREF(syncRunnableRef);
+  if (!::QueueUserAPC(&MainThreadAPC, sMainThread,
+                      reinterpret_cast<UINT_PTR>(syncRunnableRef))) {
+    return false;
+  }
+
+  bool result = syncRunnable->WaitUntilComplete();
+  mDuration = syncRunnable->GetDuration();
+  return result;
 }
 
 /* static */ VOID CALLBACK
 MainThreadInvoker::MainThreadAPC(ULONG_PTR aParam)
 {
+  AUTO_PROFILER_THREAD_WAKE;
+  mozilla::HangMonitor::NotifyActivity(mozilla::HangMonitor::kGeneralActivity);
   MOZ_ASSERT(NS_IsMainThread());
-  RefPtr<SyncRunnable> runnable(already_AddRefed<SyncRunnable>(
-                                  reinterpret_cast<SyncRunnable*>(aParam)));
+  auto runnable = reinterpret_cast<SyncRunnable*>(aParam);
   runnable->Run();
+  NS_RELEASE(runnable);
 }
 
 } // namespace mscom

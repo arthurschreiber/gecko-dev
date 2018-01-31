@@ -6,7 +6,7 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/WindowsVersion.h"
+#include "mozilla/UniquePtrExtensions.h"
 
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
@@ -21,11 +21,9 @@
 #include "nsIComponentManager.h"
 #include "prio.h"
 #include "private/pprio.h"  // To get PR_ImportFile
-#include "prprf.h"
-#include "prmem.h"
 #include "nsHashKeys.h"
 
-#include "nsXPIDLString.h"
+#include "nsString.h"
 #include "nsReadableUtils.h"
 
 #include <direct.h>
@@ -41,7 +39,6 @@
 #include  <stdlib.h>
 #include  <mbstring.h>
 
-#include "nsXPIDLString.h"
 #include "prproces.h"
 #include "prlink.h"
 
@@ -62,10 +59,10 @@
 using namespace mozilla;
 
 #define CHECK_mWorkingPath()                    \
-    PR_BEGIN_MACRO                              \
+    do {                                        \
         if (mWorkingPath.IsEmpty())             \
             return NS_ERROR_NOT_INITIALIZED;    \
-    PR_END_MACRO
+    } while(0)
 
 // CopyFileEx only supports unbuffered I/O in Windows Vista and above
 #ifndef COPY_FILE_NO_BUFFERING
@@ -115,6 +112,7 @@ class AsyncLocalFileWinDone : public Runnable
 {
 public:
   AsyncLocalFileWinDone() :
+    Runnable("AsyncLocalFileWinDone"),
     mWorkerThread(do_GetCurrentThread())
   {
     // Objects of this type must only be created on worker threads
@@ -144,7 +142,8 @@ class AsyncRevealOperation : public Runnable
 {
 public:
   explicit AsyncRevealOperation(const nsAString& aResolvedPath)
-    : mResolvedPath(aResolvedPath)
+    : Runnable("AsyncRevealOperation"),
+      mResolvedPath(aResolvedPath)
   {
   }
 
@@ -179,13 +178,12 @@ private:
     HRESULT hr;
     if (attributes & FILE_ATTRIBUTE_DIRECTORY) {
       // We have a directory so we should open the directory itself.
-      ITEMIDLIST* dir =
-        static_cast<ITEMIDLIST*>(ILCreateFromPathW(mResolvedPath.get()));
+      LPITEMIDLIST dir = ILCreateFromPathW(mResolvedPath.get());
       if (!dir) {
         return NS_ERROR_FAILURE;
       }
 
-      const ITEMIDLIST* selection[] = { dir };
+      LPCITEMIDLIST selection[] = { dir };
       UINT count = ArrayLength(selection);
 
       //Perform the open of the directory.
@@ -203,21 +201,19 @@ private:
       PathRemoveFileSpecW(parentDirectoryPath);
 
       // We have a file so we should open the parent directory.
-      ITEMIDLIST* dir =
-        static_cast<ITEMIDLIST*>(ILCreateFromPathW(parentDirectoryPath));
+      LPITEMIDLIST dir = ILCreateFromPathW(parentDirectoryPath);
       if (!dir) {
         return NS_ERROR_FAILURE;
       }
 
       // Set the item in the directory to select to the file we want to reveal.
-      ITEMIDLIST* item =
-        static_cast<ITEMIDLIST*>(ILCreateFromPathW(mResolvedPath.get()));
+      LPITEMIDLIST item = ILCreateFromPathW(mResolvedPath.get());
       if (!item) {
         CoTaskMemFree(dir);
         return NS_ERROR_FAILURE;
       }
 
-      const ITEMIDLIST* selection[] = { item };
+      LPCITEMIDLIST selection[] = { item };
       UINT count = ArrayLength(selection);
 
       //Perform the selection of the file.
@@ -551,7 +547,7 @@ struct PRFilePrivate
 // copied from nsprpub/pr/src/{io/prfile.c | md/windows/w95io.c} :
 // PR_Open and _PR_MD_OPEN
 nsresult
-OpenFile(const nsAFlatString& aName,
+OpenFile(const nsString& aName,
          int aOsflags,
          int aMode,
          bool aShareDelete,
@@ -655,7 +651,7 @@ FileTimeToPRTime(const FILETIME* aFiletime, PRTime* aPrtm)
 // copied from nsprpub/pr/src/{io/prfile.c | md/windows/w95io.c} with some
 // changes : PR_GetFileInfo64, _PR_MD_GETFILEINFO64
 static nsresult
-GetFileInfo(const nsAFlatString& aName, PRFileInfo64* aInfo)
+GetFileInfo(const nsString& aName, PRFileInfo64* aInfo)
 {
   WIN32_FILE_ATTRIBUTE_DATA fileData;
 
@@ -696,7 +692,7 @@ struct nsDir
 };
 
 static nsresult
-OpenDir(const nsAFlatString& aName, nsDir** aDir)
+OpenDir(const nsString& aName, nsDir** aDir)
 {
   if (NS_WARN_IF(!aDir)) {
     return NS_ERROR_INVALID_ARG;
@@ -839,7 +835,7 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHOD HasMoreElements(bool* aResult)
+  NS_IMETHOD HasMoreElements(bool* aResult) override
   {
     nsresult rv;
     if (!mNext && mDir) {
@@ -878,7 +874,7 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHOD GetNext(nsISupports** aResult)
+  NS_IMETHOD GetNext(nsISupports** aResult) override
   {
     nsresult rv;
     bool hasMore;
@@ -894,7 +890,7 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHOD GetNextFile(nsIFile** aResult)
+  NS_IMETHOD GetNextFile(nsIFile** aResult) override
   {
     *aResult = nullptr;
     bool hasMore = false;
@@ -908,7 +904,7 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHOD Close()
+  NS_IMETHOD Close() override
   {
     if (mDir) {
       nsresult rv = CloseDir(mDir);
@@ -966,7 +962,6 @@ nsLocalFile::nsLocalFileConstructor(nsISupports* aOuter, const nsIID& aIID,
 //-----------------------------------------------------------------------------
 
 NS_IMPL_ISUPPORTS(nsLocalFile,
-                  nsILocalFile,
                   nsIFile,
                   nsILocalFileWin,
                   nsIHashable)
@@ -999,7 +994,7 @@ nsLocalFile::ResolveShortcut()
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  wchar_t* resolvedPath = wwc(mResolvedPath.BeginWriting());
+  wchar_t* resolvedPath = mResolvedPath.get();
 
   // resolve this shortcut
   nsresult rv = gResolver->Resolve(mWorkingPath.get(), resolvedPath);
@@ -1020,7 +1015,7 @@ nsLocalFile::ResolveAndStat()
     return NS_OK;
   }
 
-  PROFILER_LABEL_FUNC(js::ProfileEntry::Category::OTHER);
+  AUTO_PROFILER_LABEL("nsLocalFile::ResolveAndStat", OTHER);
   // we can't resolve/stat anything that isn't a valid NSPR addressable path
   if (mWorkingPath.IsEmpty()) {
     return NS_ERROR_FILE_INVALID_PATH;
@@ -1029,9 +1024,9 @@ nsLocalFile::ResolveAndStat()
   // this is usually correct
   mResolvedPath.Assign(mWorkingPath);
 
-  // slutty hack designed to work around bug 134796 until it is fixed
-  nsAutoString nsprPath(mWorkingPath.get());
-  if (mWorkingPath.Length() == 2 && mWorkingPath.CharAt(1) == L':') {
+  // Make sure root paths have a trailing slash.
+  nsAutoString nsprPath(mWorkingPath);
+  if (mWorkingPath.Length() == 2 && mWorkingPath.CharAt(1) == u':') {
     nsprPath.Append('\\');
   }
 
@@ -1118,7 +1113,7 @@ nsLocalFile::Resolve()
 }
 
 //-----------------------------------------------------------------------------
-// nsLocalFile::nsIFile,nsILocalFile
+// nsLocalFile::nsIFile
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
@@ -1191,6 +1186,128 @@ nsLocalFile::InitWithPath(const nsAString& aFilePath)
 
 }
 
+// Strip a handler command string of its quotes and parameters.
+static void
+CleanupHandlerPath(nsString& aPath)
+{
+  // Example command strings passed into this routine:
+
+  // 1) C:\Program Files\Company\some.exe -foo -bar
+  // 2) C:\Program Files\Company\some.dll
+  // 3) C:\Windows\some.dll,-foo -bar
+  // 4) C:\Windows\some.cpl,-foo -bar
+
+  int32_t lastCommaPos = aPath.RFindChar(',');
+  if (lastCommaPos != kNotFound)
+    aPath.Truncate(lastCommaPos);
+
+  aPath.Append(' ');
+
+  // case insensitive
+  int32_t index = aPath.Find(".exe ", true);
+  if (index == kNotFound)
+    index = aPath.Find(".dll ", true);
+  if (index == kNotFound)
+    index = aPath.Find(".cpl ", true);
+
+  if (index != kNotFound)
+    aPath.Truncate(index + 4);
+  aPath.Trim(" ", true, true);
+}
+
+// Strip the windows host process bootstrap executable rundll32.exe
+// from a handler's command string if it exists.
+static void
+StripRundll32(nsString& aCommandString)
+{
+  // Example rundll formats:
+  // C:\Windows\System32\rundll32.exe "path to dll"
+  // rundll32.exe "path to dll"
+  // C:\Windows\System32\rundll32.exe "path to dll", var var
+  // rundll32.exe "path to dll", var var
+
+  NS_NAMED_LITERAL_STRING(rundllSegment, "rundll32.exe ");
+  NS_NAMED_LITERAL_STRING(rundllSegmentShort, "rundll32 ");
+
+  // case insensitive
+  int32_t strLen = rundllSegment.Length();
+  int32_t index = aCommandString.Find(rundllSegment, true);
+  if (index == kNotFound) {
+    strLen = rundllSegmentShort.Length();
+    index = aCommandString.Find(rundllSegmentShort, true);
+  }
+
+  if (index != kNotFound) {
+    uint32_t rundllSegmentLength = index + strLen;
+    aCommandString.Cut(0, rundllSegmentLength);
+  }
+}
+
+// Returns the fully qualified path to an application handler based on
+// a parameterized command string. Note this routine should not be used
+// to launch the associated application as it strips parameters and
+// rundll.exe from the string. Designed for retrieving display information
+// on a particular handler.
+/* static */ bool
+nsLocalFile::CleanupCmdHandlerPath(nsAString& aCommandHandler)
+{
+  nsAutoString handlerCommand(aCommandHandler);
+
+  // Straight command path:
+  //
+  // %SystemRoot%\system32\NOTEPAD.EXE var
+  // "C:\Program Files\iTunes\iTunes.exe" var var
+  // C:\Program Files\iTunes\iTunes.exe var var
+  //
+  // Example rundll handlers:
+  //
+  // rundll32.exe "%ProgramFiles%\Win...ery\PhotoViewer.dll", var var
+  // rundll32.exe "%ProgramFiles%\Windows Photo Gallery\PhotoViewer.dll"
+  // C:\Windows\System32\rundll32.exe "path to dll", var var
+  // %SystemRoot%\System32\rundll32.exe "%ProgramFiles%\Win...ery\Photo
+  //    Viewer.dll", var var
+
+  // Expand environment variables so we have full path strings.
+  uint32_t bufLength = ::ExpandEnvironmentStringsW(handlerCommand.get(),
+                                                   nullptr, 0);
+  if (bufLength == 0) // Error
+    return false;
+
+  auto destination = mozilla::MakeUniqueFallible<wchar_t[]>(bufLength);
+  if (!destination)
+    return false;
+  if (!::ExpandEnvironmentStringsW(handlerCommand.get(), destination.get(),
+                                   bufLength))
+    return false;
+
+  handlerCommand.Assign(destination.get());
+
+  // Remove quotes around paths
+  handlerCommand.StripChars("\"");
+
+  // Strip windows host process bootstrap so we can get to the actual
+  // handler.
+  StripRundll32(handlerCommand);
+
+  // Trim any command parameters so that we have a native path we can
+  // initialize a local file with.
+  CleanupHandlerPath(handlerCommand);
+
+  aCommandHandler.Assign(handlerCommand);
+  return true;
+}
+
+
+NS_IMETHODIMP
+nsLocalFile::InitWithCommandLine(const nsAString& aCommandLine)
+{
+  nsAutoString commandLine(aCommandLine);
+  if (!CleanupCmdHandlerPath(commandLine)) {
+    return NS_ERROR_FILE_UNRECOGNIZED_PATH;
+  }
+  return InitWithPath(commandLine);
+}
+
 NS_IMETHODIMP
 nsLocalFile::OpenNSPRFileDesc(int32_t aFlags, int32_t aMode,
                               PRFileDesc** aResult)
@@ -1247,7 +1364,7 @@ nsLocalFile::Create(uint32_t aType, uint32_t aAttributes)
   // Skip the first 'X:\' for the first form, and skip the first full
   // '\\machine\volume\' segment for the second form.
 
-  wchar_t* path = wwc(mResolvedPath.BeginWriting());
+  wchar_t* path = char16ptr_t(mResolvedPath.BeginWriting());
 
   if (path[0] == L'\\' && path[1] == L'\\') {
     // dealing with a UNC path here; skip past '\\machine\'
@@ -1349,7 +1466,7 @@ nsLocalFile::AppendRelativePath(const nsAString& aNode)
 
 
 nsresult
-nsLocalFile::AppendInternal(const nsAFlatString& aNode,
+nsLocalFile::AppendInternal(const nsString& aNode,
                             bool aMultipleComponents)
 {
   if (aNode.IsEmpty()) {
@@ -1486,8 +1603,9 @@ nsLocalFile::Normalize()
       path.Replace(0, 2, currentDir + NS_LITERAL_STRING("\\"));
     }
   }
-  NS_POSTCONDITION(0 < rootIdx && rootIdx < (int32_t)path.Length(), "rootIdx is invalid");
-  NS_POSTCONDITION(path.CharAt(rootIdx) == '\\', "rootIdx is invalid");
+
+  MOZ_ASSERT(0 < rootIdx && rootIdx < (int32_t)path.Length(), "rootIdx is invalid");
+  MOZ_ASSERT(path.CharAt(rootIdx) == '\\', "rootIdx is invalid");
 
   // if there is nothing following the root path then it is already normalized
   if (rootIdx + 1 == (int32_t)path.Length()) {
@@ -1850,13 +1968,11 @@ nsLocalFile::CopySingleFile(nsIFile* aSourceFile, nsIFile* aDestParent,
   // So we only use COPY_FILE_NO_BUFFERING when we have a remote drive.
   int copyOK;
   DWORD dwCopyFlags = COPY_FILE_ALLOW_DECRYPTED_DESTINATION;
-  if (IsVistaOrLater()) {
-    bool path1Remote, path2Remote;
-    if (!IsRemoteFilePath(filePath.get(), path1Remote) ||
-        !IsRemoteFilePath(destPath.get(), path2Remote) ||
-        path1Remote || path2Remote) {
-      dwCopyFlags |= COPY_FILE_NO_BUFFERING;
-    }
+  bool path1Remote, path2Remote;
+  if (!IsRemoteFilePath(filePath.get(), path1Remote) ||
+      !IsRemoteFilePath(destPath.get(), path2Remote) ||
+      path1Remote || path2Remote) {
+    dwCopyFlags |= COPY_FILE_NO_BUFFERING;
   }
 
   if (!move) {
@@ -3436,17 +3552,26 @@ nsLocalFile::SetNativeLeafName(const nsACString& aLeafName)
 }
 
 
-NS_IMETHODIMP
-nsLocalFile::GetNativePath(nsACString& aResult)
+nsString
+nsLocalFile::NativePath()
+{
+  return mWorkingPath;
+}
+
+nsresult
+nsIFile::GetNativePath(nsACString& aResult)
 {
   //NS_WARNING("This API is lossy. Use GetPath !");
-  nsAutoString tmp;
-  nsresult rv = GetPath(tmp);
-  if (NS_SUCCEEDED(rv)) {
-    rv = NS_CopyUnicodeToNative(tmp, aResult);
-  }
+  return NS_CopyUnicodeToNative(NativePath(), aResult);
+}
 
-  return rv;
+nsCString
+nsIFile::HumanReadablePath()
+{
+  nsString path;
+  DebugOnly<nsresult> rv = GetPath(path);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  return NS_ConvertUTF16toUTF8(path);
 }
 
 
@@ -3627,7 +3752,7 @@ nsDriveEnumerator::Init()
   if (!mDrives.SetLength(length + 1, fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
-  if (!GetLogicalDriveStringsW(length, wwc(mDrives.BeginWriting()))) {
+  if (!GetLogicalDriveStringsW(length, mDrives.get())) {
     return NS_ERROR_FAILURE;
   }
   mDrives.BeginReading(mStartOfCurrentDrive);

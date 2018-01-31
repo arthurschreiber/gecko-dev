@@ -30,51 +30,69 @@ const id = "unsigned-xpi@tests.mozilla.org";
 Phase("phase01", [
   [Addons.verifyNot, [id]],
   [Addons.install, [id]],
-  [Sync]
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1427835
 ]);
 Phase("phase02", [
-  [Addons.verify, [id], STATE_ENABLED]
+  [Addons.verify, [id], STATE_ENABLED],
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1427835
 ]);
 Phase("phase03", [
   [Addons.verifyNot, [id]],
-  [Sync]
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1427835
 ]);
 Phase("phase04", [
   [Addons.verify, [id], STATE_ENABLED],
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1427835
 ]);
 
 // Now we disable the add-on
 Phase("phase05", [
   [EnsureTracking],
   [Addons.setEnabled, [id], STATE_DISABLED],
-  [Sync]
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1380472
 ]);
 Phase("phase06", [
   [Addons.verify, [id], STATE_DISABLED],
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1380472
 ]);
 Phase("phase07", [
   [Addons.verify, [id], STATE_ENABLED],
-  [Sync]
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1380472
 ]);
 Phase("phase08", [
-  [Addons.verify, [id], STATE_DISABLED]
+  [Addons.verify, [id], STATE_DISABLED],
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1380472
 ]);
 
 // Now we re-enable it again.
 Phase("phase09", [
   [EnsureTracking],
   [Addons.setEnabled, [id], STATE_ENABLED],
-  [Sync]
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1427835
 ]);
 Phase("phase10", [
   [Addons.verify, [id], STATE_ENABLED],
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1427835
 ]);
 Phase("phase11", [
   [Addons.verify, [id], STATE_DISABLED],
-  [Sync]
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1427835
 ]);
 Phase("phase12", [
-  [Addons.verify, [id], STATE_ENABLED]
+  [Addons.verify, [id], STATE_ENABLED],
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1427835
 ]);
 
 // And we uninstall it
@@ -83,15 +101,21 @@ Phase("phase13", [
   [EnsureTracking],
   [Addons.verify, [id], STATE_ENABLED],
   [Addons.uninstall, [id]],
-  [Sync]
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1427835
 ]);
 Phase("phase14", [
-  [Addons.verifyNot, [id]]
+  [Addons.verifyNot, [id]],
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1427835
 ]);
 Phase("phase15", [
   [Addons.verify, [id], STATE_ENABLED],
-  [Sync]
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1427835
 ]);
 Phase("phase16", [
-  [Addons.verifyNot, [id]]
+  [Addons.verifyNot, [id]],
+  [Sync],
+  [Addons.skipValidation] // Validation disabled due to bug 1427835
 ]);

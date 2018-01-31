@@ -10,10 +10,9 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/FileSystemDirectoryEntry.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
-
-class nsIGlobalObject;
 
 namespace mozilla {
 namespace dom {
@@ -30,14 +29,14 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(FileSystemDirectoryReader)
 
-  explicit FileSystemDirectoryReader(nsIGlobalObject* aGlobalObject,
+  explicit FileSystemDirectoryReader(FileSystemDirectoryEntry* aDirectoryEntry,
                                      FileSystem* aFileSystem,
                                      Directory* aDirectory);
 
   nsIGlobalObject*
   GetParentObject() const
   {
-    return mParent;
+    return mParentEntry->GetParentObject();
   }
 
   virtual JSObject*
@@ -52,7 +51,7 @@ protected:
   virtual ~FileSystemDirectoryReader();
 
 private:
-  nsCOMPtr<nsIGlobalObject> mParent;
+  RefPtr<FileSystemDirectoryEntry> mParentEntry;
   RefPtr<FileSystem> mFileSystem;
   RefPtr<Directory> mDirectory;
 

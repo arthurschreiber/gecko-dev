@@ -24,41 +24,6 @@
 
 extern const char16_t kIsoLatin1ToUCS2[256];
 
-// This macro can be used in a class declaration for classes that want
-// to ensure that their instance memory is zeroed.
-#define NS_DECL_AND_IMPL_ZEROING_OPERATOR_NEW   \
-  void* operator new(size_t sz) CPP_THROW_NEW { \
-    void* rv = ::operator new(sz);              \
-    if (rv) {                                   \
-      memset(rv, 0, sz);                        \
-    }                                           \
-    return rv;                                  \
-  }                                             \
-  void operator delete(void* ptr) {             \
-    ::operator delete(ptr);                     \
-  }
-
-// This macro works with the next macro to declare a non-inlined
-// version of the above.
-#define NS_DECL_ZEROING_OPERATOR_NEW           \
-  void* operator new(size_t sz) CPP_THROW_NEW; \
-  void operator delete(void* ptr);
-
-#define NS_IMPL_ZEROING_OPERATOR_NEW(_class)            \
-  void* _class::operator new(size_t sz) CPP_THROW_NEW { \
-    void* rv = ::operator new(sz);                      \
-    if (rv) {                                           \
-      memset(rv, 0, sz);                                \
-    }                                                   \
-    return rv;                                          \
-  }                                                     \
-  void _class::operator delete(void* ptr) {             \
-    ::operator delete(ptr);                             \
-  }
-
-// Freeing helper
-#define CRTFREEIF(x) if (x) { nsCRT::free(x); x = 0; }
-
 /// This is a wrapper class around all the C runtime functions.
 
 class nsCRT
@@ -75,12 +40,6 @@ public:
   static int32_t strcmp(const char* aStr1, const char* aStr2)
   {
     return int32_t(PL_strcmp(aStr1, aStr2));
-  }
-
-  static int32_t strncmp(const char* aStr1, const char* aStr2,
-                         uint32_t aMaxLen)
-  {
-    return int32_t(PL_strncmp(aStr1, aStr2, aMaxLen));
   }
 
   /// Case-insensitive string comparison.
@@ -100,17 +59,6 @@ public:
       result = -1;
     }
     return result;
-  }
-
-  static int32_t strncmp(const char* aStr1, const char* aStr2, int32_t aMaxLen)
-  {
-    // inline the first test (assumes strings are not null):
-    int32_t diff =
-      ((const unsigned char*)aStr1)[0] - ((const unsigned char*)aStr2)[0];
-    if (diff != 0) {
-      return diff;
-    }
-    return int32_t(PL_strncmp(aStr1, aStr2, unsigned(aMaxLen)));
   }
 
   /**
@@ -136,9 +84,6 @@ public:
 
   /// Like strcmp except for ucs2 strings
   static int32_t strcmp(const char16_t* aStr1, const char16_t* aStr2);
-  /// Like strcmp except for ucs2 strings
-  static int32_t strncmp(const char16_t* aStr1, const char16_t* aStr2,
-                         uint32_t aMaxLen);
 
   // The GNU libc has memmem, which is strstr except for binary data
   // This is our own implementation that uses memmem on platforms

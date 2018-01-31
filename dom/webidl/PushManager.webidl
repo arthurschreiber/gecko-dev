@@ -9,7 +9,7 @@
 
 dictionary PushSubscriptionOptionsInit {
   // boolean userVisibleOnly = false;
-  BufferSource? applicationServerKey = null;
+  (BufferSource or DOMString)? applicationServerKey = null;
 };
 
 // The main thread JS implementation. Please see comments in
@@ -22,7 +22,7 @@ interface PushManagerImpl {
   Promise<PushPermissionState> permissionState(optional PushSubscriptionOptionsInit options);
 };
 
-[Exposed=(Window,Worker), Func="nsContentUtils::PushEnabled",
+[Exposed=(Window,Worker), Func="mozilla::dom::DOMPrefs::PushEnabled",
  ChromeConstructor(DOMString scope)]
 interface PushManager {
   [Throws, UseCounter]

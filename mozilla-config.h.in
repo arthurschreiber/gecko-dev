@@ -13,7 +13,7 @@
 #endif
 #endif
 
-// Expands to all the defines from configure.
+/* Expands to all the defines from configure. */
 #undef ALLDEFINES
 
 /*
@@ -35,16 +35,6 @@
 
 #if defined(__clang__)
 #pragma clang diagnostic pop
-#endif
-
-/*
- * Force-include Char16.h in order to define PRUnichar as char16_t everywhere.
- * Note that this should be the first #include to make sure that prtypes.h does
- * not attempt to define PRUnichar.  This includes the following hunspell-specific
- * includes.
- */
-#if !defined(__ASSEMBLER__)
-#include "mozilla/Char16.h"
 #endif
 
 /*

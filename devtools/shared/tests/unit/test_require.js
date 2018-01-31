@@ -1,6 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 // Test require
 
 // Ensure that DevtoolsLoader.require doesn't spawn multiple
@@ -12,7 +14,7 @@ function testBug1091706() {
   let indent1 = require("devtools/shared/indentation");
   let indent2 = require("devtools/shared/indentation");
 
-  do_check_true(indent1 === indent2);
+  Assert.ok(indent1 === indent2);
 }
 
 function run_test() {

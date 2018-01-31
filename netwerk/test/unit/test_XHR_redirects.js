@@ -4,8 +4,8 @@
 // etc--see HttpBaseChannel::IsSafeMethod).  Since no prompting is possible
 // in xpcshell, we get an error for prompts, and the request fails.
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/Preferences.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/Preferences.jsm");
 
 var sSame;
 var sOther;
@@ -43,11 +43,11 @@ function checkResults(xhr, method, status, unsafe)
 
   if (xhr.readyState != 4)
     return false;
-  do_check_eq(xhr.status, status);
+  Assert.equal(xhr.status, status);
 
   if (status == 200) {
     // if followed then check for echoed method name
-    do_check_eq(xhr.getResponseHeader("X-Received-Method"), method);
+    Assert.equal(xhr.getResponseHeader("X-Received-Method"), method);
   }
 
   return true;

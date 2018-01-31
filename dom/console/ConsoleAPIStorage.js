@@ -8,8 +8,8 @@ var Cu = Components.utils;
 var Ci = Components.interfaces;
 var Cc = Components.classes;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // This constant tells how many messages to process in a single timer execution.
 const MESSAGES_IN_INTERVAL = 1500
@@ -31,7 +31,8 @@ const CONSOLEAPISTORAGE_CID = Components.ID('{96cf7855-dfa9-4c6d-8276-f9705b4890
  * ID.
  *
  * Usage:
- *    Cu.import("resource://gre/modules/ConsoleAPIStorage.jsm");
+ *    let ConsoleAPIStorage = Cc["@mozilla.org/consoleAPI-storage;1"]
+ *                              .getService(Ci.nsIConsoleAPIStorage);
  *
  *    // Get the cached events array for the window you want (use the inner
  *    // window ID).
@@ -75,9 +76,9 @@ ConsoleAPIStorageService.prototype = {
   /** @private */
   init: function CS_init()
   {
-    Services.obs.addObserver(this, "xpcom-shutdown", false);
-    Services.obs.addObserver(this, "inner-window-destroyed", false);
-    Services.obs.addObserver(this, "memory-pressure", false);
+    Services.obs.addObserver(this, "xpcom-shutdown");
+    Services.obs.addObserver(this, "inner-window-destroyed");
+    Services.obs.addObserver(this, "memory-pressure");
   },
 
   /**
@@ -127,6 +128,7 @@ ConsoleAPIStorageService.prototype = {
     }
 
     let storage = _consoleStorage.get(aId);
+
     storage.push(aEvent);
 
     // truncate
@@ -153,7 +155,7 @@ ConsoleAPIStorageService.prototype = {
     }
     else {
       _consoleStorage.clear();
-      Services.obs.notifyObservers(null, "console-storage-reset", null);
+      Services.obs.notifyObservers(null, "console-storage-reset");
     }
   },
 };

@@ -10,13 +10,13 @@ function test() {
 
   const REMEMBER = Date.now(), FORGET = Math.random();
   let test_state = {
-    windows: [ { tabs: [{ entries: [{ url: "http://example.com/" }] }], selected: 1 } ],
-    _closedWindows : [
+    windows: [ { tabs: [{ entries: [{ url: "http://example.com/", triggeringPrincipal_base64 }] }], selected: 1 } ],
+    _closedWindows: [
       // _closedWindows[0]
       {
         tabs: [
-          { entries: [{ url: "http://example.com/", title: "title" }] },
-          { entries: [{ url: "http://mozilla.org/", title: "title" }] }
+          { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: "title" }] },
+          { entries: [{ url: "http://mozilla.org/", triggeringPrincipal_base64, title: "title" }] }
         ],
         selected: 2,
         title: FORGET,
@@ -25,9 +25,9 @@ function test() {
       // _closedWindows[1]
       {
         tabs: [
-         { entries: [{ url: "http://mozilla.org/", title: "title" }] },
-         { entries: [{ url: "http://example.com/", title: "title" }] },
-         { entries: [{ url: "http://mozilla.org/", title: "title" }] },
+         { entries: [{ url: "http://mozilla.org/", triggeringPrincipal_base64, title: "title" }] },
+         { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: "title" }] },
+         { entries: [{ url: "http://mozilla.org/", triggeringPrincipal_base64, title: "title" }] },
         ],
         selected: 3,
         title: REMEMBER,
@@ -36,7 +36,7 @@ function test() {
       // _closedWindows[2]
       {
         tabs: [
-          { entries: [{ url: "http://example.com/", title: "title" }] }
+          { entries: [{ url: "http://example.com/", triggeringPrincipal_base64, title: "title" }] }
         ],
         selected: 1,
         title: FORGET,
@@ -44,8 +44,8 @@ function test() {
           {
             state: {
               entries: [
-                { url: "http://mozilla.org/", title: "title" },
-                { url: "http://mozilla.org/again", title: "title" }
+                { url: "http://mozilla.org/", triggeringPrincipal_base64, title: "title" },
+                { url: "http://mozilla.org/again", triggeringPrincipal_base64, title: "title" }
               ]
             },
             pos: 1,
@@ -54,7 +54,7 @@ function test() {
           {
             state: {
               entries: [
-                { url: "http://example.com", title: "title" }
+                { url: "http://example.com", triggeringPrincipal_base64, title: "title" }
               ]
             },
             title: "title"
@@ -73,8 +73,7 @@ function test() {
     try {
       aFunction();
       return false;
-    }
-    catch (ex) {
+    } catch (ex) {
       return ex.name == "NS_ERROR_ILLEGAL_VALUE";
     }
   }
@@ -82,8 +81,8 @@ function test() {
   // open a window and add the above closed window list
   let newWin = openDialog(location, "_blank", "chrome,all,dialog=no");
   promiseWindowLoaded(newWin).then(() => {
-    gPrefService.setIntPref("browser.sessionstore.max_windows_undo",
-                            test_state._closedWindows.length);
+    Services.prefs.setIntPref("browser.sessionstore.max_windows_undo",
+                              test_state._closedWindows.length);
     ss.setWindowState(newWin, JSON.stringify(test_state), true);
 
     let closedWindows = JSON.parse(ss.getClosedWindowData());
@@ -114,7 +113,7 @@ function test() {
        "... and windows not specifically forgetten weren't.");
 
     // clean up
-    gPrefService.clearUserPref("browser.sessionstore.max_windows_undo");
+    Services.prefs.clearUserPref("browser.sessionstore.max_windows_undo");
     BrowserTestUtils.closeWindow(newWin).then(finish);
   });
 }

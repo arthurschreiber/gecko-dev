@@ -4,22 +4,17 @@
 
 "use strict";
 
-const { Cc, Ci } = require("chrome");
+const { Ci } = require("chrome");
 
+const InspectorUtils = require("InspectorUtils");
 const Services = require("Services");
 const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
 
-const events = require("sdk/event/core");
 const protocol = require("devtools/shared/protocol");
 const { cssUsageSpec } = require("devtools/shared/specs/csscoverage");
 
-loader.lazyGetter(this, "DOMUtils", () => {
-  return Cc["@mozilla.org/inspector/dom-utils;1"].getService(Ci.inIDOMUtils);
-});
 loader.lazyRequireGetter(this, "stylesheets", "devtools/server/actors/stylesheets");
 loader.lazyRequireGetter(this, "prettifyCSS", "devtools/shared/inspector/css-logic", true);
-
-const CSSRule = Ci.nsIDOMCSSRule;
 
 const MAX_UNUSED_RULES = 10000;
 
@@ -77,8 +72,7 @@ var CSSUsageActor = protocol.ActorClassWithSpec(cssUsageSpec, {
     this._onTabLoad = this._onTabLoad.bind(this);
     this._onChange = this._onChange.bind(this);
 
-    this._notifyOn = Ci.nsIWebProgress.NOTIFY_STATUS |
-                     Ci.nsIWebProgress.NOTIFY_STATE_ALL;
+    this._notifyOn = Ci.nsIWebProgress.NOTIFY_STATE_ALL;
   },
 
   destroy: function () {
@@ -121,10 +115,6 @@ var CSSUsageActor = protocol.ActorClassWithSpec(cssUsageSpec, {
         }
       },
 
-      onLocationChange: () => {},
-      onProgressChange: () => {},
-      onSecurityChange: () => {},
-      onStatusChange: () => {},
       destroy: () => {}
     };
 
@@ -140,7 +130,7 @@ var CSSUsageActor = protocol.ActorClassWithSpec(cssUsageSpec, {
       this._tabActor.window.location.reload();
     }
 
-    events.emit(this, "state-change", { isRunning: true });
+    this.emit("state-change", { isRunning: true });
   },
 
   /**
@@ -155,7 +145,7 @@ var CSSUsageActor = protocol.ActorClassWithSpec(cssUsageSpec, {
     this._progress = undefined;
 
     this._running = false;
-    events.emit(this, "state-change", { isRunning: false });
+    this.emit("state-change", { isRunning: false });
   },
 
   /**
@@ -547,8 +537,8 @@ function getImportedSheets(stylesheet) {
  * @see deconstructRuleId(ruleId)
  */
 function ruleToId(rule) {
-  let line = DOMUtils.getRelativeRuleLine(rule);
-  let column = DOMUtils.getRuleColumn(rule);
+  let line = InspectorUtils.getRelativeRuleLine(rule);
+  let column = InspectorUtils.getRuleColumn(rule);
   return sheetToUrl(rule.parentStyleSheet) + "|" + line + "|" + column;
 }
 

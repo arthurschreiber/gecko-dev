@@ -13,7 +13,6 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
-#include "nsIDOMHTMLElement.h"
 #include "nsIDOMEventTarget.h"
 #include "nsIHttpChannel.h"
 
@@ -90,12 +89,14 @@ public:
 
   TextTrack* GetTrack();
 
-  virtual nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult) const override;
+  virtual nsresult Clone(mozilla::dom::NodeInfo* aNodeInfo, nsINode** aResult,
+                         bool aPreallocateChildren) const override;
 
   // Override ParseAttribute() to convert kind strings to enum values.
   virtual bool ParseAttribute(int32_t aNamespaceID,
-                              nsIAtom* aAttribute,
+                              nsAtom* aAttribute,
                               const nsAString& aValue,
+                              nsIPrincipal* aMaybeScriptedPrincipal,
                               nsAttrValue& aResult) override;
 
   // Override BindToTree() so that we can trigger a load when we become
@@ -105,9 +106,6 @@ public:
                               nsIContent* aBindingParent,
                               bool aCompileEventHandlers) override;
   virtual void UnbindFromTree(bool aDeep, bool aNullParent) override;
-
-  // Check enabling preference.
-  static bool IsWebVTTEnabled();
 
   void DispatchTrackRunnable(const nsString& aEventName);
   void DispatchTrustedEvent(const nsAString& aName);

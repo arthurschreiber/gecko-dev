@@ -7,7 +7,7 @@
 #ifndef mozilla_dom_workers_runtimeservice_h__
 #define mozilla_dom_workers_runtimeservice_h__
 
-#include "Workers.h"
+#include "WorkerCommon.h"
 
 #include "nsIObserver.h"
 
@@ -22,6 +22,7 @@ class nsPIDOMWindowInner;
 BEGIN_WORKERS_NAMESPACE
 
 class SharedWorker;
+struct WorkerLoadInfo;
 class WorkerThread;
 
 class RuntimeService final : public nsIObserver
@@ -30,11 +31,11 @@ class RuntimeService final : public nsIObserver
   {
     WorkerPrivate* mWorkerPrivate;
     nsCString mScriptSpec;
-    nsCString mName;
+    nsString mName;
 
     SharedWorkerInfo(WorkerPrivate* aWorkerPrivate,
                      const nsACString& aScriptSpec,
-                     const nsACString& aName)
+                     const nsAString& aName)
     : mWorkerPrivate(aWorkerPrivate), mScriptSpec(aScriptSpec), mName(aName)
     { }
   };
@@ -45,7 +46,7 @@ class RuntimeService final : public nsIObserver
     nsTArray<WorkerPrivate*> mActiveWorkers;
     nsTArray<WorkerPrivate*> mActiveServiceWorkers;
     nsTArray<WorkerPrivate*> mQueuedWorkers;
-    nsClassHashtable<nsCStringHashKey, SharedWorkerInfo> mSharedWorkerInfos;
+    nsTArray<UniquePtr<SharedWorkerInfo>> mSharedWorkerInfos;
     uint32_t mChildWorkerCount;
 
     WorkerDomainInfo()
@@ -91,7 +92,6 @@ class RuntimeService final : public nsIObserver
   nsCOMPtr<nsITimer> mIdleThreadTimer;
 
   static JSSettings sDefaultJSSettings;
-  static bool sDefaultPreferences[WORKERPREF_COUNT];
 
 public:
   struct NavigatorProperties
@@ -151,7 +151,7 @@ public:
   nsresult
   CreateSharedWorker(const GlobalObject& aGlobal,
                      const nsAString& aScriptURL,
-                     const nsACString& aName,
+                     const nsAString& aName,
                      SharedWorker** aSharedWorker);
 
   void
@@ -171,13 +171,6 @@ public:
   {
     AssertIsOnMainThread();
     aSettings = sDefaultJSSettings;
-  }
-
-  static void
-  GetDefaultPreferences(bool aPreferences[WORKERPREF_COUNT])
-  {
-    AssertIsOnMainThread();
-    memcpy(aPreferences, sDefaultPreferences, WORKERPREF_COUNT * sizeof(bool));
   }
 
   static void
@@ -201,9 +194,6 @@ public:
 
   void
   UpdateAllWorkerLanguages(const nsTArray<nsString>& aLanguages);
-
-  void
-  UpdateAllWorkerPreference(WorkerPreference aPref, bool aValue);
 
   static void
   SetDefaultJSGCSettings(JSGCParamKey aKey, uint32_t aValue)
@@ -242,6 +232,8 @@ public:
 
   uint32_t ClampedHardwareConcurrency() const;
 
+  void CrashIfHanging();
+
 private:
   RuntimeService();
   ~RuntimeService();
@@ -268,17 +260,11 @@ private:
   static void
   ShutdownIdleThreads(nsITimer* aTimer, void* aClosure);
 
-  static void
-  WorkerPrefChanged(const char* aPrefName, void* aClosure);
-
-  static void
-  JSVersionChanged(const char* aPrefName, void* aClosure);
-
   nsresult
   CreateSharedWorkerFromLoadInfo(JSContext* aCx,
                                  WorkerLoadInfo* aLoadInfo,
                                  const nsAString& aScriptURL,
-                                 const nsACString& aName,
+                                 const nsAString& aName,
                                  SharedWorker** aSharedWorker);
 };
 

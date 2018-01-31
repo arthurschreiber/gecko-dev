@@ -22,8 +22,8 @@
 namespace rx
 {
 
-DisplayGL::DisplayGL()
-    : mRenderer(nullptr)
+DisplayGL::DisplayGL(const egl::DisplayState &state)
+    : DisplayImpl(state), mRenderer(nullptr), mCurrentDrawSurface(nullptr)
 {
 }
 
@@ -38,10 +38,10 @@ egl::Error DisplayGL::initialize(egl::Display *display)
     const gl::Version &maxVersion = mRenderer->getMaxSupportedESVersion();
     if (maxVersion < gl::Version(2, 0))
     {
-        return egl::Error(EGL_NOT_INITIALIZED, "OpenGL ES 2.0 is not supportable.");
+        return egl::EglNotInitialized() << "OpenGL ES 2.0 is not supportable.";
     }
 
-    return egl::Error(EGL_SUCCESS);
+    return egl::NoError();
 }
 
 void DisplayGL::terminate()
@@ -49,8 +49,8 @@ void DisplayGL::terminate()
     SafeDelete(mRenderer);
 }
 
-ImageImpl *DisplayGL::createImage(EGLenum target,
-                                  egl::ImageSibling *buffer,
+ImageImpl *DisplayGL::createImage(const egl::ImageState &state,
+                                  EGLenum target,
                                   const egl::AttributeMap &attribs)
 {
     UNIMPLEMENTED();
@@ -73,22 +73,45 @@ StreamProducerImpl *DisplayGL::createStreamProducerD3DTextureNV12(
 
 egl::Error DisplayGL::makeCurrent(egl::Surface *drawSurface, egl::Surface *readSurface, gl::Context *context)
 {
-    if (!drawSurface)
+    // Notify the previous surface (if it still exists) that it is no longer current
+    if (mCurrentDrawSurface &&
+        mState.surfaceSet.find(mCurrentDrawSurface) != mState.surfaceSet.end())
     {
-        return egl::Error(EGL_SUCCESS);
+        ANGLE_TRY(GetImplAs<SurfaceGL>(mCurrentDrawSurface)->unMakeCurrent());
+    }
+    mCurrentDrawSurface = nullptr;
+
+    if (!context)
+    {
+        return egl::NoError();
     }
 
     // Pause transform feedback before making a new surface current, to workaround anglebug.com/1426
     ContextGL *glContext = GetImplAs<ContextGL>(context);
-    glContext->getStateManager()->pauseTransformFeedback(context->getContextState());
+    glContext->getStateManager()->pauseTransformFeedback();
 
-    SurfaceGL *glDrawSurface = GetImplAs<SurfaceGL>(drawSurface);
-    return glDrawSurface->makeCurrent();
+    if (drawSurface != nullptr)
+    {
+        SurfaceGL *glDrawSurface = GetImplAs<SurfaceGL>(drawSurface);
+        ANGLE_TRY(glDrawSurface->makeCurrent());
+        mCurrentDrawSurface = drawSurface;
+        return egl::NoError();
+    }
+    else
+    {
+        return makeCurrentSurfaceless(context);
+    }
 }
 
 gl::Version DisplayGL::getMaxSupportedESVersion() const
 {
     ASSERT(mRenderer != nullptr);
     return mRenderer->getMaxSupportedESVersion();
+}
+
+egl::Error DisplayGL::makeCurrentSurfaceless(gl::Context *context)
+{
+    UNIMPLEMENTED();
+    return egl::NoError();
 }
 }

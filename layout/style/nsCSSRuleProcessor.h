@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-// vim:cindent:tabstop=2:expandtab:shiftwidth=2:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,7 +19,7 @@
 #include "mozilla/SheetType.h"
 #include "mozilla/UniquePtr.h"
 #include "nsExpirationTracker.h"
-#include "nsIMediaList.h"
+#include "nsMediaList.h"
 #include "nsIStyleRuleProcessor.h"
 #include "nsRuleWalker.h"
 #include "nsTArray.h"
@@ -39,6 +39,7 @@ class nsCSSCounterStyleRule;
 namespace mozilla {
 class CSSStyleSheet;
 enum class CSSPseudoElementType : uint8_t;
+enum class CSSPseudoClassType : uint8_t;
 namespace css {
 class DocumentRule;
 } // namespace css
@@ -80,11 +81,6 @@ public:
 public:
   nsresult ClearRuleCascades();
 
-  static void Startup();
-  static void Shutdown();
-  static void FreeSystemMetrics();
-  static bool HasSystemMetric(nsIAtom* aMetric);
-
   /*
    * Returns true if the given aElement matches one of the
    * selectors in aSelectorList.  Note that this method will assume
@@ -101,22 +97,26 @@ public:
    * slightly adjusted from IntrinsicState().
    */
   static mozilla::EventStates GetContentState(
-                                mozilla::dom::Element* aElement,
+                                const mozilla::dom::Element* aElement,
+                                bool aUsingPrivateBrowsing);
+  static mozilla::EventStates GetContentState(
+                                const mozilla::dom::Element* aElement,
                                 const TreeMatchContext& aTreeMatchContext);
+  static mozilla::EventStates GetContentState(
+                                const mozilla::dom::Element* aElement);
 
   /*
    * Helper to get the content state for :visited handling for an element
    */
   static mozilla::EventStates GetContentStateForVisitedHandling(
-             mozilla::dom::Element* aElement,
-             const TreeMatchContext& aTreeMatchContext,
+             const mozilla::dom::Element* aElement,
              nsRuleWalker::VisitedHandlingType aVisitedHandling,
              bool aIsRelevantLink);
 
   /*
    * Helper to test whether a node is a link
    */
-  static bool IsLink(mozilla::dom::Element* aElement);
+  static bool IsLink(const mozilla::dom::Element* aElement);
 
   /**
    * Returns true if the given aElement matches aSelector.
@@ -132,7 +132,6 @@ public:
   static bool RestrictedSelectorMatches(mozilla::dom::Element* aElement,
                                         nsCSSSelector* aSelector,
                                         TreeMatchContext& aTreeMatchContext);
-
   // nsIStyleRuleProcessor
   virtual void RulesMatching(ElementRuleProcessorData* aData) override;
 
@@ -173,10 +172,10 @@ public:
                            nsTArray<nsFontFaceRuleContainer>& aArray);
 
   nsCSSKeyframesRule* KeyframesRuleForName(nsPresContext* aPresContext,
-                                           const nsString& aName);
+                                           const nsAtom* aName);
 
   nsCSSCounterStyleRule* CounterStyleRuleForName(nsPresContext* aPresContext,
-                                                 const nsAString& aName);
+                                                 nsAtom* aName);
 
   bool AppendPageRules(nsPresContext* aPresContext,
                        nsTArray<nsCSSPageRule*>& aArray);
@@ -207,14 +206,6 @@ public:
   }
   bool IsInRuleProcessorCache() const { return mInRuleProcessorCache; }
   bool IsUsedByMultipleStyleSets() const { return mStyleSetRefCnt > 1; }
-
-#ifdef XP_WIN
-  // Cached theme identifier for the moz-windows-theme media query.
-  static uint8_t GetWindowsThemeIdentifier();
-  static void SetWindowsThemeIdentifier(uint8_t aId) { 
-    sWinThemeId = aId;
-  }
-#endif
 
   struct StateSelector {
     StateSelector(mozilla::EventStates aStates, nsCSSSelector* aSelector)
@@ -282,10 +273,6 @@ private:
 
 #ifdef DEBUG
   bool mDocumentRulesAndCacheKeyValid;
-#endif
-
-#ifdef XP_WIN
-  static uint8_t sWinThemeId;
 #endif
 };
 

@@ -3,6 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-disable mozilla/use-chromeutils-import */
+
 var Cc = Components.classes;
 var Ci = Components.interfaces;
 var Cu = Components.utils;
@@ -92,7 +94,7 @@ add_test(function test_telemetry_events() {
   let obs = getObserver();
   let measurements = removeNonTestMeasurements(obs.getUIMeasurements(clearMeasurements));
 
-  measurements.forEach(function (m, i) {
+  measurements.forEach(function(m, i) {
     if (m.type === "event") {
       m.sessions = removeNonTestSessions(m.sessions);
       m.sessions.sort(); // Mutates.
@@ -101,7 +103,7 @@ add_test(function test_telemetry_events() {
     do_check_measurement_eq(expected[i], m);
   });
 
-  expected.forEach(function (m, i) {
+  expected.forEach(function(m, i) {
     do_check_measurement_eq(m, measurements[i]);
   });
 
@@ -113,7 +115,7 @@ add_test(function test_telemetry_events() {
  * for less typing when initializing the expected arrays.
  */
 function expectedArraysToObjs(expectedArrays) {
-  return expectedArrays.map(function (arr) {
+  return expectedArrays.map(function(arr) {
     let type = arr[0];
     if (type === "event") {
       return {
@@ -135,7 +137,7 @@ function expectedArraysToObjs(expectedArrays) {
 }
 
 function removeNonTestMeasurements(measurements) {
-  return measurements.filter(function (measurement) {
+  return measurements.filter(function(measurement) {
     if (measurement.type === "event") {
       return measurement.action.startsWith("_test_event_");
     } else if (measurement.type === "session") {
@@ -146,7 +148,7 @@ function removeNonTestMeasurements(measurements) {
 }
 
 function removeNonTestSessions(sessions) {
-  return sessions.filter(function (sessionName) {
+  return sessions.filter(function(sessionName) {
     return sessionName.startsWith("_test_session_");
   });
 }

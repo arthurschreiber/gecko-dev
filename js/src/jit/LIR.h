@@ -190,7 +190,6 @@ class LAllocation : public TempObject
     UniqueChars toString() const;
     bool aliases(const LAllocation& other) const;
     void dump() const;
-
 };
 
 class LUse : public LAllocation
@@ -784,10 +783,10 @@ class LNode
     virtual void accept(LElementVisitor* visitor) = 0;
 
 #define LIR_HEADER(opcode)                                                  \
-    Opcode op() const {                                                     \
+    Opcode op() const override {                                            \
         return LInstruction::LOp_##opcode;                                  \
     }                                                                       \
-    void accept(LElementVisitor* visitor) {                                 \
+    void accept(LElementVisitor* visitor) override {                        \
         visitor->setElement(this);                                          \
         visitor->visit##opcode(this);                                       \
     }
@@ -921,44 +920,44 @@ class LPhi final : public LNode
         setMir(ins);
     }
 
-    size_t numDefs() const {
+    size_t numDefs() const override {
         return 1;
     }
-    LDefinition* getDef(size_t index) {
+    LDefinition* getDef(size_t index) override {
         MOZ_ASSERT(index == 0);
         return &def_;
     }
-    void setDef(size_t index, const LDefinition& def) {
+    void setDef(size_t index, const LDefinition& def) override {
         MOZ_ASSERT(index == 0);
         def_ = def;
     }
-    size_t numOperands() const {
+    size_t numOperands() const override {
         return mir_->toPhi()->numOperands();
     }
-    LAllocation* getOperand(size_t index) {
+    LAllocation* getOperand(size_t index) override {
         MOZ_ASSERT(index < numOperands());
         return &inputs_[index];
     }
-    void setOperand(size_t index, const LAllocation& a) {
+    void setOperand(size_t index, const LAllocation& a) override {
         MOZ_ASSERT(index < numOperands());
         inputs_[index] = a;
     }
-    size_t numTemps() const {
+    size_t numTemps() const override {
         return 0;
     }
-    LDefinition* getTemp(size_t index) {
+    LDefinition* getTemp(size_t index) override {
         MOZ_CRASH("no temps");
     }
-    void setTemp(size_t index, const LDefinition& temp) {
+    void setTemp(size_t index, const LDefinition& temp) override {
         MOZ_CRASH("no temps");
     }
-    size_t numSuccessors() const {
+    size_t numSuccessors() const override {
         return 0;
     }
-    MBasicBlock* getSuccessor(size_t i) const {
+    MBasicBlock* getSuccessor(size_t i) const override {
         MOZ_CRASH("no successors");
     }
-    void setSuccessor(size_t i, MBasicBlock*) {
+    void setSuccessor(size_t i, MBasicBlock*) override {
         MOZ_CRASH("no successors");
     }
 };
@@ -1178,14 +1177,34 @@ class LVariadicInstruction : public details::LInstructionFixedDefsTempsHelper<De
     void setOperand(size_t index, const LAllocation& a) final override {
         operands_[index] = a;
     }
+    void setBoxOperand(size_t index, const LBoxAllocation& a) {
+#ifdef JS_NUNBOX32
+        operands_[index + TYPE_INDEX] = a.type();
+        operands_[index + PAYLOAD_INDEX] = a.payload();
+#else
+        operands_[index] = a.value();
+#endif
+    }
 };
 
 template <size_t Defs, size_t Operands, size_t Temps>
 class LCallInstructionHelper : public LInstructionHelper<Defs, Operands, Temps>
 {
   public:
-    virtual bool isCall() const {
+    virtual bool isCall() const override {
         return true;
+    }
+};
+
+template <size_t Defs, size_t Temps>
+class LBinaryCallInstructionHelper : public LCallInstructionHelper<Defs, 2, Temps>
+{
+  public:
+    const LAllocation* lhs() {
+        return this->getOperand(0);
+    }
+    const LAllocation* rhs() {
+        return this->getOperand(1);
     }
 };
 
@@ -1207,7 +1226,8 @@ class LRecoverInfo : public TempObject
 
     // Fill the instruction vector such as all instructions needed for the
     // recovery are pushed before the current instruction.
-    MOZ_MUST_USE bool appendOperands(MNode* ins);
+    template <typename Node>
+    MOZ_MUST_USE bool appendOperands(Node* ins);
     MOZ_MUST_USE bool appendDefinition(MDefinition* def);
     MOZ_MUST_USE bool appendResumePoint(MResumePoint* rp);
   public:
@@ -1241,37 +1261,50 @@ class LRecoverInfo : public TempObject
         MNode** it_;
         MNode** end_;
         size_t op_;
+        size_t opEnd_;
+        MResumePoint* rp_;
+        MNode* node_;
 
       public:
         explicit OperandIter(LRecoverInfo* recoverInfo)
-          : it_(recoverInfo->begin()), end_(recoverInfo->end()), op_(0)
+          : it_(recoverInfo->begin()), end_(recoverInfo->end()),
+            op_(0), opEnd_(0), rp_(nullptr), node_(nullptr)
         {
             settle();
         }
 
         void settle() {
-            while ((*it_)->numOperands() == 0) {
+            opEnd_ = (*it_)->numOperands();
+            while (opEnd_ == 0) {
                 ++it_;
                 op_ = 0;
+                opEnd_ = (*it_)->numOperands();
             }
+            node_ = *it_;
+            if (node_->isResumePoint())
+                rp_ = node_->toResumePoint();
         }
 
         MDefinition* operator*() {
-            return (*it_)->getOperand(op_);
+            if (rp_) // de-virtualize MResumePoint::getOperand calls.
+                return rp_->getOperand(op_);
+            return node_->getOperand(op_);
         }
         MDefinition* operator ->() {
-            return (*it_)->getOperand(op_);
+            if (rp_) // de-virtualize MResumePoint::getOperand calls.
+                return rp_->getOperand(op_);
+            return node_->getOperand(op_);
         }
 
         OperandIter& operator ++() {
             ++op_;
-            if (op_ == (*it_)->numOperands()) {
-                op_ = 0;
-                ++it_;
-            }
+            if (op_ != opEnd_)
+                return *this;
+            op_ = 0;
+            ++it_;
+            node_ = rp_ = nullptr;
             if (!*this)
                 settle();
-
             return *this;
         }
 
@@ -1814,7 +1847,8 @@ class LIRGraph
         return mir_.numBlockIds();
     }
     MOZ_MUST_USE bool initBlock(MBasicBlock* mir) {
-        LBlock* lir = new (&blocks_[mir->id()]) LBlock(mir);
+        auto* block = &blocks_[mir->id()];
+        auto* lir = new (block) LBlock(mir);
         return lir->init(mir_.alloc());
     }
     uint32_t getVirtualRegister() {

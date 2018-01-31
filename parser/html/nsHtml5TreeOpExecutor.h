@@ -5,7 +5,7 @@
 #ifndef nsHtml5TreeOpExecutor_h
 #define nsHtml5TreeOpExecutor_h
 
-#include "nsIAtom.h"
+#include "nsAtom.h"
 #include "nsTraceRefcnt.h"
 #include "nsHtml5TreeOperation.h"
 #include "nsHtml5SpeculativeLoad.h"
@@ -36,9 +36,10 @@ class nsHtml5TreeOpExecutor final : public nsHtml5DocumentBuilder,
 {
   friend class nsHtml5FlushLoopGuard;
   typedef mozilla::net::ReferrerPolicy ReferrerPolicy;
+  using Encoding = mozilla::Encoding;
+  template <typename T> using NotNull = mozilla::NotNull<T>;
 
   public:
-    NS_DECL_AND_IMPL_ZEROING_OPERATOR_NEW
     NS_DECL_ISUPPORTS_INHERITED
 
   private:
@@ -55,11 +56,11 @@ class nsHtml5TreeOpExecutor final : public nsHtml5DocumentBuilder,
      * Whether EOF needs to be suppressed
      */
     bool                                 mSuppressEOF;
-    
+
     bool                                 mReadingFromStage;
     nsTArray<nsHtml5TreeOperation>       mOpQueue;
     nsHtml5StreamParser*                 mStreamParser;
-    
+
     /**
      * URLs already preloaded/preloading.
      */
@@ -109,7 +110,7 @@ class nsHtml5TreeOpExecutor final : public nsHtml5DocumentBuilder,
     NS_IMETHOD WillParse() override;
 
     /**
-     * 
+     *
      */
     NS_IMETHOD WillBuildModel(nsDTDMode aDTDMode) override;
 
@@ -136,21 +137,21 @@ class nsHtml5TreeOpExecutor final : public nsHtml5DocumentBuilder,
     /**
      * No-op for backwards compat.
      */
-    virtual void FlushPendingNotifications(mozFlushType aType) override;
+    virtual void FlushPendingNotifications(mozilla::FlushType aType) override;
 
     /**
      * Don't call. For interface compat only.
      */
-    NS_IMETHOD SetDocumentCharset(nsACString& aCharset) override {
-    	NS_NOTREACHED("No one should call this.");
-    	return NS_ERROR_NOT_IMPLEMENTED;
+    virtual void SetDocumentCharset(NotNull<const Encoding*> aEncoding) override
+    {
+        NS_NOTREACHED("No one should call this.");
     }
 
     /**
      * Returns the document.
      */
     virtual nsISupports *GetTarget() override;
-  
+
     virtual void ContinueInterruptedParsingAsync() override;
 
     bool IsScriptExecuting() override
@@ -164,17 +165,19 @@ class nsHtml5TreeOpExecutor final : public nsHtml5DocumentBuilder,
     {
       mStreamParser = aStreamParser;
     }
-    
+
     void InitializeDocWriteParserState(nsAHtml5TreeBuilderState* aState, int32_t aLine);
 
     bool IsScriptEnabled();
 
     virtual nsresult MarkAsBroken(nsresult aReason) override;
 
-    void StartLayout();
-    
+    void StartLayout(bool* aInterrupted);
+
+    void PauseDocUpdate(bool* aInterrupted);
+
     void FlushSpeculativeLoads();
-                  
+
     void RunFlushLoop();
 
     nsresult FlushDocumentWrite();
@@ -183,7 +186,7 @@ class nsHtml5TreeOpExecutor final : public nsHtml5DocumentBuilder,
 
     void Start();
 
-    void NeedsCharsetSwitchTo(const char* aEncoding,
+    void NeedsCharsetSwitchTo(NotNull<const Encoding*> aEncoding,
                               int32_t aSource,
                               uint32_t aLineNumber);
 
@@ -193,16 +196,11 @@ class nsHtml5TreeOpExecutor final : public nsHtml5DocumentBuilder,
 
     void ComplainAboutBogusProtocolCharset(nsIDocument* aDoc);
 
-    bool IsComplete()
-    {
-      return !mParser;
-    }
-    
     bool HasStarted()
     {
       return mStarted;
     }
-    
+
     bool IsFlushing()
     {
       return mFlushState >= eInFlush;
@@ -214,27 +212,33 @@ class nsHtml5TreeOpExecutor final : public nsHtml5DocumentBuilder,
       return mRunFlushLoopOnStack;
     }
 #endif
-    
+
     void RunScript(nsIContent* aScriptElement);
-    
+
     /**
      * Flush the operations from the tree operations from the argument
      * queue unconditionally. (This is for the main thread case.)
      */
     virtual void MoveOpsFrom(nsTArray<nsHtml5TreeOperation>& aOpQueue) override;
-    
+
+    void ClearOpQueue();
+
+    void RemoveFromStartOfOpQueue(size_t aNumberOfOpsToRemove);
+
+    inline size_t OpQueueLength() { return mOpQueue.Length(); }
+
     nsHtml5TreeOpStage* GetStage()
     {
       return &mStage;
     }
-    
+
     void StartReadingFromStage()
     {
       mReadingFromStage = true;
     }
 
     void StreamEnded();
-    
+
 #ifdef DEBUG
     void AssertStageEmpty()
     {
@@ -249,10 +253,14 @@ class nsHtml5TreeOpExecutor final : public nsHtml5DocumentBuilder,
                        const nsAString& aType,
                        const nsAString& aCrossOrigin,
                        const nsAString& aIntegrity,
-                       bool aScriptFromHead);
+                       bool aScriptFromHead,
+                       bool aAsync,
+                       bool aDefer,
+                       bool aNoModule);
 
     void PreloadStyle(const nsAString& aURL, const nsAString& aCharset,
                       const nsAString& aCrossOrigin,
+                      const nsAString& aReferrerPolicy,
                       const nsAString& aIntegrity);
 
     void PreloadImage(const nsAString& aURL,

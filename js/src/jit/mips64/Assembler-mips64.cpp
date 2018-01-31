@@ -24,6 +24,7 @@ ABIArgGenerator::next(MIRType type)
 {
     switch (type) {
       case MIRType::Int32:
+      case MIRType::Int64:
       case MIRType::Pointer: {
         Register destReg;
         if (GetIntArgReg(usedArgSlots_, &destReg))
@@ -99,7 +100,7 @@ jit::PatchJump(CodeLocationJump& jump_, CodeLocationLabel label, ReprotectCode r
 // MacroAssemblerMIPS64Compat::backedgeJump()
 void
 jit::PatchBackedge(CodeLocationJump& jump, CodeLocationLabel label,
-                   JitRuntime::BackedgeTarget target)
+                   JitZoneGroup::BackedgeTarget target)
 {
     uintptr_t sourceAddr = (uintptr_t)jump.raw();
     uintptr_t targetAddr = (uintptr_t)label.raw();
@@ -110,7 +111,7 @@ jit::PatchBackedge(CodeLocationJump& jump, CodeLocationLabel label,
     if (BOffImm16::IsInRange(targetAddr - sourceAddr)) {
         branch->setBOffImm16(BOffImm16(targetAddr - sourceAddr));
     } else {
-        if (target == JitRuntime::BackedgeLoopHeader) {
+        if (target == JitZoneGroup::BackedgeLoopHeader) {
             Instruction* inst = &branch[1];
             Assembler::UpdateLoad64Value(inst, targetAddr);
             // Jump to first ori. The lui will be executed in delay slot.
@@ -125,20 +126,13 @@ jit::PatchBackedge(CodeLocationJump& jump, CodeLocationLabel label,
 }
 
 void
-Assembler::executableCopy(uint8_t* buffer)
+Assembler::executableCopy(uint8_t* buffer, bool flushICache)
 {
     MOZ_ASSERT(isFinished);
     m_buffer.executableCopy(buffer);
 
-    // Patch all long jumps during code copy.
-    for (size_t i = 0; i < longJumps_.length(); i++) {
-        Instruction* inst = (Instruction*) ((uintptr_t)buffer + longJumps_[i]);
-
-        uint64_t value = Assembler::ExtractLoad64Value(inst);
-        Assembler::UpdateLoad64Value(inst, (uint64_t)buffer + value);
-    }
-
-    AutoFlushICache::setRange(uintptr_t(buffer), m_buffer.size());
+    if (flushICache)
+        AutoFlushICache::setRange(uintptr_t(buffer), m_buffer.size());
 }
 
 uintptr_t
@@ -174,11 +168,9 @@ TraceOneDataRelocation(JSTracer* trc, Instruction* inst)
     // are not cleared, this must be a Value.
     uintptr_t word = reinterpret_cast<uintptr_t>(ptr);
     if (word >> JSVAL_TAG_SHIFT) {
-        jsval_layout layout;
-        layout.asBits = word;
-        Value v = IMPL_TO_JSVAL(layout);
+        Value v = Value::fromRawBits(word);
         TraceManuallyBarrieredEdge(trc, &v, "ion-masm-value");
-        ptr = (void*)JSVAL_TO_IMPL(v).asBits;
+        ptr = (void*)v.bitsAsPunboxPointer();
     } else {
         // No barrier needed since these are constants.
         TraceManuallyBarrieredGenericPointerEdge(trc, reinterpret_cast<gc::Cell**>(&ptr),
@@ -235,12 +227,12 @@ Assembler::trace(JSTracer* trc)
 }
 
 void
-Assembler::Bind(uint8_t* rawCode, CodeOffset* label, const void* address)
+Assembler::Bind(uint8_t* rawCode, CodeOffset label, CodeOffset target)
 {
-    if (label->bound()) {
-        intptr_t offset = label->offset();
+    if (label.bound()) {
+        intptr_t offset = label.offset();
         Instruction* inst = (Instruction*) (rawCode + offset);
-        Assembler::UpdateLoad64Value(inst, (uint64_t)address);
+        Assembler::UpdateLoad64Value(inst, (uint64_t)(rawCode + target.offset()));
     }
 }
 
@@ -262,8 +254,8 @@ Assembler::bind(InstImm* inst, uintptr_t branch, uintptr_t target)
     // Generate the long jump for calls because return address has to be the
     // address after the reserved block.
     if (inst[0].encode() == inst_bgezal.encode()) {
-        addLongJump(BufferOffset(branch));
-        Assembler::WriteLoad64Instructions(inst, ScratchRegister, target);
+        addLongJump(BufferOffset(branch), BufferOffset(target));
+        Assembler::WriteLoad64Instructions(inst, ScratchRegister, LabelBase::INVALID_OFFSET);
         inst[4] = InstReg(op_special, ScratchRegister, zero, ra, ff_jalr).encode();
         // There is 1 nop after this.
         return;
@@ -287,16 +279,16 @@ Assembler::bind(InstImm* inst, uintptr_t branch, uintptr_t target)
 
     if (inst[0].encode() == inst_beq.encode()) {
         // Handle long unconditional jump.
-        addLongJump(BufferOffset(branch));
-        Assembler::WriteLoad64Instructions(inst, ScratchRegister, target);
+        addLongJump(BufferOffset(branch), BufferOffset(target));
+        Assembler::WriteLoad64Instructions(inst, ScratchRegister, LabelBase::INVALID_OFFSET);
         inst[4] = InstReg(op_special, ScratchRegister, zero, zero, ff_jr).encode();
         // There is 1 nop after this.
     } else {
         // Handle long conditional jump.
         inst[0] = invertBranch(inst[0], BOffImm16(7 * sizeof(uint32_t)));
         // No need for a "nop" here because we can clobber scratch.
-        addLongJump(BufferOffset(branch + sizeof(uint32_t)));
-        Assembler::WriteLoad64Instructions(&inst[1], ScratchRegister, target);
+        addLongJump(BufferOffset(branch + sizeof(uint32_t)), BufferOffset(target));
+        Assembler::WriteLoad64Instructions(&inst[1], ScratchRegister, LabelBase::INVALID_OFFSET);
         inst[5] = InstReg(op_special, ScratchRegister, zero, zero, ff_jr).encode();
         // There is 1 nop after this.
     }
@@ -320,7 +312,7 @@ Assembler::bind(RepatchLabel* label)
             // For unconditional long branches generated by ma_liPatchable,
             // such as under:
             //     jumpWithpatch
-            Assembler::UpdateLoad64Value(inst, dest.getOffset());
+            addLongJump(BufferOffset(label->offset()), dest);
         } else if (inst[1].extractOpcode() == (uint32_t(op_lui) >> OpcodeShift) ||
                    BOffImm16::IsInRange(offset))
         {
@@ -335,7 +327,7 @@ Assembler::bind(RepatchLabel* label)
             inst[0].setBOffImm16(BOffImm16(offset));
         } else if (inst[0].encode() == inst_beq.encode()) {
             // Handle open long unconditional jumps created by
-            // MacroAssemblerMIPSShared::ma_b(..., wasm::JumpTarget, ...).
+            // MacroAssemblerMIPSShared::ma_b(..., wasm::Trap, ...).
             // We need to add it to long jumps array here.
             // See MacroAssemblerMIPS64::branchWithCode().
             MOZ_ASSERT(inst[1].encode() == NopInst);
@@ -343,12 +335,12 @@ Assembler::bind(RepatchLabel* label)
             MOZ_ASSERT(inst[3].encode() == NopInst);
             MOZ_ASSERT(inst[4].encode() == NopInst);
             MOZ_ASSERT(inst[5].encode() == NopInst);
-            addLongJump(BufferOffset(label->offset()));
-            Assembler::WriteLoad64Instructions(inst, ScratchRegister, dest.getOffset());
+            addLongJump(BufferOffset(label->offset()), dest);
+            Assembler::WriteLoad64Instructions(inst, ScratchRegister, LabelBase::INVALID_OFFSET);
             inst[4] = InstReg(op_special, ScratchRegister, zero, zero, ff_jr).encode();
         } else {
             // Handle open long conditional jumps created by
-            // MacroAssemblerMIPSShared::ma_b(..., wasm::JumpTarget, ...).
+            // MacroAssemblerMIPSShared::ma_b(..., wasm::Trap, ...).
             inst[0] = invertBranch(inst[0], BOffImm16(7 * sizeof(uint32_t)));
             // No need for a "nop" here because we can clobber scratch.
             // We need to add it to long jumps array here.
@@ -359,12 +351,21 @@ Assembler::bind(RepatchLabel* label)
             MOZ_ASSERT(inst[4].encode() == NopInst);
             MOZ_ASSERT(inst[5].encode() == NopInst);
             MOZ_ASSERT(inst[6].encode() == NopInst);
-            addLongJump(BufferOffset(label->offset() + sizeof(uint32_t)));
-            Assembler::WriteLoad64Instructions(&inst[1], ScratchRegister, dest.getOffset());
+            addLongJump(BufferOffset(label->offset() + sizeof(uint32_t)), dest);
+            Assembler::WriteLoad64Instructions(&inst[1], ScratchRegister, LabelBase::INVALID_OFFSET);
             inst[5] = InstReg(op_special, ScratchRegister, zero, zero, ff_jr).encode();
         }
     }
     label->bind(dest.getOffset());
+}
+
+void
+Assembler::processCodeLabels(uint8_t* rawCode)
+{
+    for (size_t i = 0; i < codeLabels_.length(); i++) {
+        CodeLabel label = codeLabels_[i];
+        Bind(rawCode, *label.patchAt(), *label.target());
+    }
 }
 
 uint32_t
@@ -488,13 +489,6 @@ Assembler::PatchDataWithValueCheck(CodeLocationLabel label, PatchedImmPtr newVal
     Assembler::UpdateLoad64Value(inst, uint64_t(newValue.value));
 
     AutoFlushICache::flush(uintptr_t(inst), 6 * sizeof(uint32_t));
-}
-
-void
-Assembler::PatchInstructionImmediate(uint8_t* code, PatchedImmPtr imm)
-{
-    InstImm* inst = (InstImm*)code;
-    Assembler::UpdateLoad64Value(inst, (uint64_t)imm.value);
 }
 
 uint64_t

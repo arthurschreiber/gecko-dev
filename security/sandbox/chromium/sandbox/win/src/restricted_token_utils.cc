@@ -21,12 +21,17 @@ namespace sandbox {
 DWORD CreateRestrictedToken(TokenLevel security_level,
                             IntegrityLevel integrity_level,
                             TokenType token_type,
+                            bool lockdown_default_dacl,
+                            bool use_restricting_sids,
                             base::win::ScopedHandle* token) {
   RestrictedToken restricted_token;
   restricted_token.Init(NULL);  // Initialized with the current process token
+  if (lockdown_default_dacl)
+    restricted_token.SetLockdownDefaultDacl();
 
   std::vector<base::string16> privilege_exceptions;
   std::vector<Sid> sid_exceptions;
+  std::vector<Sid> deny_only_sids;
 
   bool deny_sids = true;
   bool remove_privileges = true;
@@ -41,31 +46,27 @@ DWORD CreateRestrictedToken(TokenLevel security_level,
       deny_sids = false;
       remove_privileges = false;
 
-      unsigned err_code = restricted_token.AddRestrictingSidAllSids();
-      if (ERROR_SUCCESS != err_code)
-        return err_code;
+      if (use_restricting_sids) {
+        unsigned err_code = restricted_token.AddRestrictingSidAllSids();
+        if (ERROR_SUCCESS != err_code) {
+          return err_code;
+        }
+      }
 
       break;
     }
     case USER_NON_ADMIN: {
-      sid_exceptions.push_back(WinBuiltinUsersSid);
-      sid_exceptions.push_back(WinWorldSid);
-      sid_exceptions.push_back(WinInteractiveSid);
-      sid_exceptions.push_back(WinAuthenticatedUserSid);
+      deny_sids = false;
+      deny_only_sids.push_back(WinBuiltinAdministratorsSid);
+      deny_only_sids.push_back(WinAccountAdministratorSid);
+      deny_only_sids.push_back(WinAccountDomainAdminsSid);
+      deny_only_sids.push_back(WinAccountCertAdminsSid);
+      deny_only_sids.push_back(WinAccountSchemaAdminsSid);
+      deny_only_sids.push_back(WinAccountEnterpriseAdminsSid);
+      deny_only_sids.push_back(WinAccountPolicyAdminsSid);
+      deny_only_sids.push_back(WinBuiltinHyperVAdminsSid);
+      deny_only_sids.push_back(WinLocalAccountAndAdministratorSid);
       privilege_exceptions.push_back(SE_CHANGE_NOTIFY_NAME);
-      // We need to make USER_NON_ADMIN into a restricted token to work around a
-      // conflict with a call to CoInitializeSecurity (see bug 1287426).
-      // To do this we add the same restricted SIDs as USER_INTERACTIVE, because
-      // USER_NON_ADMIN should have at least the same permissions. We also add
-      // in any that are in the deny only exception list above, which should
-      // give the new USER_NON_ADMIN token the same permissions as the old.
-      restricted_token.AddRestrictingSid(WinBuiltinUsersSid);
-      restricted_token.AddRestrictingSid(WinWorldSid);
-      restricted_token.AddRestrictingSid(WinInteractiveSid);
-      restricted_token.AddRestrictingSid(WinAuthenticatedUserSid);
-      restricted_token.AddRestrictingSid(WinRestrictedCodeSid);
-      restricted_token.AddRestrictingSidCurrentUser();
-      restricted_token.AddRestrictingSidLogonSession();
       break;
     }
     case USER_INTERACTIVE: {
@@ -74,11 +75,13 @@ DWORD CreateRestrictedToken(TokenLevel security_level,
       sid_exceptions.push_back(WinInteractiveSid);
       sid_exceptions.push_back(WinAuthenticatedUserSid);
       privilege_exceptions.push_back(SE_CHANGE_NOTIFY_NAME);
-      restricted_token.AddRestrictingSid(WinBuiltinUsersSid);
-      restricted_token.AddRestrictingSid(WinWorldSid);
-      restricted_token.AddRestrictingSid(WinRestrictedCodeSid);
-      restricted_token.AddRestrictingSidCurrentUser();
-      restricted_token.AddRestrictingSidLogonSession();
+      if (use_restricting_sids) {
+        restricted_token.AddRestrictingSid(WinBuiltinUsersSid);
+        restricted_token.AddRestrictingSid(WinWorldSid);
+        restricted_token.AddRestrictingSid(WinRestrictedCodeSid);
+        restricted_token.AddRestrictingSidCurrentUser();
+        restricted_token.AddRestrictingSidLogonSession();
+      }
       break;
     }
     case USER_LIMITED: {
@@ -86,28 +89,33 @@ DWORD CreateRestrictedToken(TokenLevel security_level,
       sid_exceptions.push_back(WinWorldSid);
       sid_exceptions.push_back(WinInteractiveSid);
       privilege_exceptions.push_back(SE_CHANGE_NOTIFY_NAME);
-      restricted_token.AddRestrictingSid(WinBuiltinUsersSid);
-      restricted_token.AddRestrictingSid(WinWorldSid);
-      restricted_token.AddRestrictingSid(WinRestrictedCodeSid);
+      if (use_restricting_sids) {
+        restricted_token.AddRestrictingSid(WinBuiltinUsersSid);
+        restricted_token.AddRestrictingSid(WinWorldSid);
+        restricted_token.AddRestrictingSid(WinRestrictedCodeSid);
 
-      // This token has to be able to create objects in BNO.
-      // Unfortunately, on vista, it needs the current logon sid
-      // in the token to achieve this. You should also set the process to be
-      // low integrity level so it can't access object created by other
-      // processes.
-      if (base::win::GetVersion() >= base::win::VERSION_VISTA)
+        // This token has to be able to create objects in BNO.
+        // Unfortunately, on Vista+, it needs the current logon sid
+        // in the token to achieve this. You should also set the process to be
+        // low integrity level so it can't access object created by other
+        // processes.
         restricted_token.AddRestrictingSidLogonSession();
+      }
       break;
     }
     case USER_RESTRICTED: {
       privilege_exceptions.push_back(SE_CHANGE_NOTIFY_NAME);
       restricted_token.AddUserSidForDenyOnly();
-      restricted_token.AddRestrictingSid(WinRestrictedCodeSid);
+      if (use_restricting_sids) {
+        restricted_token.AddRestrictingSid(WinRestrictedCodeSid);
+      }
       break;
     }
     case USER_LOCKDOWN: {
       restricted_token.AddUserSidForDenyOnly();
-      restricted_token.AddRestrictingSid(WinNullSid);
+      if (use_restricting_sids) {
+        restricted_token.AddRestrictingSid(WinNullSid);
+      }
       break;
     }
     default: {
@@ -120,6 +128,11 @@ DWORD CreateRestrictedToken(TokenLevel security_level,
     err_code = restricted_token.AddAllSidsForDenyOnly(&sid_exceptions);
     if (ERROR_SUCCESS != err_code)
       return err_code;
+  } else if (!deny_only_sids.empty()) {
+    err_code = restricted_token.AddDenyOnlySids(deny_only_sids);
+    if (ERROR_SUCCESS != err_code) {
+      return err_code;
+    }
   }
 
   if (remove_privileges) {
@@ -211,8 +224,6 @@ const wchar_t* GetIntegrityLevelString(IntegrityLevel integrity_level) {
   return NULL;
 }
 DWORD SetTokenIntegrityLevel(HANDLE token, IntegrityLevel integrity_level) {
-  if (base::win::GetVersion() < base::win::VERSION_VISTA)
-    return ERROR_SUCCESS;
 
   const wchar_t* integrity_level_str = GetIntegrityLevelString(integrity_level);
   if (!integrity_level_str) {
@@ -238,8 +249,6 @@ DWORD SetTokenIntegrityLevel(HANDLE token, IntegrityLevel integrity_level) {
 }
 
 DWORD SetProcessIntegrityLevel(IntegrityLevel integrity_level) {
-  if (base::win::GetVersion() < base::win::VERSION_VISTA)
-    return ERROR_SUCCESS;
 
   // We don't check for an invalid level here because we'll just let it
   // fail on the SetTokenIntegrityLevel call later on.
@@ -259,8 +268,6 @@ DWORD SetProcessIntegrityLevel(IntegrityLevel integrity_level) {
 }
 
 DWORD HardenTokenIntegrityLevelPolicy(HANDLE token) {
-  if (base::win::GetVersion() < base::win::VERSION_WIN7)
-    return ERROR_SUCCESS;
 
   DWORD last_error = 0;
   DWORD length_needed = 0;
@@ -308,8 +315,6 @@ DWORD HardenTokenIntegrityLevelPolicy(HANDLE token) {
 }
 
 DWORD HardenProcessIntegrityLevelPolicy() {
-  if (base::win::GetVersion() < base::win::VERSION_WIN7)
-    return ERROR_SUCCESS;
 
   HANDLE token_handle;
   if (!::OpenProcessToken(GetCurrentProcess(), READ_CONTROL | WRITE_OWNER,

@@ -13,18 +13,23 @@ this.EXPORTED_SYMBOLS = ["PlacesRemoteTabsAutocompleteProvider"];
 
 const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "weaveXPCService", function() {
-  return Cc["@mozilla.org/weave/service;1"]
-           .getService(Ci.nsISupports)
-           .wrappedJSObject;
+  try {
+    return Cc["@mozilla.org/weave/service;1"]
+             .getService(Ci.nsISupports)
+             .wrappedJSObject;
+  } catch (ex) {
+    // The app didn't build Sync.
+  }
+  return null;
 });
 
 XPCOMUtils.defineLazyGetter(this, "Weave", () => {
   try {
-    let {Weave} = Cu.import("resource://services-sync/main.js", {});
+    let {Weave} = ChromeUtils.import("resource://services-sync/main.js", {});
     return Weave;
   } catch (ex) {
     // The app didn't build Sync.
@@ -95,11 +100,7 @@ function observe(subject, topic, data) {
 
     case "nsPref:changed":
       if (data == PREF_SHOW_REMOTE_ICONS) {
-        try {
-          showRemoteIcons = Services.prefs.getBoolPref(PREF_SHOW_REMOTE_ICONS);
-        } catch (_) {
-          showRemoteIcons = true; // no such pref - default is to show the icons.
-        }
+        showRemoteIcons = Services.prefs.getBoolPref(PREF_SHOW_REMOTE_ICONS, true);
       }
       break;
 
@@ -108,11 +109,11 @@ function observe(subject, topic, data) {
   }
 }
 
-Services.obs.addObserver(observe, "weave:engine:sync:finish", false);
-Services.obs.addObserver(observe, "weave:service:start-over", false);
+Services.obs.addObserver(observe, "weave:engine:sync:finish");
+Services.obs.addObserver(observe, "weave:service:start-over");
 
 // Observe the pref for showing remote icons and prime our bool that reflects its value.
-Services.prefs.addObserver(PREF_SHOW_REMOTE_ICONS, observe, false);
+Services.prefs.addObserver(PREF_SHOW_REMOTE_ICONS, observe);
 observe(null, "nsPref:changed", PREF_SHOW_REMOTE_ICONS);
 
 // This public object is a static singleton.
@@ -120,8 +121,7 @@ this.PlacesRemoteTabsAutocompleteProvider = {
   // a promise that resolves with an array of matching remote tabs.
   getMatches(searchString) {
     // If Sync isn't configured we bail early.
-    if (Weave === null ||
-        !Services.prefs.prefHasUserValue("services.sync.username")) {
+    if (!weaveXPCService || !weaveXPCService.ready || !weaveXPCService.enabled) {
       return Promise.resolve([]);
     }
 
@@ -145,4 +145,4 @@ this.PlacesRemoteTabsAutocompleteProvider = {
     }
     return Promise.resolve(matches);
   },
-}
+};

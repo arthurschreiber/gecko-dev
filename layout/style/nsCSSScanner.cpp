@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +14,8 @@
 #include "mozilla/css/ErrorReporter.h"
 #include "mozilla/Likely.h"
 #include <algorithm>
+
+using namespace mozilla;
 
 /* Character class tables and related helper functions. */
 
@@ -260,25 +263,13 @@ nsCSSToken::AppendToString(nsString& aBuffer) const
     case eCSSToken_Bad_URL:
       aBuffer.AppendLiteral("url(");
       if (mSymbol != char16_t(0)) {
-        if (mType == eCSSToken_URL) {
-          nsStyleUtil::AppendEscapedCSSString(mIdent, aBuffer, mSymbol);
-        } else {
-          // Only things up to mInteger were part of the string.
-          nsStyleUtil::AppendEscapedCSSString(StringHead(mIdent, mInteger),
-                                              aBuffer, mSymbol);
-          MOZ_ASSERT(mInteger2 == 0 || mInteger2 == 1);
-          if (mInteger2 == 1) {
-            // This was a Bad_String; strip off the closing quote.
-            aBuffer.Truncate(aBuffer.Length() - 1);
-          }
-
-          // Now append the remaining garbage.
-          aBuffer.Append(Substring(mIdent, mInteger));
-        }
+        nsStyleUtil::AppendEscapedCSSString(mIdent, aBuffer, mSymbol);
       } else {
         aBuffer.Append(mIdent);
       }
-      aBuffer.Append(char16_t(')'));
+      if (mType == eCSSToken_URL) {
+        aBuffer.Append(char16_t(')'));
+      }
       break;
 
     case eCSSToken_Number:
@@ -362,7 +353,6 @@ nsCSSScanner::nsCSSScanner(const nsAString& aBuffer, uint32_t aLineNumber)
   , mRecordStartOffset(0)
   , mEOFCharacters(eEOFCharacters_None)
   , mReporter(nullptr)
-  , mSVGMode(false)
   , mRecording(false)
   , mSeenBadToken(false)
   , mSeenVariableReference(false)
@@ -554,13 +544,51 @@ nsCSSScanner::SkipWhitespace()
 }
 
 /**
+ * If the given text appears at the current offset in the buffer,
+ * advance over the text and return true.  Otherwise, return false.
+ * mLength is the number of characters in mDirective.
+ */
+bool
+nsCSSScanner::CheckCommentDirective(const nsAString& aDirective)
+{
+  nsDependentSubstring text(&mBuffer[mOffset], &mBuffer[mCount]);
+
+  if (StringBeginsWith(text, aDirective)) {
+    Advance(aDirective.Length());
+    return true;
+  }
+  return false;
+}
+
+/**
  * Skip over one CSS comment starting at the current read position.
  */
 void
 nsCSSScanner::SkipComment()
 {
+  // Note that these do not start with "#" or "@" -- that is handled
+  // separately, below.
+  static NS_NAMED_LITERAL_STRING(kSourceMappingURLDirective, " sourceMappingURL=");
+  static NS_NAMED_LITERAL_STRING(kSourceURLDirective, " sourceURL=");
+
   MOZ_ASSERT(Peek() == '/' && Peek(1) == '*', "should not have been called");
   Advance(2);
+
+  // If we saw one of the directives, this will be non-NULL and will
+  // point to the string into which the URL will be written.
+  nsString* directive = nullptr;
+  if (Peek() == '#' || Peek() == '@') {
+    // Check for the comment directives.
+    Advance();
+    if (CheckCommentDirective(kSourceMappingURLDirective)) {
+      mSourceMapURL.Truncate();
+      directive = &mSourceMapURL;
+    } else if (CheckCommentDirective(kSourceURLDirective)) {
+      mSourceURL.Truncate();
+      directive = &mSourceURL;
+    }
+  }
+
   for (;;) {
     int32_t ch = Peek();
     if (ch < 0) {
@@ -569,10 +597,13 @@ nsCSSScanner::SkipComment()
       SetEOFCharacters(eEOFCharacters_Asterisk | eEOFCharacters_Slash);
       return;
     }
+
     if (ch == '*') {
       Advance();
       ch = Peek();
       if (ch < 0) {
+        // In this case, even if we saw a source map directive, leave
+        // the "*" out of it.
         if (mReporter)
           mReporter->ReportUnexpectedEOF("PECommentEOF");
         SetEOFCharacters(eEOFCharacters_Slash);
@@ -582,9 +613,21 @@ nsCSSScanner::SkipComment()
         Advance();
         return;
       }
+      if (directive != nullptr) {
+        directive->Append('*');
+      }
     } else if (IsVertSpace(ch)) {
       AdvanceLine();
+      // Done with the directive, so stop copying.
+      directive = nullptr;
+    } else if (IsWhitespace(ch)) {
+      Advance();
+      // Done with the directive, so stop copying.
+      directive = nullptr;
     } else {
+      if (directive != nullptr) {
+        directive->Append(ch);
+      }
       Advance();
     }
   }
@@ -1176,19 +1219,17 @@ nsCSSScanner::NextURL(nsCSSToken& aToken)
   // aToken.mIdent may be "url" at this point; clear that out
   aToken.mIdent.Truncate();
 
+  bool hasString = false;
   int32_t ch = Peek();
   // Do we have a string?
   if (ch == '"' || ch == '\'') {
     ScanString(aToken);
     if (MOZ_UNLIKELY(aToken.mType == eCSSToken_Bad_String)) {
       aToken.mType = eCSSToken_Bad_URL;
-      // Flag us as having been a Bad_String.
-      aToken.mInteger2 = 1;
-      ConsumeBadURLRemnants(aToken);
       return;
     }
     MOZ_ASSERT(aToken.mType == eCSSToken_String, "unexpected token type");
-
+    hasString = true;
   } else {
     // Otherwise, this is the start of a non-quoted url (which may be empty).
     aToken.mSymbol = char16_t(0);
@@ -1208,44 +1249,26 @@ nsCSSScanner::NextURL(nsCSSToken& aToken)
   } else {
     mSeenBadToken = true;
     aToken.mType = eCSSToken_Bad_URL;
-    if (aToken.mSymbol != 0) {
-      // Flag us as having been a String, not a Bad_String.
-      aToken.mInteger2 = 0;
+    if (!hasString) {
+      // Consume until before the next right parenthesis, which follows
+      // how <bad-url-token> is consumed in CSS Syntax 3 spec.
+      // Note that, we only do this when "url(" is not followed by a
+      // string, because in the spec, "url(" followed by a string is
+      // handled as a url function rather than a <url-token>, so the
+      // rest of content before ")" should be consumed in balance,
+      // which will be done by the parser.
+      // The closing ")" is not consumed here. It is left to the parser
+      // so that the parser can handle both cases.
+      do {
+        if (IsVertSpace(ch)) {
+          AdvanceLine();
+        } else {
+          Advance();
+        }
+        ch = Peek();
+      } while (ch >= 0 && ch != ')');
     }
-    ConsumeBadURLRemnants(aToken);
   }
-}
-
-void
-nsCSSScanner::ConsumeBadURLRemnants(nsCSSToken& aToken)
-{
-  aToken.mInteger = aToken.mIdent.Length();
-  int32_t ch = Peek();
-  do {
-    if (ch < 0) {
-      AddEOFCharacters(eEOFCharacters_CloseParen);
-      break;
-    }
-
-    if (ch == '\\' && GatherEscape(aToken.mIdent, false)) {
-      // Nothing else needs to be done here for the moment; we've consumed the
-      // backslash and following escape.
-    } else {
-      // We always want to consume this character.
-      if (IsVertSpace(ch)) {
-        AdvanceLine();
-      } else {
-        Advance();
-      }
-      if (ch == 0) {
-        aToken.mIdent.Append(UCS2_REPLACEMENT_CHAR);
-      } else {
-        aToken.mIdent.Append(ch);
-      }
-    }
-
-    ch = Peek();
-  } while (ch != ')');
 }
 
 /**
@@ -1283,7 +1306,7 @@ nsCSSScanner::Next(nsCSSToken& aToken, nsCSSScannerExclude aSkip)
       }
       continue; // start again at the beginning
     }
-    if (ch == '/' && !IsSVGMode() && Peek(1) == '*') {
+    if (ch == '/' && Peek(1) == '*') {
       SkipComment();
       if (aSkip == eCSSScannerExclude_None) {
         aToken.mType = eCSSToken_Comment;

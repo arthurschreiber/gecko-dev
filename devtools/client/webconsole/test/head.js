@@ -12,7 +12,7 @@ Services.scriptloader.loadSubScript("chrome://mochitests/content/browser/devtool
 var {Utils: WebConsoleUtils} = require("devtools/client/webconsole/utils");
 var {Messages} = require("devtools/client/webconsole/console-output");
 const asyncStorage = require("devtools/shared/async-storage");
-const HUDService = require("devtools/client/webconsole/hudservice");
+const {HUDService} = require("devtools/client/webconsole/hudservice");
 
 // Services.prefs.setBoolPref("devtools.debugger.log", true);
 
@@ -37,8 +37,7 @@ const SEVERITY_LOG = 3;
 // The indent of a console group in pixels.
 const GROUP_INDENT = 12;
 
-const WEBCONSOLE_STRINGS_URI = "devtools/locale/webconsole.properties";
-var WCUL10n = new WebConsoleUtils.L10n(WEBCONSOLE_STRINGS_URI);
+var WCUL10n = require("devtools/client/webconsole/webconsole-l10n");
 
 const DOCS_GA_PARAMS = "?utm_source=mozilla" +
                        "&utm_medium=firefox-console-errors" +
@@ -46,44 +45,18 @@ const DOCS_GA_PARAMS = "?utm_source=mozilla" +
 
 flags.testing = true;
 
-function loadTab(url) {
-  let deferred = promise.defer();
-
-  let tab = gBrowser.selectedTab = gBrowser.addTab(url);
-  let browser = gBrowser.getBrowserForTab(tab);
-
-  browser.addEventListener("load", function onLoad() {
-    browser.removeEventListener("load", onLoad, true);
-    deferred.resolve({tab: tab, browser: browser});
-  }, true);
-
-  return deferred.promise;
+function loadTab(url, preferredRemoteType) {
+  return addTab(url, { preferredRemoteType }).then( tab => {
+    return { tab, browser: tab.linkedBrowser };
+  });
 }
 
 function loadBrowser(browser) {
-  let deferred = promise.defer();
-
-  browser.addEventListener("load", function onLoad() {
-    browser.removeEventListener("load", onLoad, true);
-    deferred.resolve(null);
-  }, true);
-
-  return deferred.promise;
+  return BrowserTestUtils.browserLoaded(browser);
 }
 
 function closeTab(tab) {
-  let deferred = promise.defer();
-
-  let container = gBrowser.tabContainer;
-
-  container.addEventListener("TabClose", function onTabClose() {
-    container.removeEventListener("TabClose", onTabClose, true);
-    deferred.resolve(null);
-  }, true);
-
-  gBrowser.removeTab(tab);
-
-  return deferred.promise;
+  return removeTab(tab);
 }
 
 /**
@@ -214,7 +187,7 @@ function findLogEntry(str) {
  *         A promise that is resolved once the web console is open.
  */
 var openConsole = function (tab) {
-  let webconsoleOpened = promise.defer();
+  let webconsoleOpened = defer();
   let target = TargetFactory.forTab(tab || gBrowser.selectedTab);
   gDevTools.showToolbox(target, "webconsole").then(toolbox => {
     let hud = toolbox.getCurrentPanel().hud;
@@ -254,7 +227,7 @@ var waitForTab = Task.async(function* () {
   yield once(gBrowser.tabContainer, "TabOpen");
   let tab = gBrowser.selectedTab;
   let browser = tab.linkedBrowser;
-  yield once(browser, "load", true);
+  yield BrowserTestUtils.browserLoaded(browser);
   info("The tab load completed");
   return tab;
 });
@@ -321,6 +294,12 @@ var finishTest = Task.async(function* () {
   finish();
 });
 
+// Always use the 'old' frontend for tests that rely on it
+Services.prefs.setBoolPref("devtools.webconsole.new-frontend-enabled", false);
+registerCleanupFunction(function* () {
+  Services.prefs.clearUserPref("devtools.webconsole.new-frontend-enabled");
+});
+
 registerCleanupFunction(function* () {
   flags.testing = false;
 
@@ -367,7 +346,7 @@ waitForExplicitFinish();
  *         A Promise object that is resolved based on the validator function.
  */
 function waitForSuccess(options) {
-  let deferred = promise.defer();
+  let deferred = defer();
   let start = Date.now();
   let timeout = options.timeout || 5000;
   let {validator} = options;
@@ -473,7 +452,7 @@ function findVariableViewProperties(view, rules, options) {
       return promise.resolve(null);
     }
 
-    let deferred = promise.defer();
+    let deferred = defer();
     let expandOptions = {
       rootVariable: view,
       expandTo: rule.name,
@@ -615,7 +594,7 @@ function isVariableViewPropertyIterator(prop, webConsole) {
     return promise.resolve(true);
   }
 
-  let deferred = promise.defer();
+  let deferred = defer();
 
   variablesViewExpandTo({
     rootVariable: prop,
@@ -651,7 +630,7 @@ function variablesViewExpandTo(options) {
   let root = options.rootVariable;
   let expandTo = options.expandTo.split(".");
   let jsterm = (options.webconsole || {}).jsterm;
-  let lastDeferred = promise.defer();
+  let lastDeferred = defer();
 
   function fetch(prop) {
     if (!prop.onexpand) {
@@ -659,7 +638,7 @@ function variablesViewExpandTo(options) {
       return promise.reject(prop);
     }
 
-    let deferred = promise.defer();
+    let deferred = defer();
 
     if (prop._fetched || !jsterm) {
       executeSoon(function () {
@@ -737,7 +716,7 @@ var updateVariablesViewProperty = Task.async(function* (options) {
       throw new Error("options.field is incorrect");
   }
 
-  let deferred = promise.defer();
+  let deferred = defer();
 
   executeSoon(() => {
     EventUtils.synthesizeKey("A", { accelKey: true }, view.window);
@@ -783,7 +762,7 @@ function openDebugger(options = {}) {
     options.tab = gBrowser.selectedTab;
   }
 
-  let deferred = promise.defer();
+  let deferred = defer();
 
   let target = TargetFactory.forTab(options.tab);
   let toolbox = gDevTools.getToolbox(target);
@@ -913,7 +892,7 @@ function waitForMessages(options) {
   let rules = WebConsoleUtils.cloneObject(options.messages, true);
   let rulesMatched = 0;
   let listenerAdded = false;
-  let deferred = promise.defer();
+  let deferred = defer();
   options.matchCondition = options.matchCondition || "all";
 
   function checkText(rule, text) {
@@ -1371,7 +1350,7 @@ function whenDelayedStartupFinished(win, callback) {
       Services.obs.removeObserver(observer, topic);
       executeSoon(callback);
     }
-  }, "browser-delayed-startup-finished", false);
+  }, "browser-delayed-startup-finished");
 }
 
 /**
@@ -1516,12 +1495,12 @@ function checkOutputForInputs(hud, inputTests) {
     }
     ok(body, "the message body");
 
-    let deferredVariablesView = promise.defer();
+    let deferredVariablesView = defer();
     entry._onVariablesViewOpen = onVariablesViewOpen.bind(null, entry,
                                                           deferredVariablesView);
     hud.jsterm.on("variablesview-open", entry._onVariablesViewOpen);
 
-    let deferredTab = promise.defer();
+    let deferredTab = defer();
     entry._onTabOpen = onTabOpen.bind(null, entry, deferredTab);
     container.addEventListener("TabOpen", entry._onTabOpen, true);
 
@@ -1737,7 +1716,7 @@ function waitForFinishedRequest(predicate = () => true) {
 function once(target, eventName, useCapture = false) {
   info("Waiting for event: '" + eventName + "' on " + target + ".");
 
-  let deferred = promise.defer();
+  let deferred = defer();
 
   for (let [add, remove] of [
     ["addEventListener", "removeEventListener"],
@@ -1792,26 +1771,11 @@ function getSourceActor(sources, URL) {
 }
 
 /**
- * Make a request against an actor and resolve with the packet.
- * @param object client
- *   The client to use when making the request.
- * @param function requestType
- *   The client request function to run.
- * @param array args
- *   The arguments to pass into the function.
- */
-function getPacket(client, requestType, args) {
-  return new Promise(resolve => {
-    client[requestType](...args, packet => resolve(packet));
-  });
-}
-
-/**
  * Verify that clicking on a link from a popup notification message tries to
  * open the expected URL.
  */
 function simulateMessageLinkClick(element, expectedLink) {
-  let deferred = promise.defer();
+  let deferred = defer();
 
   // Invoke the click event and check if a new tab would
   // open to the correct page.
@@ -1842,4 +1806,19 @@ function getRenderedSource(root) {
     line: location.getAttribute("data-line"),
     column: location.getAttribute("data-column"),
   } : null;
+}
+
+function waitForBrowserConsole() {
+  return new Promise(resolve => {
+    Services.obs.addObserver(function observer(subject) {
+      Services.obs.removeObserver(observer, "web-console-created");
+      subject.QueryInterface(Ci.nsISupportsString);
+
+      let hud = HUDService.getBrowserConsole();
+      ok(hud, "browser console is open");
+      is(subject.data, hud.hudId, "notification hudId is correct");
+
+      executeSoon(() => resolve(hud));
+    }, "web-console-created");
+  });
 }

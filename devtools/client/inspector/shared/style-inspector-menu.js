@@ -6,22 +6,26 @@
 
 "use strict";
 
-const {PREF_ORIG_SOURCES} = require("devtools/client/styleeditor/utils");
 const Services = require("Services");
 const {Task} = require("devtools/shared/task");
 
 const Menu = require("devtools/client/framework/menu");
 const MenuItem = require("devtools/client/framework/menu-item");
 
-const overlays = require("devtools/client/inspector/shared/style-inspector-overlays");
+const {
+  VIEW_NODE_SELECTOR_TYPE,
+  VIEW_NODE_PROPERTY_TYPE,
+  VIEW_NODE_VALUE_TYPE,
+  VIEW_NODE_IMAGE_URL_TYPE,
+  VIEW_NODE_LOCATION_TYPE,
+} = require("devtools/client/inspector/shared/node-types");
 const clipboardHelper = require("devtools/shared/platform/clipboard");
 
-const STYLE_INSPECTOR_PROPERTIES = "devtools-shared/locale/styleinspector.properties";
+const STYLE_INSPECTOR_PROPERTIES = "devtools/shared/locales/styleinspector.properties";
 const {LocalizationHelper} = require("devtools/shared/l10n");
 const STYLE_INSPECTOR_L10N = new LocalizationHelper(STYLE_INSPECTOR_PROPERTIES);
 
-const PREF_ENABLE_MDN_DOCS_TOOLTIP =
-  "devtools.inspector.mdnDocsTooltip.enabled";
+const PREF_ORIG_SOURCES = "devtools.source-map.client-service.enabled";
 
 /**
  * Style inspector context menu
@@ -51,7 +55,6 @@ function StyleInspectorMenu(view, options) {
   this._onCopySelector = this._onCopySelector.bind(this);
   this._onCopyUrl = this._onCopyUrl.bind(this);
   this._onSelectAll = this._onSelectAll.bind(this);
-  this._onShowMdnDocs = this._onShowMdnDocs.bind(this);
   this._onToggleOrigSources = this._onToggleOrigSources.bind(this);
 }
 
@@ -163,18 +166,18 @@ StyleInspectorMenu.prototype = {
     this._clickedNodeInfo = this._getClickedNodeInfo();
     if (this.isRuleView && this._clickedNodeInfo) {
       switch (this._clickedNodeInfo.type) {
-        case overlays.VIEW_NODE_PROPERTY_TYPE :
+        case VIEW_NODE_PROPERTY_TYPE :
           menuitemCopyPropertyDeclaration.visible = true;
           menuitemCopyPropertyName.visible = true;
           break;
-        case overlays.VIEW_NODE_VALUE_TYPE :
+        case VIEW_NODE_VALUE_TYPE :
           menuitemCopyPropertyDeclaration.visible = true;
           menuitemCopyPropertyValue.visible = true;
           break;
-        case overlays.VIEW_NODE_SELECTOR_TYPE :
+        case VIEW_NODE_SELECTOR_TYPE :
           menuitemCopySelector.visible = true;
           break;
-        case overlays.VIEW_NODE_LOCATION_TYPE :
+        case VIEW_NODE_LOCATION_TYPE :
           menuitemCopyLocation.visible = true;
           break;
       }
@@ -223,19 +226,6 @@ StyleInspectorMenu.prototype = {
                 this.inspector.selection.isAnonymousNode(),
     });
     menu.append(menuitemAddRule);
-
-    // Show MDN Docs
-    let mdnDocsAccessKey = "styleinspector.contextmenu.showMdnDocs.accessKey";
-    let menuitemShowMdnDocs = new MenuItem({
-      label: STYLE_INSPECTOR_L10N.getStr("styleinspector.contextmenu.showMdnDocs"),
-      accesskey: STYLE_INSPECTOR_L10N.getStr(mdnDocsAccessKey),
-      click: () => {
-        this._onShowMdnDocs();
-      },
-      visible: (Services.prefs.getBoolPref(PREF_ENABLE_MDN_DOCS_TOOLTIP) &&
-                                                    this._isPropertyName()),
-    });
-    menu.append(menuitemShowMdnDocs);
 
     // Show Original Sources
     let sourcesAccessKey = "styleinspector.contextmenu.toggleOrigSources.accessKey";
@@ -311,7 +301,7 @@ StyleInspectorMenu.prototype = {
     if (!nodeInfo) {
       return false;
     }
-    return nodeInfo.type == overlays.VIEW_NODE_PROPERTY_TYPE;
+    return nodeInfo.type == VIEW_NODE_PROPERTY_TYPE;
   },
 
   /**
@@ -324,7 +314,7 @@ StyleInspectorMenu.prototype = {
     if (!nodeInfo) {
       return false;
     }
-    return nodeInfo.type == overlays.VIEW_NODE_IMAGE_URL_TYPE;
+    return nodeInfo.type == VIEW_NODE_IMAGE_URL_TYPE;
   },
 
   /**
@@ -401,16 +391,6 @@ StyleInspectorMenu.prototype = {
 
     clipboardHelper.copyString(message);
   }),
-
-  /**
-   *  Show docs from MDN for a CSS property.
-   */
-  _onShowMdnDocs: function () {
-    let cssPropertyName = this.styleDocument.popupNode.textContent;
-    let anchor = this.styleDocument.popupNode.parentNode;
-    let cssDocsTooltip = this.view.tooltips.cssDocs;
-    cssDocsTooltip.show(anchor, cssPropertyName);
-  },
 
   /**
    * Add a new rule to the current element.

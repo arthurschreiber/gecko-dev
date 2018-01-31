@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,7 +43,7 @@ public:
   virtual nsresult XULRelayoutChildAtOrdinal(nsIFrame* aChild) override;
 
 #ifdef DEBUG_LAYOUT
-  NS_IMETHOD GetDebugBoxAt(const nsPoint& aPoint, nsIFrame** aBox);
+  NS_IMETHOD GetDebugBoxAt(const nsPoint& aPoint, nsIFrame** aBox) override;
   virtual nsresult GetXULDebug(bool& aDebug) override;
   virtual nsresult SetXULDebug(nsBoxLayoutState& aState, bool aDebug) override;
 
@@ -50,7 +51,7 @@ public:
   void PropagateDebug(nsBoxLayoutState& aState);
 #endif
 
-  nsBox();
+  nsBox(ClassID aID);
   virtual ~nsBox();
 
   /**

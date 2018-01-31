@@ -2,13 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-extern crate mp4parse_capi;
-
-use std::ffi::CStr;
-use std::os::raw::c_char;
-
-/// Used to implement `nsIDebug2::RustPanic` for testing purposes.
-#[no_mangle]
-pub extern fn intentional_panic(message: *const c_char) {
-    panic!("{}", unsafe { CStr::from_ptr(message) }.to_string_lossy());
-}
+// You should not be adding code to this crate; you will almost certainly
+// get link errors when linking libxul-gtest.  Add any |extern crate|
+// declarations or similar to the gkrust-shared crate in
+// toolkit/library/rust/shared/lib.rs.
+extern crate gkrust_shared;

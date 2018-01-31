@@ -12,15 +12,15 @@
 #include "mozilla/FileUtils.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Sprintf.h"
+#include "mozilla/Printf.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/Sprintf.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsClassHashtable.h"
 #include "nsDebug.h"
 #include "NSPRLogModulesParser.h"
 
 #include "prenv.h"
-#include "prprf.h"
 #ifdef XP_WIN
 #include <process.h>
 #else
@@ -35,23 +35,29 @@ const uint32_t kInitialModuleCount = 256;
 // number of files we create and rotate.  When there is rotate:40,
 // we will keep four files per process, each limited to 10MB.  Sum is 40MB,
 // the given limit.
+//
+// (Note: When this is changed to be >= 10, SandboxBroker::LaunchApp must add
+// another rule to allow logfile.?? be written by content processes.)
 const uint32_t kRotateFilesNumber = 4;
 
 namespace mozilla {
 
-namespace detail {
-
-void log_print(const PRLogModuleInfo* aModule,
-               LogLevel aLevel,
-               const char* aFmt, ...)
+LazyLogModule::operator LogModule*()
 {
-  va_list ap;
-  va_start(ap, aFmt);
-  char* buff = PR_vsmprintf(aFmt, ap);
-  PR_LogPrint("%s", buff);
-  PR_smprintf_free(buff);
-  va_end(ap);
+  // NB: The use of an atomic makes the reading and assignment of mLog
+  //     thread-safe. There is a small chance that mLog will be set more
+  //     than once, but that's okay as it will be set to the same LogModule
+  //     instance each time. Also note LogModule::Get is thread-safe.
+  LogModule* tmp = mLog;
+  if (MOZ_UNLIKELY(!tmp)) {
+    tmp = LogModule::Get(mLogName);
+    mLog = tmp;
+  }
+
+  return tmp;
 }
+
+namespace detail {
 
 void log_print(const LogModule* aModule,
                LogLevel aLevel,
@@ -61,15 +67,6 @@ void log_print(const LogModule* aModule,
   va_start(ap, aFmt);
   aModule->Printv(aLevel, aFmt, ap);
   va_end(ap);
-}
-
-int log_pid()
-{
-#ifdef XP_WIN
-  return _getpid();
-#else
-  return getpid();
-#endif
 }
 
 } // detail
@@ -136,7 +133,35 @@ public:
   LogFile* mNextToRelease;
 };
 
+const char*
+ExpandPIDMarker(const char* aFilename, char (&buffer)[2048])
+{
+  MOZ_ASSERT(aFilename);
+  static const char kPIDToken[] = "%PID";
+  const char* pidTokenPtr = strstr(aFilename, kPIDToken);
+  if (pidTokenPtr &&
+    SprintfLiteral(buffer, "%.*s%s%d%s",
+                   static_cast<int>(pidTokenPtr - aFilename), aFilename,
+                   XRE_IsParentProcess() ? "-main." : "-child.",
+                   base::GetCurrentProcId(),
+                   pidTokenPtr + strlen(kPIDToken)) > 0)
+  {
+    return buffer;
+  }
+
+  return aFilename;
+}
+
 } // detail
+
+namespace {
+  // Helper method that initializes an empty va_list to be empty.
+  void empty_va(va_list *va, ...)
+  {
+    va_start(*va, va);
+    va_end(*va);
+  }
+}
 
 class LogModuleManager
 {
@@ -148,7 +173,9 @@ public:
     , mOutFile(nullptr)
     , mToReleaseFile(nullptr)
     , mOutFileNum(0)
+    , mOutFilePath(strdup(""))
     , mMainThread(PR_GetCurrentThread())
+    , mSetFromEnv(false)
     , mAddTimestamp(false)
     , mIsSync(false)
     , mRotate(0)
@@ -217,18 +244,8 @@ public:
     }
 
     if (logFile && logFile[0]) {
-      static const char kPIDToken[] = "%PID";
-      const char* pidTokenPtr = strstr(logFile, kPIDToken);
       char buf[2048];
-      if (pidTokenPtr &&
-          SprintfLiteral(buf, "%.*s%d%s",
-                         static_cast<int>(pidTokenPtr - logFile), logFile,
-                         detail::log_pid(),
-                         pidTokenPtr + strlen(kPIDToken)) > 0)
-      {
-        logFile = buf;
-      }
-
+      logFile = detail::ExpandPIDMarker(logFile, buf);
       mOutFilePath.reset(strdup(logFile));
 
       if (mRotate > 0) {
@@ -243,7 +260,64 @@ public:
       }
 
       mOutFile = OpenFile(shouldAppend, mOutFileNum);
+      mSetFromEnv = true;
     }
+  }
+
+  void SetLogFile(const char* aFilename)
+  {
+    // For now we don't allow you to change the file at runtime.
+    if (mSetFromEnv) {
+      NS_WARNING("LogModuleManager::SetLogFile - Log file was set from the "
+                 "MOZ_LOG_FILE environment variable.");
+      return;
+    }
+
+    const char * filename = aFilename ? aFilename : "";
+    char buf[2048];
+    filename = detail::ExpandPIDMarker(filename, buf);
+
+    // Can't use rotate at runtime yet.
+    MOZ_ASSERT(mRotate == 0, "We don't allow rotate for runtime logfile changes");
+    mOutFilePath.reset(strdup(filename));
+
+    // Exchange mOutFile and set it to be released once all the writes are done.
+    detail::LogFile* newFile = OpenFile(false, 0);
+    detail::LogFile* oldFile = mOutFile.exchange(newFile);
+
+    // Since we don't allow changing the logfile if MOZ_LOG_FILE is already set,
+    // and we don't allow log rotation when setting it at runtime, mToReleaseFile
+    // will be null, so we're not leaking.
+    DebugOnly<detail::LogFile*> prevFile = mToReleaseFile.exchange(oldFile);
+    MOZ_ASSERT(!prevFile, "Should be null because rotation is not allowed");
+
+    // If we just need to release a file, we must force print, in order to
+    // trigger the closing and release of mToReleaseFile.
+    if (oldFile) {
+      va_list va;
+      empty_va(&va);
+      Print("Logger", LogLevel::Info, "Flushing old log files\n", va);
+    }
+  }
+
+  uint32_t GetLogFile(char *aBuffer, size_t aLength)
+  {
+    uint32_t len = strlen(mOutFilePath.get());
+    if (len + 1 > aLength) {
+      return 0;
+    }
+    snprintf(aBuffer, aLength, "%s", mOutFilePath.get());
+    return len;
+  }
+
+  void SetIsSync(bool aIsSync)
+  {
+    mIsSync = aIsSync;
+  }
+
+  void SetAddTimestamp(bool aAddTimestamp)
+  {
+    mAddTimestamp = aAddTimestamp;
   }
 
   detail::LogFile* OpenFile(bool aShouldAppend, uint32_t aFileNum)
@@ -287,22 +361,33 @@ public:
   }
 
   void Print(const char* aName, LogLevel aLevel, const char* aFmt, va_list aArgs)
+    MOZ_FORMAT_PRINTF(4, 0)
   {
+    // We don't do nuwa-style forking anymore, so our pid can't change.
+    static long pid = static_cast<long>(base::GetCurrentProcId());
     const size_t kBuffSize = 1024;
     char buff[kBuffSize];
 
     char* buffToWrite = buff;
+    SmprintfPointer allocatedBuff;
 
-    // For backwards compat we need to use the NSPR format string versions
-    // of sprintf and friends and then hand off to printf.
     va_list argsCopy;
     va_copy(argsCopy, aArgs);
-    size_t charsWritten = PR_vsnprintf(buff, kBuffSize, aFmt, argsCopy);
+    int charsWritten = VsprintfLiteral(buff, aFmt, argsCopy);
     va_end(argsCopy);
 
-    if (charsWritten == kBuffSize - 1) {
+    if (charsWritten < 0) {
+      // Print out at least something.  We must copy to the local buff,
+      // can't just assign aFmt to buffToWrite, since when
+      // buffToWrite != buff, we try to release it.
+      MOZ_ASSERT(false, "Probably incorrect format string in LOG?");
+      strncpy(buff, aFmt, kBuffSize - 1);
+      buff[kBuffSize - 1] = '\0';
+      charsWritten = strlen(buff);
+    } else if (static_cast<size_t>(charsWritten) >= kBuffSize - 1) {
       // We may have maxed out, allocate a buffer instead.
-      buffToWrite = PR_vsmprintf(aFmt, aArgs);
+      allocatedBuff = mozilla::Vsmprintf(aFmt, aArgs);
+      buffToWrite = allocatedBuff.get();
       charsWritten = strlen(buffToWrite);
     }
 
@@ -343,27 +428,23 @@ public:
 
     if (!mAddTimestamp) {
       fprintf_stderr(out,
-                     "[%s]: %s/%s %s%s",
-                     currentThreadName, ToLogStr(aLevel),
+                     "[%ld:%s]: %s/%s %s%s",
+                     pid, currentThreadName, ToLogStr(aLevel),
                      aName, buffToWrite, newline);
     } else {
       PRExplodedTime now;
       PR_ExplodeTime(PR_Now(), PR_GMTParameters, &now);
       fprintf_stderr(
           out,
-          "%04d-%02d-%02d %02d:%02d:%02d.%06d UTC - [%s]: %s/%s %s%s",
+          "%04d-%02d-%02d %02d:%02d:%02d.%06d UTC - [%ld:%s]: %s/%s %s%s",
           now.tm_year, now.tm_month + 1, now.tm_mday,
           now.tm_hour, now.tm_min, now.tm_sec, now.tm_usec,
-          currentThreadName, ToLogStr(aLevel),
+          pid, currentThreadName, ToLogStr(aLevel),
           aName, buffToWrite, newline);
     }
 
     if (mIsSync) {
       fflush(out);
-    }
-
-    if (buffToWrite != buff) {
-      PR_smprintf_free(buffToWrite);
     }
 
     if (mRotate > 0 && outFile) {
@@ -428,8 +509,9 @@ private:
   UniqueFreePtr<char[]> mOutFilePath;
 
   PRThread *mMainThread;
-  bool mAddTimestamp;
-  bool mIsSync;
+  bool mSetFromEnv;
+  Atomic<bool, Relaxed> mAddTimestamp;
+  Atomic<bool, Relaxed> mIsSync;
   int32_t mRotate;
 };
 
@@ -442,6 +524,32 @@ LogModule::Get(const char* aName)
   // that the LogModuleManager implementation can be kept internal.
   MOZ_ASSERT(sLogModuleManager != nullptr);
   return sLogModuleManager->CreateOrGetModule(aName);
+}
+
+void
+LogModule::SetLogFile(const char* aFilename)
+{
+  MOZ_ASSERT(sLogModuleManager);
+  sLogModuleManager->SetLogFile(aFilename);
+}
+
+uint32_t
+LogModule::GetLogFile(char *aBuffer, size_t aLength)
+{
+  MOZ_ASSERT(sLogModuleManager);
+  return sLogModuleManager->GetLogFile(aBuffer, aLength);
+}
+
+void
+LogModule::SetAddTimestamp(bool aAddTimestamp)
+{
+  sLogModuleManager->SetAddTimestamp(aAddTimestamp);
+}
+
+void
+LogModule::SetIsSync(bool aIsSync)
+{
+  sLogModuleManager->SetIsSync(aIsSync);
 }
 
 void

@@ -21,7 +21,8 @@ namespace mozilla {
 using namespace dom;
 
 nsresult
-nsSVGAnimatedTransformList::SetBaseValueString(const nsAString& aValue)
+nsSVGAnimatedTransformList::SetBaseValueString(const nsAString& aValue,
+                                               nsSVGElement* aSVGElement)
 {
   SVGTransformList newBaseValue;
   nsresult rv = newBaseValue.SetValueFromString(aValue);
@@ -29,11 +30,12 @@ nsSVGAnimatedTransformList::SetBaseValueString(const nsAString& aValue)
     return rv;
   }
 
-  return SetBaseValue(newBaseValue);
+  return SetBaseValue(newBaseValue, aSVGElement);
 }
 
 nsresult
-nsSVGAnimatedTransformList::SetBaseValue(const SVGTransformList& aValue)
+nsSVGAnimatedTransformList::SetBaseValue(const SVGTransformList& aValue,
+                                         nsSVGElement* aSVGElement)
 {
   SVGAnimatedTransformList *domWrapper =
     SVGAnimatedTransformList::GetDOMWrapperIfExists(this);
@@ -60,7 +62,10 @@ nsSVGAnimatedTransformList::SetBaseValue(const SVGTransformList& aValue)
     domWrapper->InternalBaseValListWillChangeLengthTo(mBaseVal.Length());
   } else {
     mIsAttrSet = true;
-    mHadTransformBeforeLastBaseValChange = hadTransform;
+    // We only need to reconstruct the frame for aSVGElement if it already
+    // exists and the stacking context changes because a transform is created.
+    mRequiresFrameReconstruction =
+      aSVGElement->GetPrimaryFrame() && !hadTransform;
   }
   return rv;
 }
@@ -68,7 +73,7 @@ nsSVGAnimatedTransformList::SetBaseValue(const SVGTransformList& aValue)
 void
 nsSVGAnimatedTransformList::ClearBaseValue()
 {
-  mHadTransformBeforeLastBaseValChange = HasTransform();
+  mRequiresFrameReconstruction = !HasTransform();
 
   SVGAnimatedTransformList *domWrapper =
     SVGAnimatedTransformList::GetDOMWrapperIfExists(this);
@@ -167,10 +172,10 @@ nsSVGAnimatedTransformList::IsExplicitlySet() const
   return mIsAttrSet || !mBaseVal.IsEmpty() || mAnimVal;
 }
 
-nsISMILAttr*
+UniquePtr<nsISMILAttr>
 nsSVGAnimatedTransformList::ToSMILAttr(nsSVGElement* aSVGElement)
 {
-  return new SMILAnimatedTransformList(this, aSVGElement);
+  return MakeUnique<SMILAnimatedTransformList>(this, aSVGElement);
 }
 
 nsresult
@@ -185,7 +190,7 @@ nsSVGAnimatedTransformList::SMILAnimatedTransformList::ValueFromString(
              "aValue should have been cleared before calling ValueFromString");
 
   const nsAttrValue* typeAttr = aSrcElement->GetAnimAttr(nsGkAtoms::type);
-  const nsIAtom* transformType = nsGkAtoms::translate; // default val
+  const nsAtom* transformType = nsGkAtoms::translate; // default val
   if (typeAttr) {
     if (typeAttr->Type() != nsAttrValue::eAtom) {
       // Recognized values of |type| are parsed as an atom -- so if we have
@@ -204,7 +209,7 @@ nsSVGAnimatedTransformList::SMILAnimatedTransformList::ValueFromString(
 void
 nsSVGAnimatedTransformList::SMILAnimatedTransformList::ParseValue(
   const nsAString& aSpec,
-  const nsIAtom* aTransformType,
+  const nsAtom* aTransformType,
   nsSMILValue& aResult)
 {
   MOZ_ASSERT(aResult.IsNull(), "Unexpected type for SMIL value");
@@ -273,7 +278,7 @@ nsSVGAnimatedTransformList::SMILAnimatedTransformList::ParseParameterList(
   while (tokenizer.hasMoreTokens()) {
     float f;
     if (!SVGContentUtils::ParseNumber(tokenizer.nextToken(), f)) {
-      return -1;    
+      return -1;
     }
     if (numArgsFound < aNVars) {
       aVars[numArgsFound] = f;

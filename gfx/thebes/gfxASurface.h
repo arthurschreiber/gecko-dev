@@ -9,20 +9,16 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
 
+#include "gfxPoint.h"
+#include "gfxRect.h"
 #include "gfxTypes.h"
 #include "nscore.h"
 #include "nsSize.h"
 #include "mozilla/gfx/Rect.h"
 
-#ifdef MOZILLA_INTERNAL_API
 #include "nsStringFwd.h"
-#else
-#include "nsStringAPI.h"
-#endif
 
 class gfxImageSurface;
-struct gfxRect;
-struct gfxPoint;
 
 template <typename T>
 struct already_AddRefed;
@@ -101,11 +97,6 @@ public:
 
     int CairoStatus();
 
-    /* Provide a stride value that will respect all alignment requirements of
-     * the accelerated image-rendering code.
-     */
-    static int32_t FormatStrideForWidth(gfxImageFormat format, int32_t width);
-
     static gfxContentType ContentFromFormat(gfxImageFormat format);
 
     /**
@@ -181,6 +172,24 @@ private:
 
 protected:
     bool mSurfaceValid;
+};
+
+/**
+ * An Unknown surface; used to wrap unknown cairo_surface_t returns from cairo
+ */
+class gfxUnknownSurface : public gfxASurface {
+public:
+    gfxUnknownSurface(cairo_surface_t *surf, const mozilla::gfx::IntSize& aSize)
+        : mSize(aSize)
+    {
+        Init(surf, true);
+    }
+
+    virtual ~gfxUnknownSurface() { }
+    virtual const mozilla::gfx::IntSize GetSize() const override { return mSize; }
+
+private:
+    mozilla::gfx::IntSize mSize;
 };
 
 #endif /* GFX_ASURFACE_H */

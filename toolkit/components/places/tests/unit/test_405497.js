@@ -4,12 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 var hs = Cc["@mozilla.org/browser/nav-history-service;1"].
          getService(Ci.nsINavHistoryService);
-var bs = Cc["@mozilla.org/browser/nav-bookmarks-service;1"].
-         getService(Ci.nsINavBookmarksService);
 
 /**
  * The callback object for runInBatchMode.
@@ -19,17 +17,14 @@ var bs = Cc["@mozilla.org/browser/nav-bookmarks-service;1"].
  *        This determines which service should be called when calling the second
  *        runInBatchMode the second time.
  */
-function callback(aService)
-{
+function callback(aService) {
   this.callCount = 0;
   this.service = aService;
 }
 callback.prototype = {
-  //////////////////////////////////////////////////////////////////////////////
-  //// nsINavHistoryBatchCallback
+  // nsINavHistoryBatchCallback
 
-  runBatched: function(aUserData)
-  {
+  runBatched(aUserData) {
     this.callCount++;
 
     if (this.callCount == 1) {
@@ -38,12 +33,11 @@ callback.prototype = {
       return;
     }
 
-    do_check_eq(this.callCount, 2);
+    Assert.equal(this.callCount, 2);
     do_test_finished();
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// nsISupports
+  // nsISupports
 
   QueryInterface: XPCOMUtils.generateQI([Ci.nsINavHistoryBatchCallback])
 };
@@ -55,5 +49,5 @@ function run_test() {
 
   // checking the bookmark service
   do_test_pending();
-  bs.runInBatchMode(new callback(bs), null);
+  PlacesUtils.bookmarks.runInBatchMode(new callback(PlacesUtils.bookmarks), null);
 }

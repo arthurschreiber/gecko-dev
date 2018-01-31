@@ -14,22 +14,23 @@
 
 #include "nsContentSink.h"
 #include "nsCOMPtr.h"
+#include "nsHTMLTags.h"
 #include "nsReadableUtils.h"
 #include "nsUnicharUtils.h"
 #include "nsIHTMLContentSink.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsScriptLoader.h"
 #include "nsIURI.h"
 #include "nsIContentViewer.h"
 #include "mozilla/dom/NodeInfo.h"
-#include "nsToken.h"
+#include "mozilla/dom/ScriptLoader.h"
 #include "nsIAppShell.h"
 #include "nsCRT.h"
 #include "prtime.h"
 #include "mozilla/Logging.h"
 #include "nsNodeUtils.h"
 #include "nsIContent.h"
+#include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/Preferences.h"
 
@@ -50,7 +51,6 @@
 #include "nsIDocument.h"
 #include "nsStubDocumentObserver.h"
 #include "nsIHTMLDocument.h"
-#include "nsIDOMHTMLMapElement.h"
 #include "nsICookieService.h"
 #include "nsTArray.h"
 #include "nsIScriptSecurityManager.h"
@@ -58,8 +58,6 @@
 #include "nsTextFragment.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsNameSpaceManager.h"
-
-#include "nsIParserService.h"
 
 #include "nsIStyleSheetLinkingElement.h"
 #include "nsITimer.h"
@@ -84,10 +82,6 @@ using namespace mozilla::dom;
 
 //----------------------------------------------------------------------
 
-typedef nsGenericHTMLElement*
-  (*contentCreatorCallback)(already_AddRefed<mozilla::dom::NodeInfo>&&,
-                            FromParser aFromParser);
-
 nsGenericHTMLElement*
 NS_NewHTMLNOTUSEDElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                          FromParser aFromParser)
@@ -96,14 +90,12 @@ NS_NewHTMLNOTUSEDElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
   return nullptr;
 }
 
-#define HTML_TAG(_tag, _classname) NS_NewHTML##_classname##Element,
-#define HTML_HTMLELEMENT_TAG(_tag) NS_NewHTMLElement,
+#define HTML_TAG(_tag, _classname, _interfacename) NS_NewHTML##_classname##Element,
 #define HTML_OTHER(_tag) NS_NewHTMLNOTUSEDElement,
-static const contentCreatorCallback sContentCreatorCallbacks[] = {
+static const HTMLContentCreatorFunction sHTMLContentCreatorFunctions[] = {
   NS_NewHTMLUnknownElement,
 #include "nsHTMLTagList.h"
 #undef HTML_TAG
-#undef HTML_HTMLELEMENT_TAG
 #undef HTML_OTHER
   NS_NewHTMLUnknownElement
 };
@@ -123,8 +115,6 @@ public:
 
   HTMLContentSink();
 
-  NS_DECL_AND_IMPL_ZEROING_OPERATOR_NEW
-
   nsresult Init(nsIDocument* aDoc, nsIURI* aURI, nsISupports* aContainer,
                 nsIChannel* aChannel);
 
@@ -139,8 +129,8 @@ public:
   NS_IMETHOD WillInterrupt(void) override;
   NS_IMETHOD WillResume(void) override;
   NS_IMETHOD SetParser(nsParserBase* aParser) override;
-  virtual void FlushPendingNotifications(mozFlushType aType) override;
-  NS_IMETHOD SetDocumentCharset(nsACString& aCharset) override;
+  virtual void FlushPendingNotifications(FlushType aType) override;
+  virtual void SetDocumentCharset(NotNull<const Encoding*> aEncoding) override;
   virtual nsISupports *GetTarget() override;
   virtual bool IsScriptExecuting() override;
 
@@ -185,8 +175,7 @@ protected:
   void UpdateChildCounts() override;
 
   void NotifyInsert(nsIContent* aContent,
-                    nsIContent* aChildContent,
-                    int32_t aIndexInContainer);
+                    nsIContent* aChildContent);
   void NotifyRootInsertion();
 };
 
@@ -236,40 +225,15 @@ public:
 
 nsresult
 NS_NewHTMLElement(Element** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
-                  FromParser aFromParser, const nsAString* aIs)
+                  FromParser aFromParser, nsAtom* aIsAtom,
+                  mozilla::dom::CustomElementDefinition* aDefinition)
 {
-  *aResult = nullptr;
-
   RefPtr<mozilla::dom::NodeInfo> nodeInfo = aNodeInfo;
 
-  nsIParserService* parserService = nsContentUtils::GetParserService();
-  if (!parserService)
-    return NS_ERROR_OUT_OF_MEMORY;
-
-  nsIAtom *name = nodeInfo->NameAtom();
-
   NS_ASSERTION(nodeInfo->NamespaceEquals(kNameSpaceID_XHTML),
-               "Trying to HTML elements that don't have the XHTML namespace");
+               "Trying to create HTML elements that don't have the XHTML namespace");
 
-  // Per the Custom Element specification, unknown tags that are valid custom
-  // element names should be HTMLElement instead of HTMLUnknownElement.
-  int32_t tag = parserService->HTMLCaseSensitiveAtomTagToId(name);
-  if ((tag == eHTMLTag_userdefined &&
-      nsContentUtils::IsCustomElementName(name)) ||
-      aIs) {
-    NS_IF_ADDREF(*aResult = NS_NewHTMLElement(nodeInfo.forget(), aFromParser));
-    if (!*aResult) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-
-    nsContentUtils::SetupCustomElement(*aResult, aIs);
-
-    return NS_OK;
-  }
-
-  *aResult = CreateHTMLElement(tag,
-                               nodeInfo.forget(), aFromParser).take();
-  return *aResult ? NS_OK : NS_ERROR_OUT_OF_MEMORY;
+  return nsContentUtils::NewXULOrHTMLElement(aResult, nodeInfo, aFromParser, aIsAtom, aDefinition);
 }
 
 already_AddRefed<nsGenericHTMLElement>
@@ -281,7 +245,7 @@ CreateHTMLElement(uint32_t aNodeType,
                aNodeType == eHTMLTag_userdefined,
                "aNodeType is out of bounds");
 
-  contentCreatorCallback cb = sContentCreatorCallbacks[aNodeType];
+  HTMLContentCreatorFunction cb = sHTMLContentCreatorFunctions[aNodeType];
 
   NS_ASSERTION(cb != NS_NewHTMLNOTUSEDElement,
                "Don't know how to construct tag element!");
@@ -364,10 +328,7 @@ SinkContext::DidAddContent(nsIContent* aContent)
       mStack[mStackPos - 1].mNumFlushed <
       mStack[mStackPos - 1].mContent->GetChildCount()) {
     nsIContent* parent = mStack[mStackPos - 1].mContent;
-    int32_t childIndex = mStack[mStackPos - 1].mInsertionPoint - 1;
-    NS_ASSERTION(parent->GetChildAt(childIndex) == aContent,
-                 "Flushing the wrong child.");
-    mSink->NotifyInsert(parent, aContent, childIndex);
+    mSink->NotifyInsert(parent, aContent);
     mStack[mStackPos - 1].mNumFlushed = parent->GetChildCount();
   } else if (mSink->IsTimeToNotify()) {
     FlushTags();
@@ -394,7 +355,7 @@ SinkContext::OpenBody()
     RefPtr<mozilla::dom::NodeInfo> nodeInfo =
       mSink->mNodeInfoManager->GetNodeInfo(nsGkAtoms::body, nullptr,
                                            kNameSpaceID_XHTML,
-                                           nsIDOMNode::ELEMENT_NODE);
+                                           nsINode::ELEMENT_NODE);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_UNEXPECTED);
 
   // Make the content object
@@ -432,7 +393,9 @@ SinkContext::Node::Add(nsIContent *child)
   if (mInsertionPoint != -1) {
     NS_ASSERTION(mNumFlushed == mContent->GetChildCount(),
                  "Inserting multiple children without flushing.");
-    mContent->InsertChildAt(child, mInsertionPoint++, false);
+    nsCOMPtr<nsIContent> nodeToInsertBefore =
+      mContent->GetChildAt_Deprecated(mInsertionPoint++);
+    mContent->InsertChildBefore(child, nodeToInsertBefore, false);
   } else {
     mContent->AppendChildTo(child, false);
   }
@@ -559,12 +522,12 @@ SinkContext::FlushTags()
           // directly from its parent node.
 
           int32_t childIndex = mStack[stackPos].mInsertionPoint - 1;
-          nsIContent* child = content->GetChildAt(childIndex);
+          nsIContent* child = content->GetChildAt_Deprecated(childIndex);
           // Child not on stack anymore; can't assert it's correct
           NS_ASSERTION(!(mStackPos > (stackPos + 1)) ||
                        (child == mStack[stackPos + 1].mContent),
                        "Flushing the wrong child.");
-          mSink->NotifyInsert(content, child, childIndex);
+          mSink->NotifyInsert(content, child);
         } else {
           mSink->NotifyAppend(content, mStack[stackPos].mNumFlushed);
         }
@@ -633,8 +596,12 @@ NS_NewHTMLContentSink(nsIHTMLContentSink** aResult,
 }
 
 HTMLContentSink::HTMLContentSink()
+  : mMaxTextRun(0)
+  , mCurrentContext(nullptr)
+  , mHeadContext(nullptr)
+  , mHaveSeenHead(false)
+  , mNotifiedRootInsertion(false)
 {
-  // Note: operator new zeros our memory
 }
 
 HTMLContentSink::~HTMLContentSink()
@@ -672,31 +639,16 @@ HTMLContentSink::~HTMLContentSink()
   delete mHeadContext;
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLContentSink)
+NS_IMPL_CYCLE_COLLECTION_INHERITED(HTMLContentSink, nsContentSink,
+                                   mHTMLDocument,
+                                   mRoot,
+                                   mBody,
+                                   mHead)
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLContentSink, nsContentSink)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mHTMLDocument)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mRoot)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mBody)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mHead)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLContentSink,
-                                                  nsContentSink)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mHTMLDocument)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRoot)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mBody)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mHead)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(HTMLContentSink)
-  NS_INTERFACE_TABLE_BEGIN
-    NS_INTERFACE_TABLE_ENTRY(HTMLContentSink, nsIContentSink)
-    NS_INTERFACE_TABLE_ENTRY(HTMLContentSink, nsIHTMLContentSink)
-  NS_INTERFACE_TABLE_END
-NS_INTERFACE_TABLE_TAIL_INHERITING(nsContentSink)
-
-NS_IMPL_ADDREF_INHERITED(HTMLContentSink, nsContentSink)
-NS_IMPL_RELEASE_INHERITED(HTMLContentSink, nsContentSink)
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(HTMLContentSink,
+                                             nsContentSink,
+                                             nsIContentSink,
+                                             nsIHTMLContentSink)
 
 nsresult
 HTMLContentSink::Init(nsIDocument* aDoc,
@@ -724,7 +676,7 @@ HTMLContentSink::Init(nsIDocument* aDoc,
   RefPtr<mozilla::dom::NodeInfo> nodeInfo;
   nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::html, nullptr,
                                            kNameSpaceID_XHTML,
-                                           nsIDOMNode::ELEMENT_NODE);
+                                           nsINode::ELEMENT_NODE);
 
   // Make root part
   mRoot = NS_NewHTMLHtmlElement(nodeInfo.forget());
@@ -740,7 +692,7 @@ HTMLContentSink::Init(nsIDocument* aDoc,
   // Make head part
   nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::head,
                                            nullptr, kNameSpaceID_XHTML,
-                                           nsIDOMNode::ELEMENT_NODE);
+                                           nsINode::ELEMENT_NODE);
 
   mHead = NS_NewHTMLHeadElement(nodeInfo.forget());
   if (NS_FAILED(rv)) {
@@ -895,7 +847,7 @@ HTMLContentSink::OpenBody()
     uint32_t oldUpdates = mUpdatesInNotification;
     mUpdatesInNotification = 0;
     if (insertionPoint != -1) {
-      NotifyInsert(parent, mBody, insertionPoint - 1);
+      NotifyInsert(parent, mBody);
     } else {
       NotifyAppend(parent, numFlushed);
     }
@@ -993,8 +945,7 @@ HTMLContentSink::CloseHeadContext()
 
 void
 HTMLContentSink::NotifyInsert(nsIContent* aContent,
-                              nsIContent* aChildContent,
-                              int32_t aIndexInContainer)
+                              nsIContent* aChildContent)
 {
   if (aContent && aContent->GetUncomposedDoc() != mDocument) {
     // aContent is not actually in our document anymore.... Just bail out of
@@ -1008,7 +959,7 @@ HTMLContentSink::NotifyInsert(nsIContent* aContent,
     // Scope so we call EndUpdate before we decrease mInNotification
     MOZ_AUTO_DOC_UPDATE(mDocument, UPDATE_CONTENT_MODEL, !mBeganUpdate);
     nsNodeUtils::ContentInserted(NODE_FROM(aContent, mDocument),
-                                 aChildContent, aIndexInContainer);
+                                 aChildContent);
     mLastNotificationTime = PR_Now();
   }
 
@@ -1029,9 +980,7 @@ HTMLContentSink::NotifyRootInsertion()
   // document; in those cases we just want to put all the attrs on one
   // tag.
   mNotifiedRootInsertion = true;
-  int32_t index = mDocument->IndexOf(mRoot);
-  NS_ASSERTION(index != -1, "mRoot not child of document?");
-  NotifyInsert(nullptr, mRoot, index);
+  NotifyInsert(nullptr, mRoot);
 
   // Now update the notification information in all our
   // contexts, since we just inserted the root and notified on
@@ -1053,7 +1002,7 @@ HTMLContentSink::UpdateChildCounts()
 }
 
 void
-HTMLContentSink::FlushPendingNotifications(mozFlushType aType)
+HTMLContentSink::FlushPendingNotifications(FlushType aType)
 {
   // Only flush tags if we're not doing the notification ourselves
   // (since we aren't reentrant)
@@ -1061,11 +1010,11 @@ HTMLContentSink::FlushPendingNotifications(mozFlushType aType)
     // Only flush if we're still a document observer (so that our child counts
     // should be correct).
     if (mIsDocumentObserver) {
-      if (aType >= Flush_ContentAndNotify) {
+      if (aType >= FlushType::ContentAndNotify) {
         FlushTags();
       }
     }
-    if (aType >= Flush_InterruptibleLayout) {
+    if (aType >= FlushType::EnsurePresShellInitAndFrames) {
       // Make sure that layout has started so that the reflow flush
       // will actually happen.
       StartLayout(true);
@@ -1084,11 +1033,10 @@ HTMLContentSink::FlushTags()
   return mCurrentContext ? mCurrentContext->FlushTags() : NS_OK;
 }
 
-NS_IMETHODIMP
-HTMLContentSink::SetDocumentCharset(nsACString& aCharset)
+void
+HTMLContentSink::SetDocumentCharset(NotNull<const Encoding*> aEncoding)
 {
   MOZ_ASSERT_UNREACHABLE("<meta charset> case doesn't occur with about:blank");
-  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 nsISupports *

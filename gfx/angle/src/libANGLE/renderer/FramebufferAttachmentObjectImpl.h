@@ -22,8 +22,14 @@ class FramebufferAttachmentObjectImpl : angle::NonCopyable
     FramebufferAttachmentObjectImpl() {}
     virtual ~FramebufferAttachmentObjectImpl() {}
 
-    virtual gl::Error getAttachmentRenderTarget(const gl::FramebufferAttachment::Target &target,
-                                                FramebufferAttachmentRenderTarget **rtOut) = 0;
+    virtual gl::Error getAttachmentRenderTarget(const gl::Context *context,
+                                                GLenum binding,
+                                                const gl::ImageIndex &imageIndex,
+                                                FramebufferAttachmentRenderTarget **rtOut)
+    {
+        UNIMPLEMENTED();
+        return gl::OutOfMemory() << "getAttachmentRenderTarget not supported.";
+    }
 };
 
 }  // namespace rx

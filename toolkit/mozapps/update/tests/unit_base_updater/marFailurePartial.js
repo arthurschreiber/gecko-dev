@@ -22,8 +22,8 @@ function run_test() {
 function setupUpdaterTestFinished() {
   // If execv is used the updater process will turn into the callback process
   // and the updater's return code will be that of the callback process.
-  runUpdate(STATE_FAILED_LOADSOURCE_ERROR_WRONG_SIZE, false,
-            (USE_EXECV ? 0 : 1), true);
+  runUpdate(STATE_FAILED_LOADSOURCE_ERROR_WRONG_SIZE, false, (USE_EXECV ? 0 : 1),
+            true);
 }
 
 /**
@@ -32,16 +32,17 @@ function setupUpdaterTestFinished() {
 function runUpdateFinished() {
   checkAppBundleModTime();
   standardInit();
-  Assert.equal(readStatusFile(), STATE_NONE,
-               "the status file failure code" + MSG_SHOULD_EQUAL);
-  Assert.equal(gUpdateManager.updateCount, 1,
-               "the update manager updateCount attribute" + MSG_SHOULD_EQUAL);
-  Assert.equal(gUpdateManager.getUpdateAt(0).state, STATE_FAILED,
-               "the update state" + MSG_SHOULD_EQUAL);
-  Assert.equal(gUpdateManager.getUpdateAt(0).errorCode, LOADSOURCE_ERROR_WRONG_SIZE,
-               "the update errorCode" + MSG_SHOULD_EQUAL);
   checkPostUpdateRunningFile(false);
   checkFilesAfterUpdateFailure(getApplyDirFile);
   checkUpdateLogContents(LOG_PARTIAL_FAILURE);
+  executeSoon(waitForUpdateXMLFiles);
+}
+
+/**
+ * Called after the call to waitForUpdateXMLFiles finishes.
+ */
+function waitForUpdateXMLFilesFinished() {
+  checkUpdateManager(STATE_NONE, false, STATE_FAILED,
+                     LOADSOURCE_ERROR_WRONG_SIZE, 1);
   checkCallbackLog();
 }

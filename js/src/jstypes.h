@@ -93,6 +93,16 @@
 #define JS_NO_FASTCALL
 #endif
 
+// gcc is buggy and warns on our attempts to JS_PUBLIC_API our
+// forward-declarations or explicit template instantiations.  See
+// <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=50044>.  Add a way to detect
+// that so we can locally disable that warning.
+#if MOZ_IS_GCC
+#  if MOZ_GCC_VERSION_AT_MOST(8, 0, 0)
+#    define JS_BROKEN_GCC_ATTRIBUTE_WARNING
+#  endif
+#endif
+
 /***********************************************************************
 ** MACROS:      JS_BEGIN_MACRO
 **              JS_END_MACRO

@@ -24,7 +24,7 @@ function setup() {
 
       aResolve(receiverIframe);
     });
-    obs.notifyObservers(promise, 'setup-request-promise', null);
+    obs.notifyObservers(promise, 'setup-request-promise');
 
     aResolve();
   });
@@ -82,6 +82,7 @@ SpecialPowers.pushPermissions([
                                       ["dom.presentation.receiver.enabled", true],
                                       ['dom.presentation.session_transport.data_channel.enable', false],
                                       ['dom.mozBrowserFramesEnabled', true],
+                                      ["network.disable.ipc.security", true],
                                       ['dom.ipc.tabs.disabled', false]]},
                             runTests);
 });

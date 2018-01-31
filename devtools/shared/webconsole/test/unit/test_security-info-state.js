@@ -6,8 +6,8 @@
 // Tests that security info parser gives correct general security state for
 // different cases.
 
-const { require } = Components.utils.import("resource://devtools/shared/Loader.jsm", {});
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 Object.defineProperty(this, "NetworkHelper", {
   get: function () {
@@ -26,7 +26,8 @@ const MockSecurityInfo = {
   securityState: wpl.STATE_IS_BROKEN,
   errorCode: 0,
   SSLStatus: {
-    protocolVersion: 3, // nsISSLStatus.TLS_VERSION_1_2
+    // nsISSLStatus.TLS_VERSION_1_2
+    protocolVersion: 3,
     cipherSuite: "TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256",
   }
 };

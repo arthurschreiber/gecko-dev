@@ -3,41 +3,42 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const Cc = Components.classes;
-const Ci = Components.interfaces;
-const Cu = Components.utils;
+const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Messaging.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Messaging.jsm");
 const {
   PushCrypto,
   getCryptoParams,
-} = Cu.import("resource://gre/modules/PushCrypto.jsm");
+} = ChromeUtils.import("resource://gre/modules/PushCrypto.jsm", {});
 
 XPCOMUtils.defineLazyServiceGetter(this, "PushService",
   "@mozilla.org/push/Service;1", "nsIPushService");
 XPCOMUtils.defineLazyGetter(this, "_decoder", () => new TextDecoder());
 
 const FXA_PUSH_SCOPE = "chrome://fxa-push";
-const Log = Cu.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.bind("FxAccountsPush");
+const Log = ChromeUtils.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.bind("FxAccountsPush");
 
 function FxAccountsPush() {
-  Services.obs.addObserver(this, "FxAccountsPush:ReceivedPushMessageToDecode", false);
+  Services.obs.addObserver(this, "FxAccountsPush:ReceivedPushMessageToDecode");
 
-  Messaging.sendRequestForResult({
+  EventDispatcher.instance.sendRequestForResult({
     type: "FxAccountsPush:Initialized"
   });
 }
 
 FxAccountsPush.prototype = {
-  observe: function (subject, topic, data) {
+  observe: function(subject, topic, data) {
     switch (topic) {
       case "android-push-service":
         if (data === "android-fxa-subscribe") {
           this._subscribe();
         } else if (data === "android-fxa-unsubscribe") {
           this._unsubscribe();
+        } else if (data === "android-fxa-resubscribe") {
+          // If unsubscription fails, we still want to try to subscribe.
+          this._unsubscribe().then(this._subscribe, this._subscribe);
         }
         break;
       case "FxAccountsPush:ReceivedPushMessageToDecode":
@@ -57,22 +58,28 @@ FxAccountsPush.prototype = {
             resolve(subscription);
           } else {
             Log.w("FxAccountsPush failed to subscribe", result);
-            reject(new Error("FxAccountsPush failed to subscribe"));
+            const err = new Error("FxAccountsPush failed to subscribe");
+            err.result = result;
+            reject(err);
           }
         });
     })
     .then(subscription => {
-      Messaging.sendRequest({
+      EventDispatcher.instance.sendRequest({
         type: "FxAccountsPush:Subscribe:Response",
         subscription: {
           pushCallback: subscription.endpoint,
-          pushPublicKey: urlsafeBase64Encode(subscription.getKey('p256dh')),
-          pushAuthKey: urlsafeBase64Encode(subscription.getKey('auth'))
+          pushPublicKey: urlsafeBase64Encode(subscription.getKey("p256dh")),
+          pushAuthKey: urlsafeBase64Encode(subscription.getKey("auth"))
         }
       });
     })
     .catch(err => {
       Log.i("Error when registering FxA push endpoint " + err);
+      EventDispatcher.instance.sendRequest({
+        type: "FxAccountsPush:Subscribe:Response",
+        error: err.result.toString() // Convert to string because the GeckoBundle can't getLong();
+      });
     });
   },
 
@@ -101,7 +108,7 @@ FxAccountsPush.prototype = {
   _decodePushMessage(data) {
     Log.i("FxAccountsPush _decodePushMessage");
     data = JSON.parse(data);
-    let { message, cryptoParams } = this._messageAndCryptoParams(data);
+    let { headers, message } = this._messageAndHeaders(data);
     return new Promise((resolve, reject) => {
       PushService.getSubscription(FXA_PUSH_SCOPE,
         Services.scriptSecurityManager.getSystemPrincipal(),
@@ -112,23 +119,14 @@ FxAccountsPush.prototype = {
           return resolve(subscription);
         });
     }).then(subscription => {
-      if (!cryptoParams) {
-        return new Uint8Array();
-      }
-      return PushCrypto.decodeMsg(
-        message,
-        subscription.p256dhPrivateKey,
-        new Uint8Array(subscription.getKey("p256dh")),
-        cryptoParams.dh,
-        cryptoParams.salt,
-        cryptoParams.rs,
-        new Uint8Array(subscription.getKey("auth")),
-        cryptoParams.padSize
-      );
+      return PushCrypto.decrypt(subscription.p256dhPrivateKey,
+                                new Uint8Array(subscription.getKey("p256dh")),
+                                new Uint8Array(subscription.getKey("auth")),
+                                headers, message);
     })
-    .then(decryptedMessage => {
-      decryptedMessage = _decoder.decode(decryptedMessage);
-      Messaging.sendRequestForResult({
+    .then(plaintext => {
+      let decryptedMessage = plaintext ? _decoder.decode(plaintext) : "";
+      EventDispatcher.instance.sendRequestForResult({
         type: "FxAccountsPush:ReceivedPushMessageToDecode:Response",
         message: decryptedMessage
       });
@@ -139,26 +137,25 @@ FxAccountsPush.prototype = {
   },
 
   // Copied from PushServiceAndroidGCM
-  _messageAndCryptoParams(data) {
+  _messageAndHeaders(data) {
     // Default is no data (and no encryption).
     let message = null;
-    let cryptoParams = null;
+    let headers = null;
 
     if (data.message && data.enc && (data.enckey || data.cryptokey)) {
-      let headers = {
+      headers = {
         encryption_key: data.enckey,
         crypto_key: data.cryptokey,
         encryption: data.enc,
         encoding: data.con,
       };
-      cryptoParams = getCryptoParams(headers);
       // Ciphertext is (urlsafe) Base 64 encoded.
       message = ChromeUtils.base64URLDecode(data.message, {
         // The Push server may append padding.
         padding: "ignore",
       });
     }
-    return { message, cryptoParams };
+    return { headers, message };
   },
 
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIObserver]),

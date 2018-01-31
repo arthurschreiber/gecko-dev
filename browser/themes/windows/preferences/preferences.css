@@ -5,6 +5,29 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 */
 
+/* Pref Window & Pane */
+.prefwindow {
+  padding: 0px;
+}
+
+.prefwindow[type="child"] {
+  padding-top: 8px;
+  padding-bottom: 10px;
+  padding-inline-start: 8px;
+  padding-inline-end: 10px;
+}
+
+.prefpane {
+  padding-top: 8px;
+  padding-bottom: 10px;
+  padding-inline-start: 8px;
+  padding-inline-end: 10px;
+}
+
+.prefwindow[type="child"] > .prefpane {
+  padding: 0px;
+}
+
 /* General Pane */
 
 #useFirefoxSync,
@@ -23,8 +46,7 @@
 }
 
 /* Modeless Window Dialogs */
-.windowDialog,
-.windowDialog prefpane {
+.windowDialog {
   padding: 0;
 }
 
@@ -41,7 +63,7 @@
   width: 16px;
   height: 16px;
   margin: 0 2px;
-  list-style-image: url("chrome://mozapps/skin/places/defaultFavicon.png") !important;
+  list-style-image: url("chrome://mozapps/skin/places/defaultFavicon.svg") !important;
 }
 
 #cookiesChildren::-moz-tree-image(domainCol, container) {
@@ -62,12 +84,6 @@
 
 /* Advanced Pane */
 
-/* Adding padding-bottom prevents the bottom of the tabpanel from being cutoff
-   when browser.preferences.animateFadeIn = true */
-#advancedPrefs {
-  padding-bottom: 8px;
-}
-
 /* bottom-most box containing a groupbox in a prefpane. Prevents the bottom
    of the groupbox from being cutoff */
 .bottomBox {
@@ -76,25 +92,7 @@
 
 /* Sync Pane */
 
-#syncDesc {
-  padding: 0 8em;
-}
-
-.syncGroupBox {
-  padding: 10px;
-}
-
-#accountCaptionImage {
-  list-style-image: url("chrome://mozapps/skin/profile/profileicon.png");
-}
-
-#syncAddDeviceLabel {
-  margin-top: 1em;
-  margin-bottom: 1em;
-}
-
 #noFxaAccount {
-  margin: 6px;
   line-height: 1.2em;
 }
 

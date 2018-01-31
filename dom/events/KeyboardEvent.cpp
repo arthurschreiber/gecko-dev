@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/KeyboardEvent.h"
 #include "mozilla/TextEvents.h"
+#include "nsContentUtils.h"
 #include "prtime.h"
 
 namespace mozilla {
@@ -38,9 +39,18 @@ NS_INTERFACE_MAP_BEGIN(KeyboardEvent)
 NS_INTERFACE_MAP_END_INHERITING(UIEvent)
 
 bool
-KeyboardEvent::AltKey()
+KeyboardEvent::AltKey(CallerType aCallerType)
 {
-  return mEvent->AsKeyboardEvent()->IsAlt();
+  bool altState = mEvent->AsKeyboardEvent()->IsAlt();
+
+  if (!ShouldResistFingerprinting(aCallerType)) {
+    return altState;
+  }
+
+  // We need to give a spoofed state for Alt key since it could be used as a
+  // modifier key in certain keyboard layout. For example, the '@' key for
+  // German keyboard for MAC is Alt+L.
+  return GetSpoofedModifierStates(Modifier::MODIFIER_ALT, altState);
 }
 
 NS_IMETHODIMP
@@ -52,9 +62,17 @@ KeyboardEvent::GetAltKey(bool* aIsDown)
 }
 
 bool
-KeyboardEvent::CtrlKey()
+KeyboardEvent::CtrlKey(CallerType aCallerType)
 {
-  return mEvent->AsKeyboardEvent()->IsControl();
+  bool ctrlState = mEvent->AsKeyboardEvent()->IsControl();
+
+  if (!ShouldResistFingerprinting(aCallerType)) {
+    return ctrlState;
+  }
+
+  // We need to give a spoofed state for Control key since it could be used as a
+  // modifier key in certain asian keyboard layouts.
+  return GetSpoofedModifierStates(Modifier::MODIFIER_CONTROL, ctrlState);
 }
 
 NS_IMETHODIMP
@@ -66,9 +84,15 @@ KeyboardEvent::GetCtrlKey(bool* aIsDown)
 }
 
 bool
-KeyboardEvent::ShiftKey()
+KeyboardEvent::ShiftKey(CallerType aCallerType)
 {
-  return mEvent->AsKeyboardEvent()->IsShift();
+  bool shiftState = mEvent->AsKeyboardEvent()->IsShift();
+
+  if (!ShouldResistFingerprinting(aCallerType)) {
+    return shiftState;
+  }
+
+  return GetSpoofedModifierStates(Modifier::MODIFIER_SHIFT, shiftState);
 }
 
 NS_IMETHODIMP
@@ -131,9 +155,19 @@ KeyboardEvent::GetKey(nsAString& aKeyName)
 }
 
 void
-KeyboardEvent::GetCode(nsAString& aCodeName)
+KeyboardEvent::GetCode(nsAString& aCodeName, CallerType aCallerType)
 {
-  mEvent->AsKeyboardEvent()->GetDOMCodeName(aCodeName);
+  if (!ShouldResistFingerprinting(aCallerType)) {
+    mEvent->AsKeyboardEvent()->GetDOMCodeName(aCodeName);
+    return;
+  }
+
+  // When fingerprinting resistance is enabled, we will give a spoofed code
+  // according to the content-language of the document.
+  nsCOMPtr<nsIDocument> doc = GetDocument();
+
+  nsRFPService::GetSpoofedCode(doc, mEvent->AsKeyboardEvent(),
+                               aCodeName);
 }
 
 void KeyboardEvent::GetInitDict(KeyboardEventInit& aParam)
@@ -188,14 +222,10 @@ KeyboardEvent::CharCode()
   }
 
   switch (mEvent->mMessage) {
-  case eBeforeKeyDown:
   case eKeyDown:
   case eKeyDownOnPlugin:
-  case eAfterKeyDown:
-  case eBeforeKeyUp:
   case eKeyUp:
   case eKeyUpOnPlugin:
-  case eAfterKeyUp:
     return 0;
   case eKeyPress:
   case eAccessKeyNotFound:
@@ -215,16 +245,36 @@ KeyboardEvent::GetKeyCode(uint32_t* aKeyCode)
 }
 
 uint32_t
-KeyboardEvent::KeyCode()
+KeyboardEvent::KeyCode(CallerType aCallerType)
 {
   // If this event is initialized with ctor, we shouldn't check event type.
   if (mInitializedByCtor) {
     return mEvent->AsKeyboardEvent()->mKeyCode;
   }
 
-  if (mEvent->HasKeyEventMessage()) {
+  if (!mEvent->HasKeyEventMessage()) {
+    return 0;
+  }
+
+  if (!ShouldResistFingerprinting(aCallerType)) {
     return mEvent->AsKeyboardEvent()->mKeyCode;
   }
+
+  // The keyCode should be zero if the char code is given.
+  if (CharCode()) {
+    return 0;
+  }
+
+  // When fingerprinting resistance is enabled, we will give a spoofed keyCode
+  // according to the content-language of the document.
+  nsCOMPtr<nsIDocument> doc = GetDocument();
+  uint32_t spoofedKeyCode;
+
+  if (nsRFPService::GetSpoofedKeyCode(doc, mEvent->AsKeyboardEvent(),
+                                      spoofedKeyCode)) {
+    return spoofedKeyCode;
+  }
+
   return 0;
 }
 
@@ -237,14 +287,10 @@ KeyboardEvent::Which()
   }
 
   switch (mEvent->mMessage) {
-    case eBeforeKeyDown:
     case eKeyDown:
     case eKeyDownOnPlugin:
-    case eAfterKeyDown:
-    case eBeforeKeyUp:
     case eKeyUp:
     case eKeyUpOnPlugin:
-    case eAfterKeyUp:
       return KeyCode();
     case eKeyPress:
       //Special case for 4xp bug 62878.  Try to make value of which
@@ -337,6 +383,8 @@ KeyboardEvent::InitKeyEvent(const nsAString& aType,
                             uint32_t aKeyCode,
                             uint32_t aCharCode)
 {
+  NS_ENSURE_TRUE(!mEvent->mFlags.mIsBeingDispatched, NS_OK);
+
   UIEvent::InitUIEvent(aType, aCanBubble, aCancelable, aView, 0);
 
   WidgetKeyboardEvent* keyEvent = mEvent->AsKeyboardEvent();
@@ -345,6 +393,89 @@ KeyboardEvent::InitKeyEvent(const nsAString& aType,
   keyEvent->mCharCode = aCharCode;
 
   return NS_OK;
+}
+
+void
+KeyboardEvent::InitKeyboardEvent(const nsAString& aType,
+                                 bool aCanBubble,
+                                 bool aCancelable,
+                                 nsGlobalWindowInner* aView,
+                                 const nsAString& aKey,
+                                 uint32_t aLocation,
+                                 bool aCtrlKey,
+                                 bool aAltKey,
+                                 bool aShiftKey,
+                                 bool aMetaKey,
+                                 ErrorResult& aRv)
+{
+  NS_ENSURE_TRUE_VOID(!mEvent->mFlags.mIsBeingDispatched);
+
+  UIEvent::InitUIEvent(aType, aCanBubble, aCancelable, aView, 0);
+
+  WidgetKeyboardEvent* keyEvent = mEvent->AsKeyboardEvent();
+  keyEvent->InitBasicModifiers(aCtrlKey, aAltKey, aShiftKey, aMetaKey);
+  keyEvent->mLocation = aLocation;
+  keyEvent->mKeyNameIndex = KEY_NAME_INDEX_USE_STRING;
+  keyEvent->mKeyValue = aKey;
+}
+
+already_AddRefed<nsIDocument>
+KeyboardEvent::GetDocument()
+{
+  nsCOMPtr<nsIDocument> doc;
+  nsCOMPtr<EventTarget> eventTarget = InternalDOMEvent()->GetTarget();
+
+  if (eventTarget) {
+    nsCOMPtr<nsPIDOMWindowInner> win =
+      do_QueryInterface(eventTarget->GetOwnerGlobal());
+
+    if (win) {
+      doc = win->GetExtantDoc();
+    }
+  }
+
+  return doc.forget();
+}
+
+bool
+KeyboardEvent::ShouldResistFingerprinting(CallerType aCallerType)
+{
+  // There are five situations we don't need to spoof this keyboard event.
+  //   1. This event is generated by scripts.
+  //   2. This event is from Numpad.
+  //   3. This event is in the system group.
+  //   4. The caller type is system.
+  //   5. The pref privcy.resistFingerprinting' is false, we fast return here since
+  //      we don't need to do any QI of following codes.
+  if (mInitializedByCtor ||
+      aCallerType == CallerType::System ||
+      mEvent->mFlags.mInSystemGroup ||
+      !nsContentUtils::ShouldResistFingerprinting() ||
+      mEvent->AsKeyboardEvent()->mLocation ==
+        nsIDOMKeyEvent::DOM_KEY_LOCATION_NUMPAD) {
+    return false;
+  }
+
+  nsCOMPtr<nsIDocument> doc = GetDocument();
+
+  return doc && !nsContentUtils::IsChromeDoc(doc);
+}
+
+bool
+KeyboardEvent::GetSpoofedModifierStates(const Modifiers aModifierKey,
+                                        const bool aRawModifierState)
+{
+  bool spoofedState;
+  nsCOMPtr<nsIDocument> doc = GetDocument();
+
+  if(nsRFPService::GetSpoofedModifierStates(doc,
+                                            mEvent->AsKeyboardEvent(),
+                                            aModifierKey,
+                                            spoofedState)) {
+    return spoofedState;
+  }
+
+  return aRawModifierState;
 }
 
 } // namespace dom

@@ -4,9 +4,7 @@
 
 const LIST_UPDATED_TOPIC     = "plugins-list-updated";
 
-// We need to use the same algorithm for generating IDs for plugins
-var { getIDHashForString } = Components.utils.import("resource://gre/modules/addons/PluginProvider.jsm");
-var { MockRegistrar } = Components.utils.import("resource://testing-common/MockRegistrar.jsm");
+var { MockRegistrar } = ChromeUtils.import("resource://testing-common/MockRegistrar.jsm", {});
 
 function PluginTag(name, description) {
   this.name = name;
@@ -25,7 +23,7 @@ PluginTag.prototype = {
 
   mimeTypes: [],
 
-  getMimeTypes: function(count) {
+  getMimeTypes(count) {
     count.value = this.mimeTypes.length;
     return this.mimeTypes;
   }
@@ -42,7 +40,7 @@ const PLUGINS = [
 
 const gPluginHost = {
   // nsIPluginHost
-  getPluginTags: function(count) {
+  getPluginTags(count) {
     count.value = PLUGINS.length;
     return PLUGINS;
   },
@@ -68,7 +66,7 @@ function run_test() {
 }
 
 function end_test() {
-  do_execute_soon(do_test_finished);
+  executeSoon(do_test_finished);
 }
 
 function sortAddons(addons) {
@@ -82,12 +80,12 @@ function run_test_1() {
   AddonManager.getAddonsByTypes(["plugin"], function(addons) {
     sortAddons(addons);
 
-    do_check_eq(addons.length, 2);
+    Assert.equal(addons.length, 2);
 
-    do_check_eq(addons[0].name, "Flash");
-    do_check_false(addons[0].userDisabled);
-    do_check_eq(addons[1].name, "Java");
-    do_check_false(addons[1].userDisabled);
+    Assert.equal(addons[0].name, "Flash");
+    Assert.ok(!addons[0].userDisabled);
+    Assert.equal(addons[1].name, "Java");
+    Assert.ok(!addons[1].userDisabled);
 
     run_test_2();
   });
@@ -101,17 +99,17 @@ function run_test_2() {
   PLUGINS[2] = PLUGINS[1];
   PLUGINS[1] = tag;
 
-  Services.obs.notifyObservers(null, LIST_UPDATED_TOPIC, null);
+  Services.obs.notifyObservers(null, LIST_UPDATED_TOPIC);
 
   AddonManager.getAddonsByTypes(["plugin"], function(addons) {
     sortAddons(addons);
 
-    do_check_eq(addons.length, 2);
+    Assert.equal(addons.length, 2);
 
-    do_check_eq(addons[0].name, "Flash");
-    do_check_false(addons[0].userDisabled);
-    do_check_eq(addons[1].name, "Java");
-    do_check_false(addons[1].userDisabled);
+    Assert.equal(addons[0].name, "Flash");
+    Assert.ok(!addons[0].userDisabled);
+    Assert.equal(addons[1].name, "Java");
+    Assert.ok(!addons[1].userDisabled);
 
     run_test_3();
   });
@@ -121,7 +119,7 @@ function run_test_2() {
 function run_test_3() {
   let tag = new PluginTag("Quicktime", "A mock Quicktime plugin");
   PLUGINS.push(tag);
-  let id = getIDHashForString(tag.name + tag.description);
+  let id = tag.name + tag.description;
 
   let test_params = {};
   test_params[id] = [
@@ -133,21 +131,21 @@ function run_test_3() {
     "onExternalInstall"
   ]);
 
-  Services.obs.notifyObservers(null, LIST_UPDATED_TOPIC, null);
+  Services.obs.notifyObservers(null, LIST_UPDATED_TOPIC);
 
   ensure_test_completed();
 
   AddonManager.getAddonsByTypes(["plugin"], function(addons) {
     sortAddons(addons);
 
-    do_check_eq(addons.length, 3);
+    Assert.equal(addons.length, 3);
 
-    do_check_eq(addons[0].name, "Flash");
-    do_check_false(addons[0].userDisabled);
-    do_check_eq(addons[1].name, "Java");
-    do_check_false(addons[1].userDisabled);
-    do_check_eq(addons[2].name, "Quicktime");
-    do_check_false(addons[2].userDisabled);
+    Assert.equal(addons[0].name, "Flash");
+    Assert.ok(!addons[0].userDisabled);
+    Assert.equal(addons[1].name, "Java");
+    Assert.ok(!addons[1].userDisabled);
+    Assert.equal(addons[2].name, "Quicktime");
+    Assert.ok(!addons[2].userDisabled);
 
     run_test_4();
   });
@@ -156,7 +154,7 @@ function run_test_3() {
 // Tests that a removed plugin disappears from in the API and sends out events
 function run_test_4() {
   let tag = PLUGINS.splice(1, 1)[0];
-  let id = getIDHashForString(tag.name + tag.description);
+  let id = tag.name + tag.description;
 
   let test_params = {};
   test_params[id] = [
@@ -166,19 +164,19 @@ function run_test_4() {
 
   prepare_test(test_params);
 
-  Services.obs.notifyObservers(null, LIST_UPDATED_TOPIC, null);
+  Services.obs.notifyObservers(null, LIST_UPDATED_TOPIC);
 
   ensure_test_completed();
 
   AddonManager.getAddonsByTypes(["plugin"], function(addons) {
     sortAddons(addons);
 
-    do_check_eq(addons.length, 2);
+    Assert.equal(addons.length, 2);
 
-    do_check_eq(addons[0].name, "Flash");
-    do_check_false(addons[0].userDisabled);
-    do_check_eq(addons[1].name, "Quicktime");
-    do_check_false(addons[1].userDisabled);
+    Assert.equal(addons[0].name, "Flash");
+    Assert.ok(!addons[0].userDisabled);
+    Assert.equal(addons[1].name, "Quicktime");
+    Assert.ok(!addons[1].userDisabled);
 
     run_test_5();
   });
@@ -188,19 +186,19 @@ function run_test_4() {
 function run_test_5() {
   PLUGINS.splice(0, 1);
 
-  Services.obs.notifyObservers(null, LIST_UPDATED_TOPIC, null);
+  Services.obs.notifyObservers(null, LIST_UPDATED_TOPIC);
 
   ensure_test_completed();
 
   AddonManager.getAddonsByTypes(["plugin"], function(addons) {
     sortAddons(addons);
 
-    do_check_eq(addons.length, 2);
+    Assert.equal(addons.length, 2);
 
-    do_check_eq(addons[0].name, "Flash");
-    do_check_false(addons[0].userDisabled);
-    do_check_eq(addons[1].name, "Quicktime");
-    do_check_false(addons[1].userDisabled);
+    Assert.equal(addons[0].name, "Flash");
+    Assert.ok(!addons[0].userDisabled);
+    Assert.equal(addons[1].name, "Quicktime");
+    Assert.ok(!addons[1].userDisabled);
 
     run_test_6();
   });
@@ -214,11 +212,11 @@ function run_test_6() {
   PLUGINS.push(newTag);
 
   let test_params = {};
-  test_params[getIDHashForString(oldTag.name + oldTag.description)] = [
+  test_params[oldTag.name + oldTag.description] = [
     ["onUninstalling", false],
     "onUninstalled"
   ];
-  test_params[getIDHashForString(newTag.name + newTag.description)] = [
+  test_params[newTag.name + newTag.description] = [
     ["onInstalling", false],
     "onInstalled"
   ];
@@ -227,19 +225,19 @@ function run_test_6() {
     "onExternalInstall"
   ]);
 
-  Services.obs.notifyObservers(null, LIST_UPDATED_TOPIC, null);
+  Services.obs.notifyObservers(null, LIST_UPDATED_TOPIC);
 
   ensure_test_completed();
 
   AddonManager.getAddonsByTypes(["plugin"], function(addons) {
     sortAddons(addons);
 
-    do_check_eq(addons.length, 2);
+    Assert.equal(addons.length, 2);
 
-    do_check_eq(addons[0].name, "Flash 2");
-    do_check_true(addons[0].userDisabled);
-    do_check_eq(addons[1].name, "Quicktime");
-    do_check_false(addons[1].userDisabled);
+    Assert.equal(addons[0].name, "Flash 2");
+    Assert.ok(addons[0].userDisabled);
+    Assert.equal(addons[1].name, "Quicktime");
+    Assert.ok(!addons[1].userDisabled);
 
     run_test_7();
   });
@@ -253,30 +251,30 @@ function run_test_7() {
   PLUGINS[1] = new PluginTag("Flash 2", "A new crash-free Flash!");
 
   let test_params = {};
-  test_params[getIDHashForString(PLUGINS[0].name + PLUGINS[0].description)] = [
+  test_params[PLUGINS[0].name + PLUGINS[0].description] = [
     ["onDisabling", false],
     "onDisabled"
   ];
-  test_params[getIDHashForString(PLUGINS[1].name + PLUGINS[1].description)] = [
+  test_params[PLUGINS[1].name + PLUGINS[1].description] = [
     ["onEnabling", false],
     "onEnabled"
   ];
 
   prepare_test(test_params);
 
-  Services.obs.notifyObservers(null, LIST_UPDATED_TOPIC, null);
+  Services.obs.notifyObservers(null, LIST_UPDATED_TOPIC);
 
   ensure_test_completed();
 
   AddonManager.getAddonsByTypes(["plugin"], function(addons) {
     sortAddons(addons);
 
-    do_check_eq(addons.length, 2);
+    Assert.equal(addons.length, 2);
 
-    do_check_eq(addons[0].name, "Flash 2");
-    do_check_false(addons[0].userDisabled);
-    do_check_eq(addons[1].name, "Quicktime");
-    do_check_true(addons[1].userDisabled);
+    Assert.equal(addons[0].name, "Flash 2");
+    Assert.ok(!addons[0].userDisabled);
+    Assert.equal(addons[1].name, "Quicktime");
+    Assert.ok(addons[1].userDisabled);
 
     end_test();
   });

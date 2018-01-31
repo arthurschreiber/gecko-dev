@@ -9,10 +9,11 @@ var Cc = Components.classes;
 var Cr = Components.results;
 var Cu = Components.utils;
 
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Import common head.
 {
+  /* import-globals-from ../head_common.js */
   let commonFile = do_get_file("../head_common.js", false);
   let uri = Services.io.newFileURI(commonFile);
   Services.scriptloader.loadSubScript(uri.spec, this);

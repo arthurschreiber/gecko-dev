@@ -15,7 +15,7 @@
 #include "gmock/gmock.h"
 #include "mozilla/devtools/HeapSnapshot.h"
 #include "mozilla/dom/ChromeUtils.h"
-#include "mozilla/CycleCollectedJSRuntime.h"
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/Move.h"
 #include "js/Principals.h"
 #include "js/UbiNode.h"
@@ -60,7 +60,7 @@ struct DevTools : public ::testing::Test {
   }
 
   JSContext* getContext() {
-    return CycleCollectedJSRuntime::Get()->Context();
+    return CycleCollectedJSContext::Get()->Context();
   }
 
   static void reportError(JSContext* cx, const char* message, JSErrorReport* report) {
@@ -74,7 +74,7 @@ struct DevTools : public ::testing::Test {
     static const JSClassOps globalClassOps = {
       nullptr, nullptr, nullptr, nullptr,
       nullptr, nullptr, nullptr, nullptr,
-      nullptr, nullptr, nullptr,
+      nullptr, nullptr,
       JS_GlobalObjectTraceHook
     };
     static const JSClass globalClass = {
@@ -89,7 +89,6 @@ struct DevTools : public ::testing::Test {
     /* Create the global object. */
     JS::RootedObject newGlobal(cx);
     JS::CompartmentOptions options;
-    options.behaviors().setVersion(JSVERSION_LATEST);
     newGlobal = JS_NewGlobalObject(cx, getGlobalClass(), nullptr,
                                    JS::FireOnNewGlobalHook, options);
     if (!newGlobal)

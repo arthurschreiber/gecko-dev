@@ -7,15 +7,14 @@
 
 const { interfaces: Ci, utils: Cu } = Components;
 
-const { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
+const { require, loader } = Cu.import("resource://devtools/shared/Loader.jsm", {});
 const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
 const { ViewHelpers } = require("devtools/client/shared/widgets/view-helpers");
 const { KeyCodes } = require("devtools/client/shared/keycodes");
 
-XPCOMUtils.defineLazyModuleGetter(this, "EventEmitter",
-  "resource://devtools/shared/event-emitter.js");
+loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/old-event-emitter");
 
-XPCOMUtils.defineLazyModuleGetter(this, "console",
+ChromeUtils.defineModuleGetter(this, "console",
   "resource://gre/modules/Console.jsm");
 
 this.EXPORTED_SYMBOLS = ["AbstractTreeItem"];
@@ -42,7 +41,7 @@ this.EXPORTED_SYMBOLS = ["AbstractTreeItem"];
  *   this.itemDataSrc = dataSrc;
  * }
  *
- * MyCustomTreeItem.prototype = Heritage.extend(AbstractTreeItem.prototype, {
+ * MyCustomTreeItem.prototype = extend(AbstractTreeItem.prototype, {
  *   _displaySelf: function(document, arrowNode) {
  *     let node = document.createElement("hbox");
  *     ...

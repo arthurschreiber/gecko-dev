@@ -3,28 +3,69 @@
 
 "use strict";
 
-// Test global exit button
-
 const TEST_URL = "data:text/html;charset=utf-8,";
 
-addRDMTask(TEST_URL, function* ({ ui, manager }) {
-  let { toolWindow } = ui;
+// Test global exit button
+addRDMTask(TEST_URL, async function (...args) {
+  await testExitButton(...args);
+});
+
+// Test global exit button on detached tab.
+// See Bug 1262806
+add_task(async function () {
+  let tab = await addTab(TEST_URL);
+  let { ui, manager } = await openRDM(tab);
+
+  await waitBootstrap(ui);
+
+  let waitTabIsDetached = Promise.all([
+    once(tab, "TabClose"),
+    once(tab.linkedBrowser, "SwapDocShells")
+  ]);
+
+  // Detach the tab with RDM open.
+  let newWindow = gBrowser.replaceTabWithWindow(tab);
+
+  // Wait until the tab is detached and the new window is fully initialized.
+  await waitTabIsDetached;
+  await newWindow.delayedStartupPromise;
+
+  // Get the new tab instance.
+  tab = newWindow.gBrowser.tabs[0];
+
+  // Detaching a tab closes RDM.
+  ok(!manager.isActiveForTab(tab),
+    "Responsive Design Mode is not active for the tab");
+
+  // Reopen the RDM and test the exit button again.
+  await testExitButton(await openRDM(tab));
+  await BrowserTestUtils.closeWindow(newWindow);
+});
+
+async function waitBootstrap(ui) {
+  let { toolWindow, tab } = ui;
   let { store } = toolWindow;
+  let url = String(tab.linkedBrowser.currentURI.spec);
 
-  // Wait until the viewport has been added
-  yield waitUntilState(store, state => state.viewports.length == 1);
+  // Wait until the viewport has been added.
+  await waitUntilState(store, state => state.viewports.length == 1);
 
-  let exitButton = toolWindow.document.getElementById("global-exit-button");
+  // Wait until the document has been loaded.
+  await waitForFrameLoad(ui, url);
+}
 
-  yield waitForFrameLoad(ui, TEST_URL);
+async function testExitButton({ui, manager}) {
+  await waitBootstrap(ui);
+
+  let exitButton = ui.toolWindow.document.getElementById("global-exit-button");
 
   ok(manager.isActiveForTab(ui.tab),
     "Responsive Design Mode active for the tab");
 
   exitButton.click();
 
-  yield once(manager, "off");
+  await once(manager, "off");
 
   ok(!manager.isActiveForTab(ui.tab),
     "Responsive Design Mode is not active for the tab");
-});
+}

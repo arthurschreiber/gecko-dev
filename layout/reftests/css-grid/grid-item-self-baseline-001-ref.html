@@ -5,7 +5,7 @@
 -->
 <html><head>
   <meta charset="utf-8">
-  <title>Reference: align-self/justify-self:baseline/last-baseline</title>
+  <title>Reference: align-self/justify-self:baseline/last baseline</title>
   <link rel="author" title="Mats Palmgren" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1221525">
   <style type="text/css">
 html,body {
@@ -41,7 +41,7 @@ span:nth-child(4) { font-size:32px; }
 .pbs { padding-block-start:20px; }
 
 .fb { align-self:baseline; }
-.lb { align-self:last-baseline; }
+.lb { align-self:last baseline; }
 
 .hl { writing-mode: horizontal-tb; direction:ltr; }
 .hr { writing-mode: horizontal-tb; direction:rtl; }
@@ -69,15 +69,6 @@ span:nth-child(4) { font-size:32px; }
 <div class="vl"><span class="lb pbs">A</span><span class="lb">A</span><span class="lb">A</span><span class="lb">A</span></div>
 <div class="vr"><span class="lb">A</span><span class="lb">A</span><span class="lb">A</span><span class="lb">A</span></div>
 <div class="vr"><span class="lb pbe">A</span><span class="lb">A</span><span class="lb">A</span><span class="lb">A</span></div>
-
-<br clear="all">
-
-<div class="grid vl"><span class="fb vl">A</span><span class="fb vl">A</span><span class="fb vl">A</span><span class="fb vl">A</span></div>
-<div class="grid vl"><span class="fb vl pbe">A</span><span class="fb vl">A</span><span class="fb vl">A</span><span class="fb vl">A</span></div>
-<div class="grid"><span class="fb">A</span><span class="fb">A</span><span class="fb">A</span><span class="fb">A</span></div>
-<div class="grid"><span class="fb pbs">A</span><span class="fb">A</span><span class="fb">A</span><span class="fb">A</span></div>
-<div class="grid"><span class="fb" style="order:99">A</span><span class="fb" style="order:98">A</span><span class="fb" style="order:97">A</span><span class="fb" style="order:96">A</span></div>
-<div class="grid"><span class="fb pbe" style="order:99;">A</span><span class="fb" style="order:98">A</span><span class="fb" style="order:97">A</span><span class="fb" style="order:96">A</span></div>
 
 <br clear="all">
 

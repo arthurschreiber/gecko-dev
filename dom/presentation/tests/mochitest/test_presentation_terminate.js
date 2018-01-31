@@ -37,10 +37,9 @@ function setup() {
     receiverIframe.setAttribute('remote', oop);
 
     receiverIframe.setAttribute('src', receiverUrl);
-    receiverIframe.addEventListener('mozbrowserloadend', function mozbrowserloadendHander() {
-      receiverIframe.removeEventListener('mozbrowserloadend', mozbrowserloadendHander);
+    receiverIframe.addEventListener('mozbrowserloadend', function() {
       info('Receiver loaded.');
-    });
+    }, {once: true});
 
     // This event is triggered when the iframe calls 'alert'.
     receiverIframe.addEventListener('mozbrowsershowmodalprompt', function receiverListener(evt) {
@@ -59,7 +58,7 @@ function setup() {
         receiverIframe.removeEventListener('mozbrowsershowmodalprompt',
                                             receiverListener);
       }
-    }, false);
+    });
 
     var promise = new Promise(function(aResolve, aReject) {
       document.body.appendChild(receiverIframe);
@@ -68,7 +67,7 @@ function setup() {
 
     var obs = SpecialPowers.Cc['@mozilla.org/observer-service;1']
                            .getService(SpecialPowers.Ci.nsIObserverService);
-    obs.notifyObservers(promise, 'setup-request-promise', null);
+    obs.notifyObservers(promise, 'setup-request-promise');
   });
 
   gScript.addMessageListener('promise-setup-ready', function promiseSetupReadyHandler() {
@@ -146,10 +145,21 @@ function testConnectionTerminate() {
       gScript.removeMessageListener('sender-terminate',
                                     senderTerminateHandler);
 
-      receiverIframe.addEventListener('mozbrowserclose', function() {
-        ok(true, 'observe receiver page closing');
-        aResolve();
-      });
+      Promise.all([
+        new Promise((resolve) => {
+          gScript.addMessageListener('device-disconnected', function deviceDisconnectedHandler() {
+            gScript.removeMessageListener('device-disconnected', deviceDisconnectedHandler);
+            ok(true, 'observe device disconnect');
+            resolve();
+          });
+        }),
+        new Promise((resolve) => {
+          receiverIframe.addEventListener('mozbrowserclose', function() {
+            ok(true, 'observe receiver page closing');
+            resolve();
+          });
+        }),
+      ]).then(aResolve);
 
       gScript.sendAsyncMessage('trigger-on-terminate-request');
     });
@@ -225,6 +235,7 @@ SpecialPowers.pushPermissions([
                                       ["dom.presentation.receiver.enabled", true],
                                       ['dom.presentation.test.enabled', true],
                                       ['dom.mozBrowserFramesEnabled', true],
+                                      ["network.disable.ipc.security", true],
                                       ['dom.ipc.tabs.disabled', false],
                                       ['dom.presentation.test.stage', 0]]},
                             runTests);

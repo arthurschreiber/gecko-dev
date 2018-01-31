@@ -23,8 +23,8 @@ const Cr = Components.results;
 
 this.EXPORTED_SYMBOLS = ["DOMRequestIpcHelper"];
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(this, "cpmm",
                                    "@mozilla.org/childprocessmessagemanager;1",
@@ -303,10 +303,10 @@ DOMRequestIpcHelper.prototype = {
    * which is immediately called with the generated resolverId.
    */
   createPromiseWithId: function(aCallback) {
-    return this.createPromise(function(aResolve, aReject) {
+    return this.createPromise((aResolve, aReject) => {
       let resolverId = this.getPromiseResolverId({ resolve: aResolve, reject: aReject });
       aCallback(resolverId);
-    }.bind(this));
+    });
   },
 
   forEachRequest: function(aCallback) {

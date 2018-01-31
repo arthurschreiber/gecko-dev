@@ -73,21 +73,6 @@ VibrancyManager::VibrancyFillColorForType(VibrancyType aType)
   return [NSColor whiteColor];
 }
 
-@interface NSView(FontSmoothingBackgroundColor)
-- (NSColor*)fontSmoothingBackgroundColor;
-@end
-
-NSColor*
-VibrancyManager::VibrancyFontSmoothingBackgroundColorForType(VibrancyType aType)
-{
-  NSView* view = mVibrantRegions.LookupOrAdd(uint32_t(aType))->GetAnyView();
-
-  if (view && [view respondsToSelector:@selector(fontSmoothingBackgroundColor)]) {
-    return [view fontSmoothingBackgroundColor];
-  }
-  return [NSColor clearColor];
-}
-
 static void
 DrawRectNothing(id self, SEL _cmd, NSRect aRect)
 {
@@ -116,7 +101,7 @@ AllowsVibrancyYes(id self, SEL _cmd)
 }
 
 static Class
-CreateEffectViewClass(BOOL aForegroundVibrancy)
+CreateEffectViewClass(BOOL aForegroundVibrancy, BOOL aIsContainer)
 {
   // Create a class called EffectView that inherits from NSVisualEffectView
   // and overrides the methods -[NSVisualEffectView drawRect:] and
@@ -127,8 +112,10 @@ CreateEffectViewClass(BOOL aForegroundVibrancy)
   Class EffectViewClass = objc_allocateClassPair(NSVisualEffectViewClass, className, 0);
   class_addMethod(EffectViewClass, @selector(drawRect:), (IMP)DrawRectNothing,
                   "v@:{CGRect={CGPoint=dd}{CGSize=dd}}");
-  class_addMethod(EffectViewClass, @selector(hitTest:), (IMP)HitTestNil,
-                  "@@:{CGPoint=dd}");
+  if (!aIsContainer) {
+    class_addMethod(EffectViewClass, @selector(hitTest:), (IMP)HitTestNil,
+                    "@@:{CGPoint=dd}");
+  }
   if (aForegroundVibrancy) {
     // Also override the -[NSView allowsVibrancy] method to return YES.
     class_addMethod(EffectViewClass, @selector(allowsVibrancy), (IMP)AllowsVibrancyYes, "I@:");
@@ -147,6 +134,8 @@ AppearanceForVibrancyType(VibrancyType aType)
     case VibrancyType::HIGHLIGHTED_MENUITEM:
     case VibrancyType::SHEET:
     case VibrancyType::SOURCE_LIST:
+    case VibrancyType::SOURCE_LIST_SELECTION:
+    case VibrancyType::ACTIVE_SOURCE_LIST_SELECTION:
       return [NSAppearanceClass performSelector:@selector(appearanceNamed:)
                                      withObject:@"NSAppearanceNameVibrantLight"];
     case VibrancyType::DARK:
@@ -202,9 +191,11 @@ HasVibrantForeground(VibrancyType aType)
   }
 }
 
+#if !defined(MAC_OS_X_VERSION_10_12) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_12
 enum {
-  NSVisualEffectMaterialMenuItem = 4
+  NSVisualEffectMaterialSelection = 4
 };
+#endif
 
 @interface NSView(NSVisualEffectViewMethods)
 - (void)setState:(NSUInteger)state;
@@ -212,14 +203,15 @@ enum {
 - (void)setEmphasized:(BOOL)emphasized;
 @end
 
-NSView*
-VibrancyManager::CreateEffectView(VibrancyType aType)
+/* static */ NSView*
+VibrancyManager::CreateEffectView(VibrancyType aType, BOOL aIsContainer)
 {
-  static Class EffectViewClassWithoutForegroundVibrancy = CreateEffectViewClass(NO);
-  static Class EffectViewClassWithForegroundVibrancy = CreateEffectViewClass(YES);
+  static Class EffectViewClasses[2][2] = {
+    { CreateEffectViewClass(NO, NO), CreateEffectViewClass(NO, YES) },
+    { CreateEffectViewClass(YES, NO), CreateEffectViewClass(YES, YES) }
+  };
 
-  Class EffectViewClass = HasVibrantForeground(aType)
-    ? EffectViewClassWithForegroundVibrancy : EffectViewClassWithoutForegroundVibrancy;
+  Class EffectViewClass = EffectViewClasses[HasVibrantForeground(aType)][aIsContainer];
   NSView* effectView = [[EffectViewClass alloc] initWithFrame:NSZeroRect];
   [effectView performSelector:@selector(setAppearance:)
                    withObject:AppearanceForVibrancyType(aType)];
@@ -234,9 +226,12 @@ VibrancyManager::CreateEffectView(VibrancyType aType)
                                                      : NSVisualEffectMaterialTitlebar];
   } else if (aType == VibrancyType::SOURCE_LIST && canUseElCapitanMaterials) {
     [effectView setMaterial:NSVisualEffectMaterialSidebar];
-  } else if (aType == VibrancyType::HIGHLIGHTED_MENUITEM) {
-    [effectView setMaterial:NSVisualEffectMaterialMenuItem];
-    if ([effectView respondsToSelector:@selector(setEmphasized:)]) {
+  } else if (aType == VibrancyType::HIGHLIGHTED_MENUITEM ||
+             aType == VibrancyType::SOURCE_LIST_SELECTION ||
+             aType == VibrancyType::ACTIVE_SOURCE_LIST_SELECTION) {
+    [effectView setMaterial:NSVisualEffectMaterialSelection];
+    if ([effectView respondsToSelector:@selector(setEmphasized:)] &&
+        aType != VibrancyType::SOURCE_LIST_SELECTION) {
       [effectView setEmphasized:YES];
     }
   }

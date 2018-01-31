@@ -37,7 +37,8 @@ class FinalizationEvent final: public Runnable
 public:
   FinalizationEvent(const char* aTopic,
                   const char16_t* aValue)
-    : mTopic(aTopic)
+    : Runnable("FinalizationEvent")
+    , mTopic(aTopic)
     , mValue(aValue)
   { }
 
@@ -119,9 +120,8 @@ void Finalize(JSFreeOp *fop, JSObject *objSelf)
 static const JSClassOps sWitnessClassOps = {
   nullptr /* addProperty */,
   nullptr /* delProperty */,
-  nullptr /* getProperty */,
-  nullptr /* setProperty */,
   nullptr /* enumerate */,
+  nullptr /* newEnumerate */,
   nullptr /* resolve */,
   nullptr /* mayResolve */,
   Finalize /* finalize */
@@ -151,7 +151,7 @@ bool IsWitness(JS::Handle<JS::Value> v)
 bool ForgetImpl(JSContext* cx, const JS::CallArgs& args)
 {
   if (args.length() != 0) {
-    JS_ReportError(cx, "forget() takes no arguments");
+    JS_ReportErrorASCII(cx, "forget() takes no arguments");
     return false;
   }
   JS::Rooted<JS::Value> valSelf(cx, args.thisv());
@@ -159,7 +159,7 @@ bool ForgetImpl(JSContext* cx, const JS::CallArgs& args)
 
   RefPtr<FinalizationEvent> event = ExtractFinalizationEvent(objSelf);
   if (event == nullptr) {
-    JS_ReportError(cx, "forget() called twice");
+    JS_ReportErrorASCII(cx, "forget() called twice");
     return false;
   }
 

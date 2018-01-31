@@ -1,27 +1,46 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-"use strict";
 
 /* import-globals-from ../../framework/test/shared-head.js */
+/* exported Toolbox, restartNetMonitor, teardown, waitForExplicitFinish,
+   verifyRequestItemTarget, waitFor, testFilterButtons, loadCommonFrameScript,
+   performRequestsInContent, waitForNetworkEvents, selectIndexAndWaitForSourceEditor,
+   testColumnsAlignment, hideColumn, showColumn */
+
+"use strict";
 
 // shared-head.js handles imports, constants, and utility functions
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/framework/test/shared-head.js",
   this);
 
-var NetworkHelper = require("devtools/shared/webconsole/network-helper");
-var { Toolbox } = require("devtools/client/framework/toolbox");
+const {
+  getFormattedIPAndPort,
+  getFormattedTime,
+} = require("devtools/client/netmonitor/src/utils/format-utils");
+const {
+  decodeUnicodeUrl,
+  getFormattedProtocol,
+  getUrlBaseName,
+  getUrlHost,
+  getUrlQuery,
+  getUrlScheme,
+} = require("devtools/client/netmonitor/src/utils/request-utils");
+const { EVENTS } = require("devtools/client/netmonitor/src/constants");
 
+/* eslint-disable no-unused-vars, max-len */
 const EXAMPLE_URL = "http://example.com/browser/devtools/client/netmonitor/test/";
+const HTTPS_EXAMPLE_URL = "https://example.com/browser/devtools/client/netmonitor/test/";
 
 const API_CALLS_URL = EXAMPLE_URL + "html_api-calls-test-page.html";
 const SIMPLE_URL = EXAMPLE_URL + "html_simple-test-page.html";
 const NAVIGATE_URL = EXAMPLE_URL + "html_navigate-test-page.html";
-const CONTENT_TYPE_URL = EXAMPLE_URL + "html_content-type-test-page.html";
 const CONTENT_TYPE_WITHOUT_CACHE_URL = EXAMPLE_URL + "html_content-type-without-cache-test-page.html";
+const CONTENT_TYPE_WITHOUT_CACHE_REQUESTS = 8;
 const CYRILLIC_URL = EXAMPLE_URL + "html_cyrillic-test-page.html";
 const STATUS_CODES_URL = EXAMPLE_URL + "html_status-codes-test-page.html";
 const POST_DATA_URL = EXAMPLE_URL + "html_post-data-test-page.html";
+const POST_JSON_URL = EXAMPLE_URL + "html_post-json-test-page.html";
 const POST_RAW_URL = EXAMPLE_URL + "html_post-raw-test-page.html";
 const POST_RAW_WITH_HEADERS_URL = EXAMPLE_URL + "html_post-raw-with-headers-test-page.html";
 const PARAMS_URL = EXAMPLE_URL + "html_params-test-page.html";
@@ -30,6 +49,8 @@ const JSON_LONG_URL = EXAMPLE_URL + "html_json-long-test-page.html";
 const JSON_MALFORMED_URL = EXAMPLE_URL + "html_json-malformed-test-page.html";
 const JSON_CUSTOM_MIME_URL = EXAMPLE_URL + "html_json-custom-mime-test-page.html";
 const JSON_TEXT_MIME_URL = EXAMPLE_URL + "html_json-text-mime-test-page.html";
+const JSON_B64_URL = EXAMPLE_URL + "html_json-b64.html";
+const JSON_BASIC_URL = EXAMPLE_URL + "html_json-basic.html";
 const SORTING_URL = EXAMPLE_URL + "html_sorting-test-page.html";
 const FILTERING_URL = EXAMPLE_URL + "html_filter-test-page.html";
 const INFINITE_GET_URL = EXAMPLE_URL + "html_infinite-get-page.html";
@@ -40,9 +61,12 @@ const CURL_URL = EXAMPLE_URL + "html_copy-as-curl.html";
 const CURL_UTILS_URL = EXAMPLE_URL + "html_curl-utils.html";
 const SEND_BEACON_URL = EXAMPLE_URL + "html_send-beacon.html";
 const CORS_URL = EXAMPLE_URL + "html_cors-test-page.html";
+const PAUSE_URL = EXAMPLE_URL + "html_pause-test-page.html";
 
 const SIMPLE_SJS = EXAMPLE_URL + "sjs_simple-test-server.sjs";
+const SIMPLE_UNSORTED_COOKIES_SJS = EXAMPLE_URL + "sjs_simple-unsorted-cookies-test-server.sjs";
 const CONTENT_TYPE_SJS = EXAMPLE_URL + "sjs_content-type-test-server.sjs";
+const HTTPS_CONTENT_TYPE_SJS = HTTPS_EXAMPLE_URL + "sjs_content-type-test-server.sjs";
 const STATUS_CODES_SJS = EXAMPLE_URL + "sjs_status-codes-test-server.sjs";
 const SORTING_SJS = EXAMPLE_URL + "sjs_sorting-test-server.sjs";
 const HTTPS_REDIRECT_SJS = EXAMPLE_URL + "sjs_https-redirect-test-server.sjs";
@@ -56,6 +80,7 @@ const TEST_IMAGE = EXAMPLE_URL + "test-image.png";
 const TEST_IMAGE_DATA_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAHWSURBVHjaYvz//z8DJQAggJiQOe/fv2fv7Oz8rays/N+VkfG/iYnJfyD/1+rVq7ffu3dPFpsBAAHEAHIBCJ85c8bN2Nj4vwsDw/8zQLwKiO8CcRoQu0DxqlWrdsHUwzBAAIGJmTNnPgYa9j8UqhFElwPxf2MIDeIrKSn9FwSJoRkAEEAM0DD4DzMAyPi/G+QKY4hh5WAXGf8PDQ0FGwJ22d27CjADAAIIrLmjo+MXA9R2kAHvGBA2wwx6B8W7od6CeQcggKCmCEL8bgwxYCbUIGTDVkHDBia+CuotgACCueD3TDQN75D4xmAvCoK9ARMHBzAw0AECiBHkAlC0Mdy7x9ABNA3obAZXIAa6iKEcGlMVQHwWyjYuL2d4v2cPg8vZswx7gHyAAAK7AOif7SAbOqCmn4Ha3AHFsIDtgPq/vLz8P4MSkJ2W9h8ggBjevXvHDo4FQUQg/kdypqCg4H8lUIACnQ/SOBMYI8bAsAJFPcj1AAEEjwVQqLpAbXmH5BJjqI0gi9DTAAgDBBCcAVLkgmQ7yKCZxpCQxqUZhAECCJ4XgMl493ug21ZD+aDAXH0WLM4A9MZPXJkJIIAwTAR5pQMalaCABQUULttBGCCAGCnNzgABBgAMJ5THwGvJLAAAAABJRU5ErkJggg==";
 
 const FRAME_SCRIPT_UTILS_URL = "chrome://devtools/content/shared/frame-script-utils.js";
+/* eslint-enable no-unused-vars, max-len */
 
 // All tests are asynchronous.
 waitForExplicitFinish();
@@ -70,68 +95,222 @@ Services.prefs.setBoolPref("devtools.debugger.log", false);
 // Always reset some prefs to their original values after the test finishes.
 const gDefaultFilters = Services.prefs.getCharPref("devtools.netmonitor.filters");
 
+// Reveal many columns for test
+Services.prefs.setCharPref(
+  "devtools.netmonitor.visibleColumns",
+  "[\"cause\",\"contentSize\",\"cookies\",\"domain\",\"duration\"," +
+  "\"endTime\",\"file\",\"latency\",\"method\",\"protocol\"," +
+  "\"remoteip\",\"responseTime\",\"scheme\",\"setCookies\"," +
+  "\"startTime\",\"status\",\"transferred\",\"type\",\"waterfall\"]"
+);
+
 registerCleanupFunction(() => {
   info("finish() was called, cleaning up...");
 
   Services.prefs.setBoolPref("devtools.debugger.log", gEnableLogging);
   Services.prefs.setCharPref("devtools.netmonitor.filters", gDefaultFilters);
   Services.prefs.clearUserPref("devtools.cache.disabled");
+  Services.cookies.removeAll();
 });
 
-function waitForNavigation(aTarget) {
-  let deferred = promise.defer();
-  aTarget.once("will-navigate", () => {
-    aTarget.once("navigate", () => {
-      deferred.resolve();
+function waitForNavigation(target) {
+  return new Promise((resolve) => {
+    target.once("will-navigate", () => {
+      target.once("navigate", () => {
+        resolve();
+      });
     });
   });
-  return deferred.promise;
 }
 
-function reconfigureTab(aTarget, aOptions) {
-  let deferred = promise.defer();
-  aTarget.activeTab.reconfigure(aOptions, deferred.resolve);
-  return deferred.promise;
+function reconfigureTab(target, options) {
+  return new Promise((resolve) => {
+    target.activeTab.reconfigure(options, resolve);
+  });
 }
 
-function toggleCache(aTarget, aDisabled) {
-  let options = { cacheDisabled: aDisabled, performReload: true };
-  let navigationFinished = waitForNavigation(aTarget);
+function toggleCache(target, disabled) {
+  let options = { cacheDisabled: disabled, performReload: true };
+  let navigationFinished = waitForNavigation(target);
 
   // Disable the cache for any toolbox that it is opened from this point on.
-  Services.prefs.setBoolPref("devtools.cache.disabled", aDisabled);
+  Services.prefs.setBoolPref("devtools.cache.disabled", disabled);
 
-  return reconfigureTab(aTarget, options).then(() => navigationFinished);
+  return reconfigureTab(target, options).then(() => navigationFinished);
 }
 
-function initNetMonitor(aUrl, aWindow, aEnableCache) {
+/**
+ * Wait for 2 markers during document load.
+ */
+function waitForTimelineMarkers(monitor) {
+  return new Promise(resolve => {
+    let markers = [];
+
+    function handleTimelineEvent(_, marker) {
+      info(`Got marker: ${marker.name}`);
+      markers.push(marker);
+      if (markers.length == 2) {
+        monitor.panelWin.off(EVENTS.TIMELINE_EVENT, handleTimelineEvent);
+        info("Got two timeline markers, done waiting");
+        resolve(markers);
+      }
+    }
+
+    monitor.panelWin.on(EVENTS.TIMELINE_EVENT, handleTimelineEvent);
+  });
+}
+
+/**
+ * Start monitoring all incoming update events about network requests and wait until
+ * a complete info about all requests is received. (We wait for the timings info
+ * explicitly, because that's always the last piece of information that is received.)
+ *
+ * This method is designed to wait for network requests that are issued during a page
+ * load, when retrieving page resources (scripts, styles, images). It has certain
+ * assumptions that can make it unsuitable for other types of network communication:
+ * - it waits for at least one network request to start and finish before returning
+ * - it waits only for request that were issued after it was called. Requests that are
+ *   already in mid-flight will be ignored.
+ * - the request start and end times are overlapping. If a new request starts a moment
+ *   after the previous one was finished, the wait will be ended in the "interim"
+ *   period.
+ * @returns a promise that resolves when the wait is done.
+ */
+function waitForAllRequestsFinished(monitor) {
+  let window = monitor.panelWin;
+  let { connector } = window;
+  let { getNetworkRequest } = connector;
+
+  return new Promise(resolve => {
+    // Key is the request id, value is a boolean - is request finished or not?
+    let requests = new Map();
+
+    function onRequest(_, id) {
+      let networkInfo = getNetworkRequest(id);
+      let { url } = networkInfo.request;
+      info(`Request ${id} for ${url} not yet done, keep waiting...`);
+      requests.set(id, false);
+    }
+
+    function onTimings(_, id) {
+      let networkInfo = getNetworkRequest(id);
+      let { url } = networkInfo.request;
+      info(`Request ${id} for ${url} done`);
+      requests.set(id, true);
+      maybeResolve();
+    }
+
+    function maybeResolve() {
+      // Have all the requests in the map finished yet?
+      if (![...requests.values()].every(finished => finished)) {
+        return;
+      }
+
+      // All requests are done - unsubscribe from events and resolve!
+      window.off(EVENTS.NETWORK_EVENT, onRequest);
+      window.off(EVENTS.PAYLOAD_READY, onTimings);
+      info("All requests finished");
+      resolve();
+    }
+
+    window.on(EVENTS.NETWORK_EVENT, onRequest);
+    window.on(EVENTS.PAYLOAD_READY, onTimings);
+  });
+}
+
+let finishedQueue = {};
+let updatingTypes = [
+  "NetMonitor:NetworkEventUpdating:RequestCookies",
+  "NetMonitor:NetworkEventUpdating:ResponseCookies",
+  "NetMonitor:NetworkEventUpdating:RequestHeaders",
+  "NetMonitor:NetworkEventUpdating:ResponseHeaders",
+  "NetMonitor:NetworkEventUpdating:RequestPostData",
+  "NetMonitor:NetworkEventUpdating:ResponseContent",
+  "NetMonitor:NetworkEventUpdating:SecurityInfo",
+  "NetMonitor:NetworkEventUpdating:EventTimings",
+];
+let updatedTypes = [
+  "NetMonitor:NetworkEventUpdated:RequestCookies",
+  "NetMonitor:NetworkEventUpdated:ResponseCookies",
+  "NetMonitor:NetworkEventUpdated:RequestHeaders",
+  "NetMonitor:NetworkEventUpdated:ResponseHeaders",
+  "NetMonitor:NetworkEventUpdated:RequestPostData",
+  "NetMonitor:NetworkEventUpdated:ResponseContent",
+  "NetMonitor:NetworkEventUpdated:SecurityInfo",
+  "NetMonitor:NetworkEventUpdated:EventTimings",
+];
+
+// Start collecting all networkEventUpdate event when panel is opened.
+// removeTab() should be called once all corresponded RECEIVED_* events finished.
+function startNetworkEventUpdateObserver(panelWin) {
+  updatingTypes.forEach((type) => panelWin.on(type, (event, actor) => {
+    let key = actor + "-" + updatedTypes[updatingTypes.indexOf(event)];
+    finishedQueue[key] = finishedQueue[key] ? finishedQueue[key] + 1 : 1;
+  }));
+
+  updatedTypes.forEach((type) => panelWin.on(type, (event, actor) => {
+    let key = actor + "-" + event;
+    finishedQueue[key] = finishedQueue[key] ? finishedQueue[key] - 1 : -1;
+  }));
+}
+
+function* waitForAllNetworkUpdateEvents() {
+  function checkNetworkEventUpdateState() {
+    for (let key in finishedQueue) {
+      if (finishedQueue[key] > 0) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+  info("Wait for completion of all NetworkUpdateEvents packets...");
+  yield waitUntil(() => checkNetworkEventUpdateState());
+  finishedQueue = {};
+}
+
+function initNetMonitor(url, enableCache) {
   info("Initializing a network monitor pane.");
 
   return Task.spawn(function* () {
-    let tab = yield addTab(aUrl);
-    info("Net tab added successfully: " + aUrl);
+    let tab = yield addTab(url);
+    info("Net tab added successfully: " + url);
 
     let target = TargetFactory.forTab(tab);
 
     yield target.makeRemote();
     info("Target remoted.");
 
-    if (!aEnableCache) {
+    let toolbox = yield gDevTools.showToolbox(target, "netmonitor");
+    info("Network monitor pane shown successfully.");
+
+    let monitor = toolbox.getCurrentPanel();
+
+    startNetworkEventUpdateObserver(monitor.panelWin);
+
+    if (!enableCache) {
+      let panel = monitor.panelWin;
+      let { store, windowRequire } = panel;
+      let Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+
       info("Disabling cache and reloading page.");
+      let requestsDone = waitForAllRequestsFinished(monitor);
+      let markersDone = waitForTimelineMarkers(monitor);
       yield toggleCache(target, true);
+      yield Promise.all([requestsDone, markersDone]);
       info("Cache disabled when the current and all future toolboxes are open.");
       // Remove any requests generated by the reload while toggling the cache to
       // avoid interfering with the test.
       isnot([...target.activeConsole.getNetworkEvents()].length, 0,
          "Request to reconfigure the tab was recorded.");
+      info("Clearing requests in the console client.");
       target.activeConsole.clearNetworkRequests();
+      info("Clearing requests in the UI.");
+
+      store.dispatch(Actions.clearRequests());
     }
 
-    let toolbox = yield gDevTools.showToolbox(target, "netmonitor");
-    info("Network monitor pane shown successfully.");
-
-    let monitor = toolbox.getCurrentPanel();
-    return {tab, monitor};
+    return {tab, monitor, toolbox};
   });
 }
 
@@ -139,8 +318,11 @@ function restartNetMonitor(monitor, newUrl) {
   info("Restarting the specified network monitor.");
 
   return Task.spawn(function* () {
-    let tab = monitor.target.tab;
+    let tab = monitor.toolbox.target.tab;
     let url = newUrl || tab.linkedBrowser.currentURI.spec;
+
+    yield waitForAllNetworkUpdateEvents();
+    info("All pending requests finished.");
 
     let onDestroyed = monitor.once("destroyed");
     yield removeTab(tab);
@@ -154,7 +336,10 @@ function teardown(monitor) {
   info("Destroying the specified network monitor.");
 
   return Task.spawn(function* () {
-    let tab = monitor.target.tab;
+    let tab = monitor.toolbox.target.tab;
+
+    yield waitForAllNetworkUpdateEvents();
+    info("All pending requests finished.");
 
     let onDestroyed = monitor.once("destroyed");
     yield removeTab(tab);
@@ -162,208 +347,217 @@ function teardown(monitor) {
   });
 }
 
-function waitForNetworkEvents(aMonitor, aGetRequests, aPostRequests = 0) {
-  let deferred = promise.defer();
+function waitForNetworkEvents(monitor, getRequests) {
+  return new Promise((resolve) => {
+    let panel = monitor.panelWin;
+    let { getNetworkRequest } = panel.connector;
+    let networkEvent = 0;
+    let payloadReady = 0;
 
-  let panel = aMonitor.panelWin;
-  let events = panel.EVENTS;
-
-  let progress = {};
-  let genericEvents = 0;
-  let postEvents = 0;
-
-  let awaitedEventsToListeners = [
-    ["UPDATING_REQUEST_HEADERS", onGenericEvent],
-    ["RECEIVED_REQUEST_HEADERS", onGenericEvent],
-    ["UPDATING_REQUEST_COOKIES", onGenericEvent],
-    ["RECEIVED_REQUEST_COOKIES", onGenericEvent],
-    ["UPDATING_REQUEST_POST_DATA", onPostEvent],
-    ["RECEIVED_REQUEST_POST_DATA", onPostEvent],
-    ["UPDATING_RESPONSE_HEADERS", onGenericEvent],
-    ["RECEIVED_RESPONSE_HEADERS", onGenericEvent],
-    ["UPDATING_RESPONSE_COOKIES", onGenericEvent],
-    ["RECEIVED_RESPONSE_COOKIES", onGenericEvent],
-    ["STARTED_RECEIVING_RESPONSE", onGenericEvent],
-    ["UPDATING_RESPONSE_CONTENT", onGenericEvent],
-    ["RECEIVED_RESPONSE_CONTENT", onGenericEvent],
-    ["UPDATING_EVENT_TIMINGS", onGenericEvent],
-    ["RECEIVED_EVENT_TIMINGS", onGenericEvent]
-  ];
-
-  function initProgressForURL(url) {
-    if (progress[url]) return;
-    progress[url] = {};
-    awaitedEventsToListeners.forEach(([e]) => progress[url][e] = 0);
-  }
-
-  function updateProgressForURL(url, event) {
-    initProgressForURL(url);
-    progress[url][Object.keys(events).find(e => events[e] == event)] = 1;
-  }
-
-  function onGenericEvent(event, actor) {
-    genericEvents++;
-    maybeResolve(event, actor);
-  }
-
-  function onPostEvent(event, actor) {
-    postEvents++;
-    maybeResolve(event, actor);
-  }
-
-  function maybeResolve(event, actor) {
-    info("> Network events progress: " +
-      genericEvents + "/" + ((aGetRequests + aPostRequests) * 13) + ", " +
-      postEvents + "/" + (aPostRequests * 2) + ", " +
-      "got " + event + " for " + actor);
-
-    let networkInfo =
-      panel.NetMonitorController.webConsoleClient.getNetworkRequest(actor);
-    let url = networkInfo.request.url;
-    updateProgressForURL(url, event);
-
-    // Uncomment this to get a detailed progress logging (when debugging a test)
-    // info("> Current state: " + JSON.stringify(progress, null, 2));
-
-    // There are 15 updates which need to be fired for a request to be
-    // considered finished. The "requestPostData" packet isn't fired for
-    // non-POST requests.
-    if (genericEvents >= (aGetRequests + aPostRequests) * 13 &&
-        postEvents >= aPostRequests * 2) {
-
-      awaitedEventsToListeners.forEach(([e, l]) => panel.off(events[e], l));
-      executeSoon(deferred.resolve);
+    function onNetworkEvent(event, actor) {
+      let networkInfo = getNetworkRequest(actor);
+      if (!networkInfo) {
+        // Must have been related to reloading document to disable cache.
+        // Ignore the event.
+        return;
+      }
+      networkEvent++;
+      maybeResolve(event, actor, networkInfo);
     }
-  }
 
-  awaitedEventsToListeners.forEach(([e, l]) => panel.on(events[e], l));
-  return deferred.promise;
+    function onPayloadReady(event, actor) {
+      let networkInfo = getNetworkRequest(actor);
+      if (!networkInfo) {
+        // Must have been related to reloading document to disable cache.
+        // Ignore the event.
+        return;
+      }
+      payloadReady++;
+      maybeResolve(event, actor, networkInfo);
+    }
+
+    function maybeResolve(event, actor, networkInfo) {
+      info("> Network event progress: " +
+        "NetworkEvent: " + networkEvent + "/" + getRequests + ", " +
+        "PayloadReady: " + payloadReady + "/" + getRequests + ", " +
+        "got " + event + " for " + actor);
+
+      // Wait until networkEvent & payloadReady finish for each request.
+      if (networkEvent >= getRequests && payloadReady >= getRequests) {
+        panel.off(EVENTS.NETWORK_EVENT, onNetworkEvent);
+        panel.off(EVENTS.PAYLOAD_READY, onPayloadReady);
+        executeSoon(resolve);
+      }
+    }
+
+    panel.on(EVENTS.NETWORK_EVENT, onNetworkEvent);
+    panel.on(EVENTS.PAYLOAD_READY, onPayloadReady);
+  });
 }
 
-function verifyRequestItemTarget(aRequestItem, aMethod, aUrl, aData = {}) {
-  info("> Verifying: " + aMethod + " " + aUrl + " " + aData.toSource());
-  // This bloats log sizes significantly in automation (bug 992485)
-  // info("> Request: " + aRequestItem.attachment.toSource());
+function* verifyRequestItemTarget(document, requestList, requestItem, method,
+                                 url, data = {}) {
+  info("> Verifying: " + method + " " + url + " " + data.toSource());
 
-  let requestsMenu = aRequestItem.ownerView;
-  let widgetIndex = requestsMenu.indexOfItem(aRequestItem);
-  let visibleIndex = requestsMenu.visibleItems.indexOf(aRequestItem);
+  let visibleIndex = requestList.indexOf(requestItem);
 
-  info("Widget index of item: " + widgetIndex);
   info("Visible index of item: " + visibleIndex);
 
   let { fuzzyUrl, status, statusText, cause, type, fullMimeType,
-        transferred, size, time, displayedStatus } = aData;
-  let { attachment, target } = aRequestItem;
+        transferred, size, time, displayedStatus } = data;
 
-  let uri = Services.io.newURI(aUrl, null, null).QueryInterface(Ci.nsIURL);
-  let unicodeUrl = NetworkHelper.convertToUnicode(unescape(aUrl));
-  let name = NetworkHelper.convertToUnicode(unescape(uri.fileName || uri.filePath || "/"));
-  let query = NetworkHelper.convertToUnicode(unescape(uri.query));
-  let hostPort = uri.hostPort;
-  let remoteAddress = attachment.remoteAddress;
+  let target = document.querySelectorAll(".request-list-item")[visibleIndex];
+  // Bug 1414981 - Request URL should not show #hash
+  let unicodeUrl = decodeUnicodeUrl(url).split("#")[0];
+  let name = getUrlBaseName(url);
+  let query = getUrlQuery(url);
+  let host = getUrlHost(url);
+  let scheme = getUrlScheme(url);
+  let {
+    remoteAddress,
+    remotePort,
+    totalTime,
+    eventTimings = { timings: {} },
+  } = requestItem;
+  let formattedIPPort = getFormattedIPAndPort(remoteAddress, remotePort);
+  let remoteIP = remoteAddress ? `${formattedIPPort}` : "unknown";
+  let duration = getFormattedTime(totalTime);
+  let latency = getFormattedTime(eventTimings.timings.wait);
+  let protocol = getFormattedProtocol(requestItem);
 
   if (fuzzyUrl) {
-    ok(attachment.method.startsWith(aMethod), "The attached method is correct.");
-    ok(attachment.url.startsWith(aUrl), "The attached url is correct.");
+    ok(requestItem.method.startsWith(method), "The attached method is correct.");
+    ok(requestItem.url.startsWith(url), "The attached url is correct.");
   } else {
-    is(attachment.method, aMethod, "The attached method is correct.");
-    is(attachment.url, aUrl, "The attached url is correct.");
+    is(requestItem.method, method, "The attached method is correct.");
+    is(requestItem.url, url.split("#")[0], "The attached url is correct.");
   }
 
-  is(target.querySelector(".requests-menu-method").getAttribute("value"),
-    aMethod, "The displayed method is correct.");
+  is(target.querySelector(".requests-list-method").textContent,
+    method, "The displayed method is correct.");
 
   if (fuzzyUrl) {
-    ok(target.querySelector(".requests-menu-file").getAttribute("value").startsWith(
+    ok(target.querySelector(".requests-list-file").textContent.startsWith(
       name + (query ? "?" + query : "")), "The displayed file is correct.");
-    ok(target.querySelector(".requests-menu-file").getAttribute("tooltiptext").startsWith(unicodeUrl),
+    ok(target.querySelector(".requests-list-file").getAttribute("title")
+                                                  .startsWith(unicodeUrl),
       "The tooltip file is correct.");
   } else {
-    is(target.querySelector(".requests-menu-file").getAttribute("value"),
-      name + (query ? "?" + query : ""), "The displayed file is correct.");
-    is(target.querySelector(".requests-menu-file").getAttribute("tooltiptext"),
+    is(target.querySelector(".requests-list-file").textContent,
+      decodeURIComponent(name + (query ? "?" + query : "")),
+      "The displayed file is correct.");
+    is(target.querySelector(".requests-list-file").getAttribute("title"),
       unicodeUrl, "The tooltip file is correct.");
   }
 
-  is(target.querySelector(".requests-menu-domain").getAttribute("value"),
-    hostPort, "The displayed domain is correct.");
+  is(target.querySelector(".requests-list-protocol").textContent,
+    protocol, "The displayed protocol is correct.");
 
-  let domainTooltip = hostPort + (remoteAddress ? " (" + remoteAddress + ")" : "");
-  is(target.querySelector(".requests-menu-domain").getAttribute("tooltiptext"),
+  is(target.querySelector(".requests-list-protocol").getAttribute("title"),
+    protocol, "The tooltip protocol is correct.");
+
+  is(target.querySelector(".requests-list-domain").textContent,
+    host, "The displayed domain is correct.");
+
+  let domainTooltip = host + (remoteAddress ? " (" + formattedIPPort + ")" : "");
+  is(target.querySelector(".requests-list-domain").getAttribute("title"),
     domainTooltip, "The tooltip domain is correct.");
 
+  is(target.querySelector(".requests-list-remoteip").textContent,
+    remoteIP, "The displayed remote IP is correct.");
+
+  is(target.querySelector(".requests-list-remoteip").getAttribute("title"),
+    remoteIP, "The tooltip remote IP is correct.");
+
+  is(target.querySelector(".requests-list-scheme").textContent,
+    scheme, "The displayed scheme is correct.");
+
+  is(target.querySelector(".requests-list-scheme").getAttribute("title"),
+    scheme, "The tooltip scheme is correct.");
+
+  is(target.querySelector(".requests-list-duration-time").textContent,
+    duration, "The displayed duration is correct.");
+
+  is(target.querySelector(".requests-list-duration-time").getAttribute("title"),
+    duration, "The tooltip duration is correct.");
+
+  is(target.querySelector(".requests-list-latency-time").textContent,
+    latency, "The displayed latency is correct.");
+
+  is(target.querySelector(".requests-list-latency-time").getAttribute("title"),
+    latency, "The tooltip latency is correct.");
+
   if (status !== undefined) {
-    let value = target.querySelector(".requests-menu-status-icon").getAttribute("code");
-    let codeValue = target.querySelector(".requests-menu-status-code").getAttribute("value");
-    let tooltip = target.querySelector(".requests-menu-status").getAttribute("tooltiptext");
+    let value = target.querySelector(".requests-list-status-code")
+                      .getAttribute("data-status-code");
+    let codeValue = target.querySelector(".requests-list-status-code").textContent;
+    let tooltip = target.querySelector(".requests-list-status").getAttribute("title");
     info("Displayed status: " + value);
     info("Displayed code: " + codeValue);
     info("Tooltip status: " + tooltip);
-    is(value, displayedStatus ? displayedStatus : status, "The displayed status is correct.");
+    is(value, displayedStatus ? displayedStatus : status,
+      "The displayed status is correct.");
     is(codeValue, status, "The displayed status code is correct.");
     is(tooltip, status + " " + statusText, "The tooltip status is correct.");
   }
   if (cause !== undefined) {
-    let causeLabel = target.querySelector(".requests-menu-cause-label");
-    let value = causeLabel.getAttribute("value");
-    let tooltip = causeLabel.getAttribute("tooltiptext");
+    let value = Array.from(target.querySelector(".requests-list-cause").childNodes)
+      .filter((node) => node.nodeType === Node.TEXT_NODE)[0].textContent;
+    let tooltip = target.querySelector(".requests-list-cause").getAttribute("title");
     info("Displayed cause: " + value);
     info("Tooltip cause: " + tooltip);
     is(value, cause.type, "The displayed cause is correct.");
-    is(tooltip, cause.loadingDocumentUri, "The tooltip cause is correct.")
+    is(tooltip, cause.type, "The tooltip cause is correct.");
   }
   if (type !== undefined) {
-    let value = target.querySelector(".requests-menu-type").getAttribute("value");
-    let tooltip = target.querySelector(".requests-menu-type").getAttribute("tooltiptext");
+    let value = target.querySelector(".requests-list-type").textContent;
+    let tooltip = target.querySelector(".requests-list-type").getAttribute("title");
     info("Displayed type: " + value);
     info("Tooltip type: " + tooltip);
     is(value, type, "The displayed type is correct.");
     is(tooltip, fullMimeType, "The tooltip type is correct.");
   }
   if (transferred !== undefined) {
-    let value = target.querySelector(".requests-menu-transferred").getAttribute("value");
-    let tooltip = target.querySelector(".requests-menu-transferred").getAttribute("tooltiptext");
+    let value = target.querySelector(".requests-list-transferred").textContent;
+    let tooltip = target.querySelector(".requests-list-transferred")
+                        .getAttribute("title");
     info("Displayed transferred size: " + value);
     info("Tooltip transferred size: " + tooltip);
     is(value, transferred, "The displayed transferred size is correct.");
     is(tooltip, transferred, "The tooltip transferred size is correct.");
   }
   if (size !== undefined) {
-    let value = target.querySelector(".requests-menu-size").getAttribute("value");
-    let tooltip = target.querySelector(".requests-menu-size").getAttribute("tooltiptext");
+    let value = target.querySelector(".requests-list-size").textContent;
+    let tooltip = target.querySelector(".requests-list-size").getAttribute("title");
     info("Displayed size: " + value);
     info("Tooltip size: " + tooltip);
     is(value, size, "The displayed size is correct.");
     is(tooltip, size, "The tooltip size is correct.");
   }
   if (time !== undefined) {
-    let value = target.querySelector(".requests-menu-timings-total").getAttribute("value");
-    let tooltip = target.querySelector(".requests-menu-timings-total").getAttribute("tooltiptext");
+    let value = target.querySelector(".requests-list-timings-total").textContent;
+    let tooltip = target.querySelector(".requests-list-timings-total")
+                        .getAttribute("title");
     info("Displayed time: " + value);
     info("Tooltip time: " + tooltip);
     ok(~~(value.match(/[0-9]+/)) >= 0, "The displayed time is correct.");
     ok(~~(tooltip.match(/[0-9]+/)) >= 0, "The tooltip time is correct.");
   }
 
-  if (visibleIndex != -1) {
-    if (visibleIndex % 2 == 0) {
-      ok(aRequestItem.target.hasAttribute("even"),
-        aRequestItem.value + " should have 'even' attribute.");
-      ok(!aRequestItem.target.hasAttribute("odd"),
-        aRequestItem.value + " shouldn't have 'odd' attribute.");
+  if (visibleIndex !== -1) {
+    if (visibleIndex % 2 === 0) {
+      ok(target.classList.contains("even"), "Item should have 'even' class.");
+      ok(!target.classList.contains("odd"), "Item shouldn't have 'odd' class.");
     } else {
-      ok(!aRequestItem.target.hasAttribute("even"),
-        aRequestItem.value + " shouldn't have 'even' attribute.");
-      ok(aRequestItem.target.hasAttribute("odd"),
-        aRequestItem.value + " should have 'odd' attribute.");
+      ok(!target.classList.contains("even"), "Item shouldn't have 'even' class.");
+      ok(target.classList.contains("odd"), "Item should have 'odd' class.");
     }
   }
 }
 
 /**
  * Helper function for waiting for an event to fire before resolving a promise.
- * Example: waitFor(aMonitor.panelWin, aMonitor.panelWin.EVENTS.TAB_UPDATED);
+ * Example: waitFor(aMonitor.panelWin, EVENT_NAME);
  *
  * @param object subject
  *        The event emitter object that is being listened to.
@@ -373,25 +567,27 @@ function verifyRequestItemTarget(aRequestItem, aMethod, aUrl, aData = {}) {
  *        Returns a promise that resolves upon firing of the event.
  */
 function waitFor(subject, eventName) {
-  let deferred = promise.defer();
-  subject.once(eventName, deferred.resolve);
-  return deferred.promise;
+  return new Promise((resolve) => {
+    subject.once(eventName, resolve);
+  });
 }
 
 /**
  * Tests if a button for a filter of given type is the only one checked.
  *
- * @param string aFilterType
+ * @param string filterType
  *        The type of the filter that should be the only one checked.
  */
-function testFilterButtons(aMonitor, aFilterType) {
-  let doc = aMonitor.panelWin.document;
-  let target = doc.querySelector("#requests-menu-filter-" + aFilterType + "-button");
-  let buttons = doc.querySelectorAll(".requests-menu-footer-button");
+function testFilterButtons(monitor, filterType) {
+  let doc = monitor.panelWin.document;
+  let target = doc.querySelector(".requests-list-filter-" + filterType + "-button");
+  ok(target, `Filter button '${filterType}' was found`);
+  let buttons = [...doc.querySelectorAll(".requests-list-filter-buttons button")];
+  ok(buttons.length > 0, "More than zero filter buttons were found");
 
   // Only target should be checked.
-  let checkStatus = [...buttons].map(button => button == target ? 1 : 0);
-  testFilterButtonsCustom(aMonitor, checkStatus);
+  let checkStatus = buttons.map(button => button == target ? 1 : 0);
+  testFilterButtonsCustom(monitor, checkStatus);
 }
 
 /**
@@ -402,17 +598,21 @@ function testFilterButtons(aMonitor, aFilterType) {
  *        'checked' attribute. For example, if the third item of the array
  *        evaluates to true, the third button should be checked.
  */
-function testFilterButtonsCustom(aMonitor, aIsChecked) {
-  let doc = aMonitor.panelWin.document;
-  let buttons = doc.querySelectorAll(".requests-menu-filter-button");
-  for (let i = 0; i < aIsChecked.length; i++) {
+function testFilterButtonsCustom(monitor, isChecked) {
+  let doc = monitor.panelWin.document;
+  let buttons = doc.querySelectorAll(".requests-list-filter-buttons button");
+  for (let i = 0; i < isChecked.length; i++) {
     let button = buttons[i];
-    if (aIsChecked[i]) {
-      is(button.hasAttribute("checked"), true,
-        "The " + button.id + " button should have a 'checked' attribute.");
+    if (isChecked[i]) {
+      is(button.classList.contains("checked"), true,
+        "The " + button.id + " button should have a 'checked' class.");
+      is(button.getAttribute("aria-pressed"), "true",
+        "The " + button.id + " button should set 'aria-pressed' = true.");
     } else {
-      is(button.hasAttribute("checked"), false,
-        "The " + button.id + " button should not have a 'checked' attribute.");
+      is(button.classList.contains("checked"), false,
+        "The " + button.id + " button should not have a 'checked' class.");
+      is(button.getAttribute("aria-pressed"), "false",
+        "The " + button.id + " button should set 'aria-pressed' = false.");
     }
   }
 }
@@ -468,9 +668,8 @@ function executeInContent(name, data = {}, objects = {}, expectResponse = true) 
   mm.sendAsyncMessage(name, data, objects);
   if (expectResponse) {
     return waitForContentMessage(name);
-  } else {
-    return promise.resolve();
   }
+  return promise.resolve();
 }
 
 /**
@@ -483,10 +682,78 @@ function executeInContent(name, data = {}, objects = {}, expectResponse = true) 
 function waitForContentMessage(name) {
   let mm = gBrowser.selectedBrowser.messageManager;
 
-  let def = promise.defer();
-  mm.addMessageListener(name, function onMessage(msg) {
-    mm.removeMessageListener(name, onMessage);
-    def.resolve(msg);
+  return new Promise((resolve) => {
+    mm.addMessageListener(name, function onMessage(msg) {
+      mm.removeMessageListener(name, onMessage);
+      resolve(msg);
+    });
   });
-  return def.promise;
+}
+
+function testColumnsAlignment(headers, requestList) {
+  // Get first request line, not child 0 as this is the headers
+  let firstRequestLine = requestList.childNodes[1];
+
+  // Find number of columns
+  let numberOfColumns = headers.childElementCount;
+  for (let i = 0; i < numberOfColumns; i++) {
+    let headerColumn = headers.childNodes[i];
+    let requestColumn = firstRequestLine.childNodes[i];
+    is(headerColumn.getBoundingClientRect().left,
+       requestColumn.getBoundingClientRect().left,
+       "Headers for columns number " + i + " are aligned."
+    );
+  }
+}
+
+async function hideColumn(monitor, column) {
+  let { document, parent } = monitor.panelWin;
+
+  info(`Clicking context-menu item for ${column}`);
+  EventUtils.sendMouseEvent({ type: "contextmenu" },
+    document.querySelector(".devtools-toolbar.requests-list-headers"));
+
+  let onHeaderRemoved = waitForDOM(document, `#requests-list-${column}-button`, 0);
+  parent.document.querySelector(`#request-list-header-${column}-toggle`).click();
+  await onHeaderRemoved;
+
+  ok(!document.querySelector(`#requests-list-${column}-button`),
+     `Column ${column} should be hidden`);
+}
+
+async function showColumn(monitor, column) {
+  let { document, parent } = monitor.panelWin;
+
+  info(`Clicking context-menu item for ${column}`);
+  EventUtils.sendMouseEvent({ type: "contextmenu" },
+    document.querySelector(".devtools-toolbar.requests-list-headers"));
+
+  let onHeaderAdded = waitForDOM(document, `#requests-list-${column}-button`, 1);
+  parent.document.querySelector(`#request-list-header-${column}-toggle`).click();
+  await onHeaderAdded;
+
+  ok(document.querySelector(`#requests-list-${column}-button`),
+     `Column ${column} should be visible`);
+}
+
+/**
+ * Select a request and switch to its response panel.
+ *
+ * @param {Number} index The request index to be selected
+ */
+async function selectIndexAndWaitForSourceEditor(monitor, index) {
+  let document = monitor.panelWin.document;
+  let onResponseContent = monitor.panelWin.once(EVENTS.RECEIVED_RESPONSE_CONTENT);
+  // Select the request first, as it may try to fetch whatever is the current request's
+  // responseContent if we select the ResponseTab first.
+  EventUtils.sendMouseEvent({ type: "mousedown" },
+    document.querySelectorAll(".request-list-item")[index]);
+  // We may already be on the ResponseTab, so only select it if needed.
+  let editor = document.querySelector("#response-panel .CodeMirror-code");
+  if (!editor) {
+    let waitDOM = waitForDOM(document, "#response-panel .CodeMirror-code");
+    document.querySelector("#response-tab").click();
+    await waitDOM;
+  }
+  await onResponseContent;
 }

@@ -5,62 +5,60 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { getAllFilters } = require("devtools/client/webconsole/new-console-output/selectors/filters");
-const { getLogLimit } = require("devtools/client/webconsole/new-console-output/selectors/prefs");
-const {
-  MESSAGE_TYPE
-} = require("devtools/client/webconsole/new-console-output/constants");
+function getAllMessagesById(state) {
+  return state.messages.messagesById;
+}
 
-function getAllMessages(state) {
-  let messages = state.messages.messagesById;
-  let logLimit = getLogLimit(state);
-  let filters = getAllFilters(state);
-
-  return prune(
-    search(
-      filterLevel(messages, filters),
-      filters.text
-    ),
-    logLimit
-  );
+function getMessage(state, id) {
+  return getAllMessagesById(state).get(id);
 }
 
 function getAllMessagesUiById(state) {
   return state.messages.messagesUiById;
 }
 
-function filterLevel(messages, filters) {
-  return messages.filter((message) => {
-    return filters[message.level] === true
-      || [MESSAGE_TYPE.COMMAND, MESSAGE_TYPE.RESULT].includes(message.type);
-  });
+function getAllMessagesTableDataById(state) {
+  return state.messages.messagesTableDataById;
 }
 
-function search(messages, text = "") {
-  if (text === "") {
-    return messages;
-  }
-
-  return messages.filter(function (message) {
-    // @TODO: message.parameters can be a grip, see how we can handle that
-    if (!Array.isArray(message.parameters)) {
-      return true;
-    }
-    return message
-      .parameters.join("")
-      .toLocaleLowerCase()
-      .includes(text.toLocaleLowerCase());
-  });
+function getAllGroupsById(state) {
+  return state.messages.groupsById;
 }
 
-function prune(messages, logLimit) {
-  let messageCount = messages.count();
-  if (messageCount > logLimit) {
-    return messages.splice(0, messageCount - logLimit);
-  }
-
-  return messages;
+function getCurrentGroup(state) {
+  return state.messages.currentGroup;
 }
 
-exports.getAllMessages = getAllMessages;
-exports.getAllMessagesUiById = getAllMessagesUiById;
+function getVisibleMessages(state) {
+  return state.messages.visibleMessages;
+}
+
+function getFilteredMessagesCount(state) {
+  return state.messages.filteredMessagesCount;
+}
+
+function getAllRepeatById(state) {
+  return state.messages.repeatById;
+}
+
+function getAllNetworkMessagesUpdateById(state) {
+  return state.messages.networkMessagesUpdateById;
+}
+
+function getGroupsById(state) {
+  return state.messages.groupsById;
+}
+
+module.exports = {
+  getAllGroupsById,
+  getAllMessagesById,
+  getAllMessagesTableDataById,
+  getAllMessagesUiById,
+  getAllNetworkMessagesUpdateById,
+  getAllRepeatById,
+  getCurrentGroup,
+  getFilteredMessagesCount,
+  getGroupsById,
+  getMessage,
+  getVisibleMessages,
+};

@@ -4,19 +4,42 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "base64.h"
+#include "nsKeygenHandler.h"
+
 #include "cryptohi.h"
 #include "keyhi.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/Base64.h"
+#include "mozilla/Casting.h"
+
+/* Disable the "base class should be explicitly initialized in the
+   copy constructor" warning that some bindings structs trigger while
+   including Element.h.  Looks like it's an inherent part of -Wextra,
+   so we can't just disable it in a targeted way in moz.build. */
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wextra"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wextra"
+#endif // __clang__ || __GNUC__
+
+#include "mozilla/dom/Element.h"
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif // __clang__ || __GNUC__
+
+#include "nsDependentString.h"
 #include "nsIContent.h"
-#include "nsIDOMHTMLSelectElement.h"
 #include "nsIGenKeypairInfoDlg.h"
 #include "nsIServiceManager.h"
 #include "nsITokenDialogs.h"
-#include "nsKeygenHandler.h"
 #include "nsKeygenHandlerContent.h"
 #include "nsKeygenThread.h"
+#include "nsMemory.h"
 #include "nsNSSComponent.h" // for PIPNSS string bundle calls.
 #include "nsNSSHelper.h"
 #include "nsReadableUtils.h"
@@ -26,6 +49,8 @@
 #include "secasn1.h"
 #include "secder.h"
 #include "secdert.h"
+
+using mozilla::dom::Element;
 
 //These defines are taken from the PKCS#11 spec
 #define CKM_RSA_PKCS_KEY_PAIR_GEN     0x00000000
@@ -66,7 +91,7 @@ typedef struct curveNameTagPairStr {
 } CurveNameTagPair;
 
 static CurveNameTagPair nameTagPair[] =
-{ 
+{
   { "prime192v1", SEC_OID_ANSIX962_EC_PRIME192V1 },
   { "prime192v2", SEC_OID_ANSIX962_EC_PRIME192V2 },
   { "prime192v3", SEC_OID_ANSIX962_EC_PRIME192V3 },
@@ -157,7 +182,7 @@ DecodeECParams(const char* curve)
 
     if (curve && *curve) {
         numCurves = sizeof(nameTagPair)/sizeof(CurveNameTagPair);
-        for (i = 0; ((i < numCurves) && (curveOidTag == SEC_OID_UNKNOWN)); 
+        for (i = 0; ((i < numCurves) && (curveOidTag == SEC_OID_UNKNOWN));
              i++) {
             if (PL_strcmp(curve, nameTagPair[i].curveName) == 0)
                 curveOidTag = nameTagPair[i].curveOidTag;
@@ -165,7 +190,7 @@ DecodeECParams(const char* curve)
     }
 
     /* Return nullptr if curve name is not recognized */
-    if ((curveOidTag == SEC_OID_UNKNOWN) || 
+    if ((curveOidTag == SEC_OID_UNKNOWN) ||
         (oidData = SECOID_FindOIDByTag(curveOidTag)) == nullptr) {
         return nullptr;
     }
@@ -176,9 +201,9 @@ DecodeECParams(const char* curve)
         return nullptr;
     }
 
-    /* 
+    /*
      * ecparams->data needs to contain the ASN encoding of an object ID (OID)
-     * representing the named curve. The actual OID is in 
+     * representing the named curve. The actual OID is in
      * oidData->oid.data so we simply prepend 0x06 and OID length
      */
     ecparams->data[0] = SEC_ASN1_OBJECT_ID;
@@ -191,9 +216,9 @@ DecodeECParams(const char* curve)
 NS_IMPL_ISUPPORTS(nsKeygenFormProcessor, nsIFormProcessor)
 
 nsKeygenFormProcessor::nsKeygenFormProcessor()
-{ 
+{
    m_ctx = new PipUIContext();
-} 
+}
 
 nsKeygenFormProcessor::~nsKeygenFormProcessor()
 {
@@ -298,7 +323,7 @@ GetSlotWithMechanism(uint32_t aMechanism, nsIInterfaceRequestor* m_ctx,
     PK11SlotList * slotList = nullptr;
     char16_t** tokenNameList = nullptr;
     nsCOMPtr<nsITokenDialogs> dialogs;
-    char16_t *unicodeTokenChosen;
+    nsAutoString tokenStr;
     PK11SlotListElement *slotElement, *tmpSlot;
     uint32_t numSlots = 0, i = 0;
     bool canceled;
@@ -307,7 +332,7 @@ GetSlotWithMechanism(uint32_t aMechanism, nsIInterfaceRequestor* m_ctx,
     *aSlot = nullptr;
 
     // Get the slot
-    slotList = PK11_GetAllTokens(MapGenMechToAlgoMech(aMechanism), 
+    slotList = PK11_GetAllTokens(MapGenMechToAlgoMech(aMechanism),
                                 true, true, m_ctx);
     if (!slotList || !slotList->head) {
         rv = NS_ERROR_FAILURE;
@@ -340,7 +365,7 @@ GetSlotWithMechanism(uint32_t aMechanism, nsIInterfaceRequestor* m_ctx,
             if (tokenNameList[i])
                 i++;
             else {
-                // OOM. adjust numSlots so we don't free unallocated memory. 
+                // OOM. adjust numSlots so we don't free unallocated memory.
                 numSlots = i;
                 PK11_FreeSlotListElement(slotList, slotElement);
                 rv = NS_ERROR_OUT_OF_MEMORY;
@@ -360,7 +385,7 @@ GetSlotWithMechanism(uint32_t aMechanism, nsIInterfaceRequestor* m_ctx,
         rv = NS_ERROR_OUT_OF_MEMORY;
     } else {
         rv = dialogs->ChooseToken(m_ctx, (const char16_t**)tokenNameList,
-                                  numSlots, &unicodeTokenChosen, &canceled);
+                                  numSlots, tokenStr, &canceled);
     }
 		if (NS_FAILED(rv)) goto loser;
 
@@ -368,7 +393,6 @@ GetSlotWithMechanism(uint32_t aMechanism, nsIInterfaceRequestor* m_ctx,
 
         // Get the slot //
         slotElement = PK11_GetFirstSafe(slotList);
-        nsAutoString tokenStr(unicodeTokenChosen);
         while (slotElement) {
             if (tokenStr.Equals(NS_ConvertUTF8toUTF16(PK11_GetTokenName(slotElement->slot)))) {
                 *aSlot = slotElement->slot;
@@ -395,58 +419,10 @@ loser:
       return rv;
 }
 
-
-void
-GatherKeygenTelemetry(uint32_t keyGenMechanism, int keysize, char* curve)
-{
-  if (keyGenMechanism == CKM_RSA_PKCS_KEY_PAIR_GEN) {
-    if (keysize > 8196 || keysize < 0) {
-      return;
-    }
-
-    nsCString telemetryValue("rsa");
-    telemetryValue.AppendPrintf("%d", keysize);
-    mozilla::Telemetry::Accumulate(
-        mozilla::Telemetry::KEYGEN_GENERATED_KEY_TYPE, telemetryValue);
-  } else if (keyGenMechanism == CKM_EC_KEY_PAIR_GEN) {
-    nsCString secp384r1 = NS_LITERAL_CSTRING("secp384r1");
-    nsCString secp256r1 = NS_LITERAL_CSTRING("secp256r1");
-
-    mozilla::UniqueSECItem decoded = DecodeECParams(curve);
-    if (!decoded) {
-      switch (keysize) {
-        case 2048:
-          mozilla::Telemetry::Accumulate(
-              mozilla::Telemetry::KEYGEN_GENERATED_KEY_TYPE, secp384r1);
-          break;
-        case 1024:
-        case 512:
-          mozilla::Telemetry::Accumulate(
-              mozilla::Telemetry::KEYGEN_GENERATED_KEY_TYPE, secp256r1);
-          break;
-      }
-    } else {
-      if (secp384r1.EqualsIgnoreCase(curve, secp384r1.Length())) {
-          mozilla::Telemetry::Accumulate(
-              mozilla::Telemetry::KEYGEN_GENERATED_KEY_TYPE, secp384r1);
-      } else if (secp256r1.EqualsIgnoreCase(curve, secp256r1.Length())) {
-          mozilla::Telemetry::Accumulate(
-              mozilla::Telemetry::KEYGEN_GENERATED_KEY_TYPE, secp256r1);
-      } else {
-        mozilla::Telemetry::Accumulate(
-            mozilla::Telemetry::KEYGEN_GENERATED_KEY_TYPE, NS_LITERAL_CSTRING("other_ec"));
-      }
-    }
-  } else {
-    MOZ_CRASH("Unknown keygen algorithm");
-    return;
-  }
-}
-
 nsresult
 nsKeygenFormProcessor::GetPublicKey(const nsAString& aValue,
                                     const nsAString& aChallenge,
-                                    const nsAFlatString& aKeyType,
+                                    const nsString& aKeyType,
                                     nsAString& aOutPublicKey,
                                     const nsAString& aKeyParams)
 {
@@ -456,7 +432,7 @@ nsKeygenFormProcessor::GetPublicKey(const nsAString& aValue,
     }
 
     nsresult rv = NS_ERROR_FAILURE;
-    UniquePORTString keystring;
+    nsAutoCString keystring;
     char *keyparamsString = nullptr;
     uint32_t keyGenMechanism;
     PK11SlotInfo *slot = nullptr;
@@ -472,6 +448,7 @@ nsKeygenFormProcessor::GetPublicKey(const nsAString& aValue,
     SECItem spkiItem;
     SECItem pkacItem;
     SECItem signedItem;
+    nsDependentCSubstring signedItemStr;
     CERTPublicKeyAndChallenge pkac;
     pkac.challenge.data = nullptr;
     nsCOMPtr<nsIGeneratingKeypairInfoDialogs> dialogs;
@@ -526,17 +503,17 @@ nsKeygenFormProcessor::GetPublicKey(const nsAString& aValue,
             params = &rsaParams;
             break;
         case CKM_EC_KEY_PAIR_GEN:
-            /* XXX We ought to rethink how the KEYGEN tag is 
+            /* XXX We ought to rethink how the KEYGEN tag is
              * displayed. The pulldown selections presented
              * to the user must depend on the keytype.
              * The displayed selection could be picked
              * from the keyparams attribute (this is currently called
              * the pqg attribute).
              * For now, we pick ecparams from the keyparams field
-             * if it specifies a valid supported curve, or else 
+             * if it specifies a valid supported curve, or else
              * we pick one of secp384r1, secp256r1 or secp192r1
              * respectively depending on the user's selection
-             * (High, Medium, Low). 
+             * (High, Medium, Low).
              * (RSA uses RSA-2048, RSA-1024 and RSA-512 for historical
              * reasons, while ECC choices represent a stronger mapping)
              * NOTE: The user's selection
@@ -560,7 +537,7 @@ nsKeygenFormProcessor::GetPublicKey(const nsAString& aValue,
                 case 512:
                     ecParams = DecodeECParams("secp256r1");
                     break;
-                } 
+                }
             }
             MOZ_ASSERT(ecParams);
             params = ecParams.get();
@@ -617,7 +594,7 @@ nsKeygenFormProcessor::GetPublicKey(const nsAString& aValue,
             }
         }
     }
-    
+
     if (NS_FAILED(rv) || !privateKey) {
         goto loser;
     }
@@ -670,18 +647,18 @@ nsKeygenFormProcessor::GetPublicKey(const nsAString& aValue,
     /*
      * Convert the signed public key and challenge into base64/ascii.
      */
-    keystring = UniquePORTString(
-      BTOA_DataToAscii(signedItem.data, signedItem.len));
-    if (!keystring) {
-        rv = NS_ERROR_OUT_OF_MEMORY;
+    signedItemStr.Assign(
+        mozilla::BitwiseCast<char*, unsigned char*>(signedItem.data),
+        signedItem.len);
+    rv = mozilla::Base64Encode(signedItemStr, keystring);
+    if (NS_FAILED(rv)) {
         goto loser;
     }
 
-    CopyASCIItoUTF16(keystring.get(), aOutPublicKey);
+    CopyASCIItoUTF16(keystring, aOutPublicKey);
 
     rv = NS_OK;
 
-    GatherKeygenTelemetry(keyGenMechanism, keysize, keyparamsString);
 loser:
     if (srv != SECSuccess) {
         if ( privateKey ) {
@@ -717,7 +694,7 @@ loser:
 
 // static
 void
-nsKeygenFormProcessor::ExtractParams(nsIDOMHTMLElement* aElement,
+nsKeygenFormProcessor::ExtractParams(Element* aElement,
                                      nsAString& challengeValue,
                                      nsAString& keyTypeValue,
                                      nsAString& keyParamsValue)
@@ -730,12 +707,12 @@ nsKeygenFormProcessor::ExtractParams(nsIDOMHTMLElement* aElement,
 
     aElement->GetAttribute(NS_LITERAL_STRING("pqg"),
                            keyParamsValue);
-    /* XXX We can still support the pqg attribute in the keygen 
-     * tag for backward compatibility while introducing a more 
+    /* XXX We can still support the pqg attribute in the keygen
+     * tag for backward compatibility while introducing a more
      * general attribute named keyparams.
      */
     if (keyParamsValue.IsEmpty()) {
-        aElement->GetAttribute(NS_LITERAL_STRING("keyparams"), 
+        aElement->GetAttribute(NS_LITERAL_STRING("keyparams"),
                                keyParamsValue);
     }
 
@@ -743,7 +720,7 @@ nsKeygenFormProcessor::ExtractParams(nsIDOMHTMLElement* aElement,
 }
 
 nsresult
-nsKeygenFormProcessor::ProcessValue(nsIDOMHTMLElement* aElement,
+nsKeygenFormProcessor::ProcessValue(Element* aElement,
                                     const nsAString& aName,
                                     nsAString& aValue)
 {
@@ -752,7 +729,7 @@ nsKeygenFormProcessor::ProcessValue(nsIDOMHTMLElement* aElement,
     nsAutoString keyParamsValue;
     ExtractParams(aElement, challengeValue, keyTypeValue, keyParamsValue);
 
-    return GetPublicKey(aValue, challengeValue, keyTypeValue, 
+    return GetPublicKey(aValue, challengeValue, keyTypeValue,
                         aValue, keyParamsValue);
 }
 
@@ -771,7 +748,7 @@ nsresult
 nsKeygenFormProcessor::ProvideContent(const nsAString& aFormType,
                                       nsTArray<nsString>& aContent,
                                       nsAString& aAttribute)
-{ 
+{
   if (Compare(aFormType, NS_LITERAL_STRING("SELECT"),
               nsCaseInsensitiveStringComparator()) == 0) {
 
@@ -781,5 +758,5 @@ nsKeygenFormProcessor::ProvideContent(const nsAString& aFormType,
     aAttribute.AssignLiteral("-mozilla-keygen");
   }
   return NS_OK;
-} 
+}
 

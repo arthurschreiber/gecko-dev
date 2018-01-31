@@ -14,8 +14,6 @@
 #include "jsiter.h"
 #include "jspubtd.h"
 
-#include "frontend/ParseNode.h"
-
 #include "vm/Stack.h"
 
 namespace js {
@@ -32,7 +30,7 @@ BoxNonStrictThis(JSContext* cx, HandleValue thisv, MutableHandleValue vp);
 extern bool
 GetFunctionThis(JSContext* cx, AbstractFramePtr frame, MutableHandleValue res);
 
-extern bool
+extern void
 GetNonSyntacticGlobalThis(JSContext* cx, HandleObject envChain, MutableHandleValue res);
 
 /*
@@ -201,7 +199,7 @@ Execute(JSContext* cx, HandleScript script, JSObject& scopeChain, Value* rval);
 class ExecuteState;
 class InvokeState;
 
-// RunState is passed to RunScript and RunScript then eiter passes it to the
+// RunState is passed to RunScript and RunScript then either passes it to the
 // interpreter or to the JITs. RunState contains all information we need to
 // construct an interpreter or JIT frame.
 class RunState
@@ -232,10 +230,8 @@ class RunState
 
     JS::HandleScript script() const { return script_; }
 
-    virtual InterpreterFrame* pushInterpreterFrame(JSContext* cx) = 0;
-    virtual void setReturnValue(Value v) = 0;
-
-    bool maybeCreateThisForConstructor(JSContext* cx);
+    InterpreterFrame* pushInterpreterFrame(JSContext* cx);
+    inline void setReturnValue(const Value& v);
 
   private:
     RunState(const RunState& other) = delete;
@@ -263,13 +259,16 @@ class ExecuteState : public RunState
         result_(result)
     { }
 
-    Value newTarget() { return newTargetValue_; }
+    Value newTarget() const { return newTargetValue_; }
+    void setNewTarget(const Value& v) { newTargetValue_ = v; }
+    Value* addressOfNewTarget() { return newTargetValue_.address(); }
+
     JSObject* environmentChain() const { return envChain_; }
     bool isDebuggerEval() const { return !!evalInFrame_; }
 
-    virtual InterpreterFrame* pushInterpreterFrame(JSContext* cx);
+    InterpreterFrame* pushInterpreterFrame(JSContext* cx);
 
-    virtual void setReturnValue(Value v) {
+    void setReturnValue(const Value& v) {
         if (result_)
             *result_ = v;
     }
@@ -280,28 +279,32 @@ class InvokeState final : public RunState
 {
     const CallArgs& args_;
     MaybeConstruct construct_;
-    bool createSingleton_;
 
   public:
     InvokeState(JSContext* cx, const CallArgs& args, MaybeConstruct construct)
       : RunState(cx, Invoke, args.callee().as<JSFunction>().nonLazyScript()),
         args_(args),
-        construct_(construct),
-        createSingleton_(false)
+        construct_(construct)
     { }
-
-    bool createSingleton() const { return createSingleton_; }
-    void setCreateSingleton() { createSingleton_ = true; }
 
     bool constructing() const { return construct_; }
     const CallArgs& args() const { return args_; }
 
-    virtual InterpreterFrame* pushInterpreterFrame(JSContext* cx);
+    InterpreterFrame* pushInterpreterFrame(JSContext* cx);
 
-    virtual void setReturnValue(Value v) {
+    void setReturnValue(const Value& v) {
         args_.rval().set(v);
     }
 };
+
+inline void
+RunState::setReturnValue(const Value& v)
+{
+    if (isInvoke())
+        asInvoke()->setReturnValue(v);
+    else
+        asExecute()->setReturnValue(v);
+}
 
 extern bool
 RunScript(JSContext* cx, RunState& state);
@@ -420,14 +423,6 @@ ThrowingOperation(JSContext* cx, HandleValue v);
 bool
 GetProperty(JSContext* cx, HandleValue value, HandlePropertyName name, MutableHandleValue vp);
 
-bool
-GetEnvironmentName(JSContext* cx, HandleObject obj, HandlePropertyName name,
-                   MutableHandleValue vp);
-
-bool
-GetEnvironmentNameForTypeOf(JSContext* cx, HandleObject obj, HandlePropertyName name,
-                            MutableHandleValue vp);
-
 JSObject*
 Lambda(JSContext* cx, HandleFunction fun, HandleObject parent);
 
@@ -447,6 +442,9 @@ bool
 SetObjectElement(JSContext* cx, HandleObject obj, HandleValue index, HandleValue value,
                  bool strict, HandleScript script, jsbytecode* pc);
 
+bool
+SetObjectElement(JSContext* cx, HandleObject obj, HandleValue index, HandleValue value,
+                 HandleValue receiver, bool strict);
 bool
 SetObjectElement(JSContext* cx, HandleObject obj, HandleValue index, HandleValue value,
                  HandleValue receiver, bool strict, HandleScript script, jsbytecode* pc);
@@ -554,6 +552,9 @@ ReportRuntimeLexicalError(JSContext* cx, unsigned errorNumber, HandlePropertyNam
 void
 ReportRuntimeLexicalError(JSContext* cx, unsigned errorNumber, HandleScript script, jsbytecode* pc);
 
+void
+ReportInNotObjectError(JSContext* cx, HandleValue lref, int lindex, HandleValue rref, int rindex);
+
 // The parser only reports redeclarations that occurs within a single
 // script. Due to the extensibility of the global lexical scope, we also check
 // for redeclarations during runtime in JSOP_DEF{VAR,LET,CONST}.
@@ -561,20 +562,56 @@ void
 ReportRuntimeRedeclaration(JSContext* cx, HandlePropertyName name, const char* redeclKind);
 
 enum class CheckIsObjectKind : uint8_t {
-    IteratorNext
+    IteratorNext,
+    IteratorReturn,
+    IteratorThrow,
+    GetIterator,
+    GetAsyncIterator
 };
 
 bool
 ThrowCheckIsObject(JSContext* cx, CheckIsObjectKind kind);
 
+enum class CheckIsCallableKind : uint8_t {
+    IteratorReturn
+};
+
+bool
+ThrowCheckIsCallable(JSContext* cx, CheckIsCallableKind kind);
+
 bool
 ThrowUninitializedThis(JSContext* cx, AbstractFramePtr frame);
+
+bool
+ThrowInitializedThis(JSContext* cx);
 
 bool
 DefaultClassConstructor(JSContext* cx, unsigned argc, Value* vp);
 
 bool
 Debug_CheckSelfHosted(JSContext* cx, HandleValue v);
+
+bool
+CheckClassHeritageOperation(JSContext* cx, HandleValue heritage);
+
+JSObject*
+ObjectWithProtoOperation(JSContext* cx, HandleValue proto);
+
+JSObject*
+FunWithProtoOperation(JSContext* cx, HandleFunction fun, HandleObject parent, HandleObject proto);
+
+JSFunction*
+MakeDefaultConstructor(JSContext* cx, HandleScript script, jsbytecode* pc, HandleObject proto);
+
+JSObject*
+HomeObjectSuperBase(JSContext* cx, HandleObject homeObj);
+
+JSObject*
+SuperFunOperation(JSContext* cx, HandleObject callee);
+
+bool
+SetPropertySuper(JSContext* cx, HandleObject obj, HandleValue receiver,
+                 HandlePropertyName id, HandleValue rval, bool strict);
 
 }  /* namespace js */
 

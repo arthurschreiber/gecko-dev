@@ -5,6 +5,7 @@
 #ifndef MEDIAENGINEDEFAULT_H_
 #define MEDIAENGINEDEFAULT_H_
 
+#include "nsINamed.h"
 #include "nsITimer.h"
 
 #include "nsAutoPtr.h"
@@ -23,6 +24,7 @@
 #endif
 #include "MediaStreamGraph.h"
 #include "MediaTrackConstraints.h"
+#include "SineWaveGenerator.h"
 
 namespace mozilla {
 
@@ -36,6 +38,7 @@ class MediaEngineDefault;
  * The default implementation of the MediaEngine interface.
  */
 class MediaEngineDefaultVideoSource : public nsITimerCallback,
+                                      public nsINamed,
 #ifdef MOZ_WEBRTC
                                       public MediaEngineCameraVideoSource
 #else
@@ -51,7 +54,7 @@ public:
   nsresult Allocate(const dom::MediaTrackConstraints &aConstraints,
                     const MediaEnginePrefs &aPrefs,
                     const nsString& aDeviceId,
-                    const nsACString& aOrigin,
+                    const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
                     AllocationHandle** aOutHandle,
                     const char** aOutBadConstraint) override;
   nsresult Deallocate(AllocationHandle* aHandle) override;
@@ -62,7 +65,6 @@ public:
                    const MediaEnginePrefs &aPrefs,
                    const nsString& aDeviceId,
                    const char** aOutBadConstraint) override;
-  void SetDirectListeners(bool aHasDirectListeners) override {};
   void NotifyPull(MediaStreamGraph* aGraph,
                   SourceMediaStream *aSource,
                   TrackID aId,
@@ -85,24 +87,33 @@ public:
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
+  void Shutdown() override {
+    Stop(mSource, mTrackID);
+    MonitorAutoLock lock(mMonitor);
+    mImageContainer = nullptr;
+  }
+
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSITIMERCALLBACK
+  NS_DECL_NSINAMED
 
 protected:
   ~MediaEngineDefaultVideoSource();
 
   friend class MediaEngineDefault;
 
+  RefPtr<SourceMediaStream> mSource;
   TrackID mTrackID;
   nsCOMPtr<nsITimer> mTimer;
-  // mMonitor protects mImage access/changes, and transitions of mState
-  // from kStarted to kStopped (which are combined with EndTrack() and
-  // image changes).  Note that mSources is not accessed from other threads
-  // for video and is not protected.
+
+#ifndef MOZ_WEBRTC
+  // mMonitor protects mImage/mImageContainer access/changes, and
+  // transitions of mState from kStarted to kStopped (which are combined
+  // with EndTrack() and image changes).
   Monitor mMonitor;
   RefPtr<layers::Image> mImage;
-
   RefPtr<layers::ImageContainer> mImageContainer;
+#endif
 
   MediaEnginePrefs mOpts;
   int mCb;
@@ -111,8 +122,7 @@ protected:
 
 class SineWaveGenerator;
 
-class MediaEngineDefaultAudioSource : public nsITimerCallback,
-                                      public MediaEngineAudioSource
+class MediaEngineDefaultAudioSource : public MediaEngineAudioSource
 {
 public:
   MediaEngineDefaultAudioSource();
@@ -123,7 +133,7 @@ public:
   nsresult Allocate(const dom::MediaTrackConstraints &aConstraints,
                     const MediaEnginePrefs &aPrefs,
                     const nsString& aDeviceId,
-                    const nsACString& aOrigin,
+                    const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
                     AllocationHandle** aOutHandle,
                     const char** aOutBadConstraint) override;
   nsresult Deallocate(AllocationHandle* aHandle) override;
@@ -134,23 +144,14 @@ public:
                    const MediaEnginePrefs &aPrefs,
                    const nsString& aDeviceId,
                    const char** aOutBadConstraint) override;
-  void SetDirectListeners(bool aHasDirectListeners) override {};
-  void AppendToSegment(AudioSegment& aSegment,
-                       TrackTicks aSamples);
+  void inline AppendToSegment(AudioSegment& aSegment,
+                              TrackTicks aSamples,
+                              const PrincipalHandle& aPrincipalHandle);
   void NotifyPull(MediaStreamGraph* aGraph,
                   SourceMediaStream *aSource,
                   TrackID aId,
                   StreamTime aDesiredTime,
-                  const PrincipalHandle& aPrincipalHandle) override
-  {
-#ifdef DEBUG
-    StreamTracks::Track* data = aSource->FindTrack(aId);
-    NS_WARNING_ASSERTION(
-      !data || data->IsEnded() ||
-      aDesiredTime <= aSource->GetEndOfAppendedData(aId),
-      "MediaEngineDefaultAudioSource data underrun");
-#endif
-  }
+                  const PrincipalHandle& aPrincipalHandle) override;
 
   void NotifyOutputData(MediaStreamGraph* aGraph,
                         AudioDataValue* aBuffer, size_t aFrames,
@@ -180,19 +181,16 @@ public:
       const nsString& aDeviceId) const override;
 
   NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_NSITIMERCALLBACK
 
 protected:
   ~MediaEngineDefaultAudioSource();
 
   TrackID mTrackID;
-  PrincipalHandle mPrincipalHandle;
-  nsCOMPtr<nsITimer> mTimer;
 
-  TimeStamp mLastNotify;
-  TrackTicks mBufferSize;
+  TrackTicks mLastNotify; // Accessed in ::Start(), then on NotifyPull (from MSG thread)
+  uint32_t mFreq; // ditto
 
-  SourceMediaStream* mSource;
+  // Created on Start, then accessed from NotifyPull (MSG thread)
   nsAutoPtr<SineWaveGenerator> mSineGenerator;
 };
 
@@ -210,6 +208,12 @@ public:
   void Shutdown() override {
     MutexAutoLock lock(mMutex);
 
+    for (auto& source : mVSources) {
+      source->Shutdown();
+    }
+    for (auto& source : mASources) {
+      source->Shutdown();
+    }
     mVSources.Clear();
     mASources.Clear();
   };
@@ -219,7 +223,6 @@ private:
 
   Mutex mMutex;
   // protected with mMutex:
-
   nsTArray<RefPtr<MediaEngineVideoSource> > mVSources;
   nsTArray<RefPtr<MediaEngineAudioSource> > mASources;
 };

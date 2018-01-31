@@ -5,11 +5,13 @@
 
 #include "nsWindowBase.h"
 
+#include "gfxPrefs.h"
 #include "mozilla/MiscEvents.h"
 #include "KeyboardLayout.h"
 #include "WinUtils.h"
 #include "npapi.h"
 #include "nsAutoPtr.h"
+#include "nsIPresShell.h"
 
 using namespace mozilla;
 using namespace mozilla::widget;
@@ -21,7 +23,7 @@ InjectTouchInputPtr nsWindowBase::sInjectTouchFuncPtr;
 bool
 nsWindowBase::DispatchPluginEvent(const MSG& aMsg)
 {
-  if (!PluginHasFocus()) {
+  if (!ShouldDispatchPluginEvent()) {
     return false;
   }
   WidgetPluginEvent pluginEvent(true, ePluginInputEvent, this);
@@ -34,6 +36,12 @@ nsWindowBase::DispatchPluginEvent(const MSG& aMsg)
   pluginEvent.mPluginEvent.Copy(npEvent);
   pluginEvent.mRetargetToFocusedDocument = true;
   return DispatchWindowEvent(&pluginEvent);
+}
+
+bool
+nsWindowBase::ShouldDispatchPluginEvent()
+{
+  return PluginHasFocus();
 }
 
 // static
@@ -127,9 +135,10 @@ nsWindowBase::SynthesizeNativeTouchPoint(uint32_t aPointerId,
 {
   AutoObserverNotifier notifier(aObserver, "touchpoint");
 
-  if (!InitTouchInjection()) {
-    // If we don't have touch injection from the OS, we can just fake it and
-    // synthesize the events from here.
+  if (gfxPrefs::APZTestFailsWithNativeInjection() || !InitTouchInjection()) {
+    // If we don't have touch injection from the OS, or if we are running a test
+    // that cannot properly inject events to satisfy the OS requirements (see bug
+    // 1313170)  we can just fake it and synthesize the events from here.
     MOZ_ASSERT(NS_IsMainThread());
     if (aPointerState == TOUCH_HOVER) {
       return NS_ERROR_UNEXPECTED;

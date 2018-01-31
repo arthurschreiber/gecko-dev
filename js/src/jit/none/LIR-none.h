@@ -43,10 +43,10 @@ class LTableSwitchV : public LInstruction
     static const size_t InputValue = 0;
 };
 
-class LAsmJSUInt32ToFloat32 : public LInstruction
+class LWasmUint32ToFloat32 : public LInstruction
 {
   public:
-    LAsmJSUInt32ToFloat32(const LAllocation& ) { MOZ_CRASH(); }
+    LWasmUint32ToFloat32(const LAllocation& ) { MOZ_CRASH(); }
 };
 
 class LUnbox : public LInstructionHelper<1, 2, 0>
@@ -56,7 +56,7 @@ class LUnbox : public LInstructionHelper<1, 2, 0>
     MUnbox* mir() const { MOZ_CRASH(); }
     const LAllocation* payload() { MOZ_CRASH(); }
     const LAllocation* type() { MOZ_CRASH(); }
-    const char* extraName() const { MOZ_CRASH(); }
+    const char* extraName() const override { MOZ_CRASH(); }
 };
 class LDivI : public LBinaryMath<1>
 {
@@ -87,10 +87,10 @@ class LModI : public LBinaryMath<1>
     const LDefinition* callTemp() { MOZ_CRASH(); }
     MMod* mir() const { MOZ_CRASH(); }
 };
-class LAsmJSUInt32ToDouble : public LInstructionHelper<1, 1, 0>
+class LWasmUint32ToDouble : public LInstructionHelper<1, 1, 0>
 {
   public:
-    LAsmJSUInt32ToDouble(const LAllocation&) { MOZ_CRASH(); }
+    LWasmUint32ToDouble(const LAllocation&) { MOZ_CRASH(); }
 };
 class LModPowTwoI : public LInstructionHelper<1, 1, 0>
 {

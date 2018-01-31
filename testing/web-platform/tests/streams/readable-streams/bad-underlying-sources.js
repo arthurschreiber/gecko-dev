@@ -35,16 +35,14 @@ test(() => {
 }, 'Underlying source start: throwing method');
 
 
-promise_test(t => {
+test(() => {
 
   const theError = new Error('a unique string');
-  const rs = new ReadableStream({
+  assert_throws(theError, () => new ReadableStream({
     get pull() {
       throw theError;
     }
-  });
-
-  return promise_rejects(t, theError, rs.getReader().closed);
+  }), 'constructor should throw');
 
 }, 'Underlying source: throwing pull getter (initial pull)');
 
@@ -82,13 +80,15 @@ promise_test(t => {
 
   return Promise.all([
     reader.read().then(r => {
-      assert_object_equals(r, { value: 'a', done: false }, 'the chunk read should be correct');
+      assert_object_equals(r, { value: 'a', done: false }, 'the first chunk read should be correct');
     }),
-    promise_rejects(t, theError, reader.closed)
+    reader.read().then(r => {
+      assert_object_equals(r, { value: 'a', done: false }, 'the second chunk read should be correct');
+      assert_equals(counter, 1, 'counter should be 1');
+    })
   ]);
 
-}, 'Underlying source pull: throwing getter (second pull)');
-
+}, 'Underlying source pull: throwing getter (second pull does not result in a second get)');
 
 promise_test(t => {
 
@@ -117,16 +117,14 @@ promise_test(t => {
 
 }, 'Underlying source pull: throwing method (second pull)');
 
-promise_test(t => {
+test(() => {
 
   const theError = new Error('a unique string');
-  const rs = new ReadableStream({
+  assert_throws(theError, () => new ReadableStream({
     get cancel() {
       throw theError;
     }
-  });
-
-  return promise_rejects(t, theError, rs.cancel());
+  }), 'constructor should throw');
 
 }, 'Underlying source cancel: throwing getter');
 
@@ -153,7 +151,7 @@ promise_test(() => {
   });
 
   rs.cancel();
-  assert_throws(new TypeError, () => controller.enqueue('a'), 'Calling enqueue after canceling should throw');
+  assert_throws(new TypeError(), () => controller.enqueue('a'), 'Calling enqueue after canceling should throw');
 
   return rs.getReader().closed;
 
@@ -171,7 +169,7 @@ promise_test(() => {
   });
 
   rs.cancel();
-  assert_throws(new TypeError, () => controller.enqueue('c'), 'Calling enqueue after canceling should throw');
+  assert_throws(new TypeError(), () => controller.enqueue('c'), 'Calling enqueue after canceling should throw');
 
   return rs.getReader().closed;
 
@@ -379,5 +377,29 @@ promise_test(() => {
 
 }, 'Underlying source: calling error and returning a rejected promise from pull should cause the stream to error ' +
    'with the first error');
+
+const error1 = { name: 'error1' };
+
+promise_test(t => {
+
+  let pullShouldThrow = false;
+  const rs = new ReadableStream({
+    pull(controller) {
+      if (pullShouldThrow) {
+        throw error1;
+      }
+      controller.enqueue(0);
+    }
+  }, new CountQueuingStrategy({highWaterMark: 1}));
+  const reader = rs.getReader();
+  return Promise.resolve().then(() => {
+    pullShouldThrow = true;
+    return Promise.all([
+      reader.read(),
+      promise_rejects(t, error1, reader.closed, '.closed promise should reject')
+    ]);
+  });
+
+}, 'read should not error if it dequeues and pull() throws');
 
 done();

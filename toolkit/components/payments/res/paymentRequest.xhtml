@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'"/>
+  <title></title>
+  <link rel="stylesheet" href="paymentRequest.css"/>
+  <link rel="stylesheet" href="components/rich-select.css"/>
+  <link rel="stylesheet" href="components/address-option.css"/>
+  <script src="vendor/custom-elements.min.js"></script>
+
+  <script src="PaymentsStore.js"></script>
+
+  <script src="mixins/ObservedPropertiesMixin.js"></script>
+  <script src="mixins/PaymentStateSubscriberMixin.js"></script>
+
+  <script src="components/currency-amount.js"></script>
+
+  <script src="components/rich-select.js"></script>
+  <script src="components/rich-option.js"></script>
+  <script src="components/address-option.js"></script>
+  <script src="containers/address-picker.js"></script>
+  <script src="containers/payment-dialog.js"></script>
+
+  <script src="paymentRequest.js"></script>
+
+  <template id="payment-dialog-template">
+    <header>
+      <div id="total">
+        <h2 class="label"></h2>
+        <currency-amount></currency-amount>
+        <div id="host-name"></div>
+      </div>
+      <div id="top-buttons" >
+        <button id="view-all" class="closed">View All Items</button>
+      </div>
+    </header>
+
+    <div id="main-container">
+      <section id="payment-summary">
+        <h1>Your Payment</h1>
+
+        <section>
+          <div><label>Shipping Address</label></div>
+          <address-picker selected-state-key="selectedShippingAddress"></address-picker>
+        </section>
+
+        <footer id="controls-container">
+          <button id="cancel">Cancel</button>
+          <button id="pay">Pay</button>
+        </footer>
+      </section>
+      <section id="order-details-overlay" hidden="hidden">
+        <h1>Order Details</h1>
+      </section>
+    </div>
+  </template>
+</head>
+<body>
+  <iframe id="debugging-console"
+          hidden="hidden"
+          height="300"
+          src="debugging.html"></iframe>
+  <payment-dialog></payment-dialog>
+</body>
+</html>

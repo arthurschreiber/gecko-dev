@@ -34,7 +34,7 @@ js::DOMProxyShadowsResult
 DOMProxyShadows(JSContext* cx, JS::Handle<JSObject*> proxy, JS::Handle<jsid> id)
 {
   JS::Rooted<JSObject*> expando(cx, DOMProxyHandler::GetExpandoObject(proxy));
-  JS::Value v = js::GetProxyExtra(proxy, JSPROXYSLOT_EXPANDO);
+  JS::Value v = js::GetProxyPrivate(proxy);
   bool isOverrideBuiltins = !v.isObject() && !v.isUndefined();
   if (expando) {
     bool hasOwn;
@@ -64,7 +64,7 @@ struct SetDOMProxyInformation
 {
   SetDOMProxyInformation() {
     js::SetDOMProxyInformation((const void*) &DOMProxyHandler::family,
-                               JSPROXYSLOT_EXPANDO, DOMProxyShadows);
+                               DOMProxyShadows);
   }
 };
 
@@ -75,14 +75,13 @@ JSObject*
 DOMProxyHandler::GetAndClearExpandoObject(JSObject* obj)
 {
   MOZ_ASSERT(IsDOMProxy(obj), "expected a DOM proxy object");
-  JS::Value v = js::GetProxyExtra(obj, JSPROXYSLOT_EXPANDO);
+  JS::Value v = js::GetProxyPrivate(obj);
   if (v.isUndefined()) {
     return nullptr;
   }
 
   if (v.isObject()) {
-    js::SetProxyExtra(obj, JSPROXYSLOT_EXPANDO, UndefinedValue());
-    xpc::ObjectScope(obj)->RemoveDOMExpandoObject(obj);
+    js::SetProxyPrivate(obj, UndefinedValue());
   } else {
     js::ExpandoAndGeneration* expandoAndGeneration =
       static_cast<js::ExpandoAndGeneration*>(v.toPrivate());
@@ -90,6 +89,19 @@ DOMProxyHandler::GetAndClearExpandoObject(JSObject* obj)
     if (v.isUndefined()) {
       return nullptr;
     }
+    // We have to expose v to active JS here.  The reason for that is that we
+    // might be in the middle of a GC right now.  If our proxy hasn't been
+    // traced yet, when it _does_ get traced it won't trace the expando, since
+    // we're breaking that link.  But the Rooted we're presumably being placed
+    // into is also not going to trace us, because Rooted marking is done at
+    // the very beginning of the GC.  In that situation, we need to manually
+    // mark the expando as live here.  JS::ExposeValueToActiveJS will do just
+    // that for us.
+    //
+    // We don't need to do this in the non-expandoAndGeneration case, because
+    // in that case our value is stored in a slot and slots will already mark
+    // the old thing live when the value in the slot changes.
+    JS::ExposeValueToActiveJS(v);
     expandoAndGeneration->expando = UndefinedValue();
   }
 
@@ -102,7 +114,7 @@ JSObject*
 DOMProxyHandler::EnsureExpandoObject(JSContext* cx, JS::Handle<JSObject*> obj)
 {
   NS_ASSERTION(IsDOMProxy(obj), "expected a DOM proxy object");
-  JS::Value v = js::GetProxyExtra(obj, JSPROXYSLOT_EXPANDO);
+  JS::Value v = js::GetProxyPrivate(obj);
   if (v.isObject()) {
     return &v.toObject();
   }
@@ -126,19 +138,14 @@ DOMProxyHandler::EnsureExpandoObject(JSContext* cx, JS::Handle<JSObject*> obj)
   nsISupports* native = UnwrapDOMObject<nsISupports>(obj);
   nsWrapperCache* cache;
   CallQueryInterface(native, &cache);
-  if (expandoAndGeneration) {
-    cache->PreserveWrapper(native);
-    expandoAndGeneration->expando.setObject(*expando);
+  cache->PreserveWrapper(native);
 
+  if (expandoAndGeneration) {
+    expandoAndGeneration->expando.setObject(*expando);
     return expando;
   }
 
-  if (!xpc::ObjectScope(obj)->RegisterDOMExpandoObject(obj)) {
-    return nullptr;
-  }
-
-  cache->SetPreservingWrapper(true);
-  js::SetProxyExtra(obj, JSPROXYSLOT_EXPANDO, ObjectValue(*expando));
+  js::SetProxyPrivate(obj, ObjectValue(*expando));
 
   return expando;
 }
@@ -173,10 +180,6 @@ DOMProxyHandler::defineProperty(JSContext* cx, JS::Handle<JSObject*> proxy, JS::
                                 Handle<PropertyDescriptor> desc,
                                 JS::ObjectOpResult &result, bool *defined) const
 {
-  if (desc.hasGetterObject() && desc.setter() == JS_StrictPropertyStub) {
-    return result.failGetterOnly();
-  }
-
   if (xpc::WrapperFactory::IsXrayWrapper(proxy)) {
     return result.succeed();
   }
@@ -231,19 +234,6 @@ DOMProxyHandler::delete_(JSContext* cx, JS::Handle<JSObject*> proxy,
 }
 
 bool
-BaseDOMProxyHandler::watch(JSContext* cx, JS::Handle<JSObject*> proxy, JS::Handle<jsid> id,
-                           JS::Handle<JSObject*> callable) const
-{
-  return js::WatchGuts(cx, proxy, id, callable);
-}
-
-bool
-BaseDOMProxyHandler::unwatch(JSContext* cx, JS::Handle<JSObject*> proxy, JS::Handle<jsid> id) const
-{
-  return js::UnwatchGuts(cx, proxy, id);
-}
-
-bool
 BaseDOMProxyHandler::ownPropertyKeys(JSContext* cx,
                                      JS::Handle<JSObject*> proxy,
                                      JS::AutoIdVector& props) const
@@ -282,7 +272,7 @@ JSObject *
 DOMProxyHandler::GetExpandoObject(JSObject *obj)
 {
   MOZ_ASSERT(IsDOMProxy(obj), "expected a DOM proxy object");
-  JS::Value v = js::GetProxyExtra(obj, JSPROXYSLOT_EXPANDO);
+  JS::Value v = js::GetProxyPrivate(obj);
   if (v.isObject()) {
     return &v.toObject();
   }
@@ -303,14 +293,12 @@ ShadowingDOMProxyHandler::trace(JSTracer* trc, JSObject* proxy) const
   DOMProxyHandler::trace(trc, proxy);
 
   MOZ_ASSERT(IsDOMProxy(proxy), "expected a DOM proxy object");
-  JS::Value v = js::GetProxyExtra(proxy, JSPROXYSLOT_EXPANDO);
+  JS::Value v = js::GetProxyPrivate(proxy);
   MOZ_ASSERT(!v.isObject(), "Should not have expando object directly!");
 
-  if (v.isUndefined()) {
-    // This can happen if we GC while creating our object, before we get a
-    // chance to set up its JSPROXYSLOT_EXPANDO slot.
-    return;
-  }
+  // The proxy's private slot is set when we allocate the proxy,
+  // so it cannot be |undefined|.
+  MOZ_ASSERT(!v.isUndefined());
 
   js::ExpandoAndGeneration* expandoAndGeneration =
     static_cast<js::ExpandoAndGeneration*>(v.toPrivate());

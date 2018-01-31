@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +10,8 @@
 #define mozilla_StyleAnimationValue_h_
 
 #include "mozilla/gfx/MatrixFwd.h"
+#include "mozilla/gfx/Point.h"
+#include "mozilla/ServoBindingTypes.h"
 #include "mozilla/UniquePtr.h"
 #include "nsStringFwd.h"
 #include "nsStringBuffer.h"
@@ -16,12 +19,16 @@
 #include "nsColor.h"
 #include "nsCSSProps.h"
 #include "nsCSSValue.h"
+#include "nsStyleCoord.h"
+#include "nsStyleTransformMatrix.h"
 
 class nsIFrame;
 class nsStyleContext;
 class gfx3DMatrix;
 
 namespace mozilla {
+
+class GeckoStyleContext;
 
 namespace css {
 class StyleRule;
@@ -32,6 +39,7 @@ class Element;
 } // namespace dom
 
 enum class CSSPseudoElementType : uint8_t;
+enum class StyleBackendType : uint8_t;
 struct PropertyStyleAnimationValuePair;
 
 /**
@@ -60,6 +68,27 @@ public:
   }
 
   /**
+   * Alternative version of Add that reflects the naming used in Web Animations
+   * and which returns the result using the return value.
+   */
+  static StyleAnimationValue
+  Add(nsCSSPropertyID aProperty,
+      const StyleAnimationValue& aA,
+      StyleAnimationValue&& aB);
+
+  /**
+   * Calculates a measure of 'distance' between two colors.
+   *
+   * @param aStartColor The start of the interval for which the distance
+   *                    should be calculated.
+   * @param aEndColor   The end of the interval for which the distance
+   *                    should be calculated.
+   * @return the result of the calculation.
+   */
+  static double ComputeColorDistance(const css::RGBAColorData& aStartColor,
+                                     const css::RGBAColorData& aEndColor);
+
+  /**
    * Calculates a measure of 'distance' between two values.
    *
    * This measure of Distance is guaranteed to be proportional to
@@ -74,6 +103,8 @@ public:
    *                    should be calculated.
    * @param aEndValue   The end of the interval for which the distance
    *                    should be calculated.
+   * @param aStyleContext The style context to use for processing the
+   *                      translate part of transforms.
    * @param aDistance   The result of the calculation.
    * @return true on success, false on failure.
    */
@@ -81,6 +112,7 @@ public:
   ComputeDistance(nsCSSPropertyID aProperty,
                   const StyleAnimationValue& aStartValue,
                   const StyleAnimationValue& aEndValue,
+                  GeckoStyleContext* aStyleContext,
                   double& aDistance);
 
   /**
@@ -129,6 +161,18 @@ public:
               double aCoeff2, const StyleAnimationValue& aValue2,
               StyleAnimationValue& aResultValue);
 
+  /**
+   * Accumulates |aA| onto |aA| (|aCount| - 1) times then accumulates |aB| onto
+   * the result.
+   * If |aCount| is zero or no accumulation or addition procedure is defined
+   * for |aProperty|, the result will be |aB|.
+   */
+  static StyleAnimationValue
+  Accumulate(nsCSSPropertyID aProperty,
+             const StyleAnimationValue& aA,
+             StyleAnimationValue&& aB,
+             uint64_t aCount = 1);
+
   // Type-conversion methods
   // -----------------------
   /**
@@ -164,7 +208,7 @@ public:
   static MOZ_MUST_USE bool
   ComputeValue(nsCSSPropertyID aProperty,
                mozilla::dom::Element* aTargetElement,
-               nsStyleContext* aStyleContext,
+               mozilla::GeckoStyleContext* aStyleContext,
                const nsAString& aSpecifiedValue,
                bool aUseSVGMode,
                StyleAnimationValue& aComputedValue,
@@ -184,7 +228,7 @@ public:
   ComputeValues(nsCSSPropertyID aProperty,
                 mozilla::CSSEnabledState aEnabledState,
                 mozilla::dom::Element* aTargetElement,
-                nsStyleContext* aStyleContext,
+                mozilla::GeckoStyleContext* aStyleContext,
                 const nsAString& aSpecifiedValue,
                 bool aUseSVGMode,
                 nsTArray<PropertyStyleAnimationValuePair>& aResult);
@@ -197,7 +241,7 @@ public:
   ComputeValues(nsCSSPropertyID aProperty,
                 mozilla::CSSEnabledState aEnabledState,
                 mozilla::dom::Element* aTargetElement,
-                nsStyleContext* aStyleContext,
+                mozilla::GeckoStyleContext* aStyleContext,
                 const nsCSSValue& aSpecifiedValue,
                 bool aUseSVGMode,
                 nsTArray<PropertyStyleAnimationValuePair>& aResult);
@@ -218,9 +262,6 @@ public:
    * @param aComputedValue The computed value to be converted.
    * @param [out] aSpecifiedValue The resulting specified value.
    * @return true on success, false on failure.
-   *
-   * These functions are not MOZ_MUST_USE because failing to check the return
-   * value is common and reasonable.
    */
   static MOZ_MUST_USE bool
   UncomputeValue(nsCSSPropertyID aProperty,
@@ -251,23 +292,8 @@ public:
    */
   static MOZ_MUST_USE bool ExtractComputedValue(
     nsCSSPropertyID aProperty,
-    nsStyleContext* aStyleContext,
+    mozilla::GeckoStyleContext* aStyleContext,
     StyleAnimationValue& aComputedValue);
-
-  /**
-   * Interpolates between 2 matrices by decomposing them.
-   *
-   * @param aMatrix1   First matrix, using CSS pixel units.
-   * @param aMatrix2   Second matrix, using CSS pixel units.
-   * @param aProgress  Interpolation value in the range [0.0, 1.0]
-   */
-  static gfx::Matrix4x4 InterpolateTransformMatrix(const gfx::Matrix4x4 &aMatrix1,
-                                                   const gfx::Matrix4x4 &aMatrix2,
-                                                   double aProgress);
-
-  static already_AddRefed<nsCSSValue::Array>
-    AppendTransformFunction(nsCSSKeyword aTransformFunction,
-                            nsCSSValueList**& aListTail);
 
   /**
    * The types and values for the values that we extract and animate.
@@ -284,8 +310,10 @@ public:
     eUnit_Coord,
     eUnit_Percent,
     eUnit_Float,
-    eUnit_Color,
+    eUnit_Color, // nsCSSValue* (never null), always with an nscolor or
+                 // an nsCSSValueFloatColor
     eUnit_CurrentColor,
+    eUnit_ComplexColor, // ComplexColorValue* (never null)
     eUnit_Calc, // nsCSSValue* (never null), always with a single
                 // calc() expression that's either length or length+percent
     eUnit_ObjectPosition, // nsCSSValue* (never null), always with a
@@ -311,7 +339,6 @@ private:
     int32_t mInt;
     nscoord mCoord;
     float mFloat;
-    nscolor mColor;
     nsCSSValue* mCSSValue;
     nsCSSValuePair* mCSSValuePair;
     nsCSSValueTriplet* mCSSValueTriplet;
@@ -321,6 +348,7 @@ private:
     nsCSSValueSharedList* mCSSValueSharedList;
     nsCSSValuePairList* mCSSValuePairList;
     nsStringBuffer* mString;
+    css::ComplexColorValue* mComplexColor;
   } mValue;
 
 public:
@@ -350,10 +378,6 @@ public:
   float GetFloatValue() const {
     NS_ASSERTION(mUnit == eUnit_Float, "unit mismatch");
     return mValue.mFloat;
-  }
-  nscolor GetColorValue() const {
-    NS_ASSERTION(mUnit == eUnit_Color, "unit mismatch");
-    return mValue.mColor;
   }
   nsCSSValue* GetCSSValueValue() const {
     NS_ASSERTION(IsCSSValueUnit(mUnit), "unit mismatch");
@@ -400,7 +424,15 @@ public:
   }
 
   /// @return the scale for this value, calculated with reference to @aForFrame.
-  gfxSize GetScaleValue(const nsIFrame* aForFrame) const;
+  mozilla::gfx::Size GetScaleValue(const nsIFrame* aForFrame) const;
+
+  const css::ComplexColorData& GetComplexColorData() const {
+    MOZ_ASSERT(mUnit == eUnit_ComplexColor, "unit mismatch");
+    return *mValue.mComplexColor;
+  }
+  StyleComplexColor GetStyleComplexColorValue() const {
+    return GetComplexColorData().ToComplexColor();
+  }
 
   UniquePtr<nsCSSValueList> TakeCSSValueListValue() {
     nsCSSValueList* list = GetCSSValueListValue();
@@ -447,17 +479,19 @@ public:
   void SetIntValue(int32_t aInt, Unit aUnit);
   template<typename T,
            typename = typename std::enable_if<std::is_enum<T>::value>::type>
-  void SetIntValue(T aInt, Unit aUnit)
+  void SetEnumValue(T aInt)
   {
     static_assert(mozilla::EnumTypeFitsWithin<T, int32_t>::value,
                   "aValue must be an enum that fits within mValue.mInt");
-    SetIntValue(static_cast<int32_t>(aInt), aUnit);
+    SetIntValue(static_cast<int32_t>(aInt), eUnit_Enumerated);
   }
   void SetCoordValue(nscoord aCoord);
   void SetPercentValue(float aPercent);
   void SetFloatValue(float aFloat);
   void SetColorValue(nscolor aColor);
   void SetCurrentColorValue();
+  void SetComplexColorValue(const StyleComplexColor& aColor);
+  void SetComplexColorValue(already_AddRefed<css::ComplexColorValue> aValue);
   void SetUnparsedStringValue(const nsString& aString);
   void SetCSSValueArrayValue(nsCSSValue::Array* aValue, Unit aUnit);
 
@@ -473,6 +507,17 @@ public:
   void SetTransformValue(nsCSSValueSharedList* aList);
 
   StyleAnimationValue& operator=(const StyleAnimationValue& aOther);
+  StyleAnimationValue& operator=(StyleAnimationValue&& aOther)
+  {
+    MOZ_ASSERT(this != &aOther, "Do not move itself");
+    if (this != &aOther) {
+      FreeValue();
+      mUnit = aOther.mUnit;
+      mValue = aOther.mValue;
+      aOther.mUnit = eUnit_Null;
+    }
+    return *this;
+  }
 
   bool operator==(const StyleAnimationValue& aOther) const;
   bool operator!=(const StyleAnimationValue& aOther) const
@@ -490,7 +535,8 @@ private:
            aUnit == eUnit_Integer;
   }
   static bool IsCSSValueUnit(Unit aUnit) {
-    return aUnit == eUnit_Calc ||
+    return aUnit == eUnit_Color ||
+           aUnit == eUnit_Calc ||
            aUnit == eUnit_ObjectPosition ||
            aUnit == eUnit_URL ||
            aUnit == eUnit_DiscreteCSSValue;
@@ -523,12 +569,97 @@ private:
   }
 };
 
+struct AnimationValue
+{
+  explicit AnimationValue(const StyleAnimationValue& aValue)
+    : mGecko(aValue) { }
+  explicit AnimationValue(const RefPtr<RawServoAnimationValue>& aValue)
+    : mServo(aValue) { }
+  AnimationValue() = default;
+
+  AnimationValue(const AnimationValue& aOther)
+    : mGecko(aOther.mGecko), mServo(aOther.mServo) { }
+  AnimationValue(AnimationValue&& aOther)
+    : mGecko(Move(aOther.mGecko)), mServo(Move(aOther.mServo)) { }
+
+  AnimationValue& operator=(const AnimationValue& aOther)
+  {
+    if (this != &aOther) {
+      mGecko = aOther.mGecko;
+      mServo = aOther.mServo;
+    }
+    return *this;
+  }
+  AnimationValue& operator=(AnimationValue&& aOther)
+  {
+    MOZ_ASSERT(this != &aOther, "Do not move itself");
+    if (this != &aOther) {
+      mGecko = Move(aOther.mGecko);
+      mServo = Move(aOther.mServo);
+    }
+    return *this;
+  }
+
+  bool operator==(const AnimationValue& aOther) const;
+  bool operator!=(const AnimationValue& aOther) const;
+
+  bool IsNull() const { return mGecko.IsNull() && !mServo; }
+
+  float GetOpacity() const;
+
+  // Return the transform list as a RefPtr.
+  already_AddRefed<const nsCSSValueSharedList> GetTransformList() const;
+
+  // Return the scale for mGecko or mServo, which are calculated with
+  // reference to aFrame.
+  mozilla::gfx::Size GetScaleValue(const nsIFrame* aFrame) const;
+
+  // Uncompute this AnimationValue and then serialize it.
+  void SerializeSpecifiedValue(nsCSSPropertyID aProperty,
+                               nsAString& aString) const;
+
+  // Check if |*this| and |aToValue| can be interpolated.
+  bool IsInterpolableWith(nsCSSPropertyID aProperty,
+                          const AnimationValue& aToValue) const;
+
+  // Compute the distance between *this and aOther.
+  // If |aStyleContext| is nullptr, we will return 0.0 if we have mismatched
+  // transform lists.
+  double ComputeDistance(nsCSSPropertyID aProperty,
+                         const AnimationValue& aOther,
+                         nsStyleContext* aStyleContext) const;
+
+  // Create an AnimaitonValue from a string. This method flushes style, so we
+  // should use this carefully. Now, it is only used by
+  // nsDOMWindowUtils::ComputeAnimationDistance.
+  static AnimationValue FromString(nsCSSPropertyID aProperty,
+                                   const nsAString& aValue,
+                                   dom::Element* aElement);
+
+  // Create an AnimationValue from an opacity value.
+  static AnimationValue Opacity(StyleBackendType aBackendType, float aOpacity);
+  // Create an AnimationValue from a transform list.
+  static AnimationValue Transform(StyleBackendType aBackendType,
+                                  nsCSSValueSharedList& aList);
+
+  static already_AddRefed<nsCSSValue::Array>
+  AppendTransformFunction(nsCSSKeyword aTransformFunction,
+                          nsCSSValueList**& aListTail);
+
+  // mGecko and mServo are mutually exclusive: only one or the other should
+  // ever be set.
+  // FIXME: After obsoleting StyleAnimationValue, we should remove mGecko, and
+  // make AnimationValue a wrapper of RawServoAnimationValue to hide these
+  // FFIs.
+  StyleAnimationValue mGecko;
+  RefPtr<RawServoAnimationValue> mServo;
+};
+
 struct PropertyStyleAnimationValuePair
 {
   nsCSSPropertyID mProperty;
-  StyleAnimationValue mValue;
+  AnimationValue mValue;
 };
-
 } // namespace mozilla
 
 #endif

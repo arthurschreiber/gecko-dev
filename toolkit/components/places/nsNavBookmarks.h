@@ -7,7 +7,6 @@
 #define nsNavBookmarks_h_
 
 #include "nsINavBookmarksService.h"
-#include "nsIAnnotationService.h"
 #include "nsITransaction.h"
 #include "nsNavHistory.h"
 #include "nsToolkitCompsCID.h"
@@ -28,17 +27,18 @@ namespace places {
   };
 
   struct BookmarkData {
-    int64_t id;
+    int64_t id = -1;
     nsCString url;
     nsCString title;
-    int32_t position;
-    int64_t placeId;
-    int64_t parentId;
-    int64_t grandParentId;
-    int32_t type;
+    int32_t position = -1;
+    int64_t placeId = -1;
+    int64_t parentId = -1;
+    int64_t grandParentId = -1;
+    int32_t type = 0;
+    int32_t syncStatus = nsINavBookmarksService::SYNC_STATUS_UNKNOWN;
     nsCString serviceCID;
-    PRTime dateAdded;
-    PRTime lastModified;
+    PRTime dateAdded = 0;
+    PRTime lastModified = 0;
     nsCString guid;
     nsCString parentGuid;
   };
@@ -52,10 +52,17 @@ namespace places {
 
   struct ItemChangeData {
     BookmarkData bookmark;
+    bool isAnnotation = false;
+    bool updateLastModified = false;
+    uint16_t source = nsINavBookmarksService::SOURCE_DEFAULT;
     nsCString property;
-    bool isAnnotation;
     nsCString newValue;
     nsCString oldValue;
+  };
+
+  struct TombstoneData {
+    nsCString guid;
+    PRTime dateRemoved;
   };
 
   typedef void (nsNavBookmarks::*ItemVisitMethod)(const ItemVisitData&);
@@ -71,7 +78,6 @@ namespace places {
 
 class nsNavBookmarks final : public nsINavBookmarksService
                            , public nsINavHistoryObserver
-                           , public nsIAnnotationObserver
                            , public nsIObserver
                            , public nsSupportsWeakReference
 {
@@ -79,7 +85,6 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSINAVBOOKMARKSSERVICE
   NS_DECL_NSINAVHISTORYOBSERVER
-  NS_DECL_NSIANNOTATIONOBSERVER
   NS_DECL_NSIOBSERVER
 
   nsNavBookmarks();
@@ -110,6 +115,12 @@ public:
   typedef mozilla::places::ItemChangeData ItemChangeData;
   typedef mozilla::places::BookmarkStatementId BookmarkStatementId;
 
+  nsresult OnVisit(nsIURI* aURI, int64_t aVisitId, PRTime aTime,
+                   int64_t aSessionId, int64_t aReferringId,
+                   uint32_t aTransitionType, const nsACString& aGUID,
+                   bool aHidden, uint32_t aVisitCount,
+                   uint32_t aTyped, const nsAString& aLastKnownTitle);
+
   nsresult ResultNodeForContainer(int64_t aID,
                                   nsNavHistoryQueryOptions* aOptions,
                                   nsNavHistoryResultNode** aNode);
@@ -129,7 +140,8 @@ public:
    *        A Storage statement (in the case of synchronous execution) or row of
    *        a result set (in the case of asynchronous execution).
    * @param aOptions
-   *        The options of the parent folder node.
+   *        The options of the parent folder node. These are the options used
+   *        to fill the parent node.
    * @param aChildren
    *        The children of the parent folder node.
    * @param aCurrentIndex
@@ -151,7 +163,6 @@ public:
    *        execution.
    */
   nsresult QueryFolderChildrenAsync(nsNavHistoryFolderResultNode* aNode,
-                                    int64_t aFolderId,
                                     mozIStoragePendingStatement** _pendingStmt);
 
   /**
@@ -215,6 +226,11 @@ public:
   static const int32_t kGetChildrenIndex_Position;
   static const int32_t kGetChildrenIndex_Type;
   static const int32_t kGetChildrenIndex_PlaceID;
+  static const int32_t kGetChildrenIndex_SyncStatus;
+
+  static mozilla::Atomic<int64_t> sLastInsertedItemId;
+  static void StoreLastInsertedId(const nsACString& aTable,
+                                  const int64_t aLastInsertedId);
 
 private:
   static nsNavBookmarks* gBookmarksService;
@@ -234,12 +250,16 @@ private:
    * Locates the root items in the bookmarks folder hierarchy assigning folder
    * ids to the root properties that are exposed through the service interface.
    */
-  nsresult ReadRoots();
+  nsresult EnsureRoots();
 
   nsresult AdjustIndices(int64_t aFolder,
                          int32_t aStartIndex,
                          int32_t aEndIndex,
                          int32_t aDelta);
+
+  nsresult AdjustSeparatorsSyncCounter(int64_t aFolderId,
+                                       int32_t aStartIndex,
+                                       int64_t aSyncChangeDelta);
 
   /**
    * Fetches properties of a folder.
@@ -262,30 +282,68 @@ private:
 
   nsresult GetLastChildId(int64_t aFolder, int64_t* aItemId);
 
+  nsresult AddSyncChangesForBookmarksWithURL(const nsACString& aURL,
+                                             int64_t aSyncChangeDelta);
+
+  // Bumps the change counter for all bookmarks with |aURI|. This is used to
+  // update tagged bookmarks when adding or changing a tag entry.
+  nsresult AddSyncChangesForBookmarksWithURI(nsIURI* aURI,
+                                             int64_t aSyncChangeDelta);
+
+  // Bumps the change counter for all bookmarked URLs within |aFolderId|. This
+  // is used to update tagged bookmarks when changing or removing a tag folder.
+  nsresult AddSyncChangesForBookmarksInFolder(int64_t aFolderId,
+                                              int64_t aSyncChangeDelta);
+
+  // Inserts a tombstone for a removed synced item.
+  nsresult InsertTombstone(const BookmarkData& aBookmark);
+
+  // Inserts tombstones for removed synced items.
+  nsresult InsertTombstones(const nsTArray<TombstoneData>& aTombstones);
+
+  // Removes a stale synced bookmark tombstone.
+  nsresult RemoveTombstone(const nsACString& aGUID);
+
+  // Removes the Sync orphan annotation from a synced item, so that Sync doesn't
+  // try to reparent the item once it sees the original parent. Only synced
+  // bookmarks should have this anno, but we do this for all bookmarks because
+  // the anno may be backed up and restored.
+  nsresult PreventSyncReparenting(const BookmarkData& aBookmark);
+
+  nsresult SetItemTitleInternal(BookmarkData& aBookmark,
+                                const nsACString& aTitle,
+                                int64_t aSyncChangeDelta);
+
   /**
    * This is an handle to the Places database.
    */
   RefPtr<mozilla::places::Database> mDB;
 
-  int32_t mItemCount;
-
   nsMaybeWeakPtrArray<nsINavBookmarkObserver> mObservers;
 
+  int64_t TagsRootId() {
+    nsresult rv = EnsureRoots();
+    NS_ENSURE_SUCCESS(rv, -1);
+    return mTagsRoot;
+  }
+
+  // These are lazy loaded, so never access them directly, always use the
+  // XPIDL getters or TagsRootId().
   int64_t mRoot;
   int64_t mMenuRoot;
   int64_t mTagsRoot;
   int64_t mUnfiledRoot;
   int64_t mToolbarRoot;
+  int64_t mMobileRoot;
 
   inline bool IsRoot(int64_t aFolderId) {
     return aFolderId == mRoot || aFolderId == mMenuRoot ||
            aFolderId == mTagsRoot || aFolderId == mUnfiledRoot ||
-           aFolderId == mToolbarRoot;
+           aFolderId == mToolbarRoot || aFolderId == mMobileRoot;
   }
 
-  nsresult IsBookmarkedInDatabase(int64_t aBookmarkID, bool* aIsBookmarked);
-
   nsresult SetItemDateInternal(enum mozilla::places::BookmarkDate aDateType,
+                               int64_t aSyncChangeDelta,
                                int64_t aItemId,
                                PRTime aValue);
 
@@ -342,26 +400,8 @@ private:
                               int64_t* _itemId,
                               nsACString& _guid);
 
-  /**
-   * TArray version of getBookmarksIdForURI for ease of use in C++ code.
-   * Pass in a reference to a TArray; it will get filled with the
-   * resulting list of bookmark IDs.
-   *
-   * @param aURI
-   *        URI to get bookmarks for.
-   * @param aResult
-   *        Array of bookmark ids.
-   * @param aSkipTags
-   *        If true ids of tags-as-bookmarks entries will be excluded.
-   */
-  nsresult GetBookmarkIdsForURITArray(nsIURI* aURI,
-                                      nsTArray<int64_t>& aResult,
-                                      bool aSkipTags);
-
   nsresult GetBookmarksForURI(nsIURI* aURI,
                               nsTArray<BookmarkData>& _bookmarks);
-
-  int64_t RecursiveFindRedirectedBookmark(int64_t aPlaceId);
 
   class RemoveFolderTransaction final : public nsITransaction {
   public:
@@ -427,14 +467,6 @@ private:
   // Tracks whether we are in batch mode.
   // Note: this is only tracking bookmarks batches, not history ones.
   bool mBatching;
-
-  /**
-   * This function must be called every time a bookmark is removed.
-   *
-   * @param aURI
-   *        Uri to test.
-   */
-  nsresult UpdateKeywordsForRemovedBookmark(const BookmarkData& aBookmark);
 };
 
 #endif // nsNavBookmarks_h_

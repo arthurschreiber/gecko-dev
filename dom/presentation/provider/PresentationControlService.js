@@ -8,20 +8,20 @@
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 /* globals XPCOMUtils */
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 /* globals Services */
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 /* globals NetUtil */
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 /* globals setTimeout, clearTimeout */
-Cu.import("resource://gre/modules/Timer.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
 /* globals ControllerStateMachine */
-XPCOMUtils.defineLazyModuleGetter(this, "ControllerStateMachine", // jshint ignore:line
-                                  "resource://gre/modules/presentation/ControllerStateMachine.jsm");
+ChromeUtils.defineModuleGetter(this, "ControllerStateMachine", // jshint ignore:line
+                               "resource://gre/modules/presentation/ControllerStateMachine.jsm");
 /* global ReceiverStateMachine */
-XPCOMUtils.defineLazyModuleGetter(this, "ReceiverStateMachine", // jshint ignore:line
-                                  "resource://gre/modules/presentation/ReceiverStateMachine.jsm");
+ChromeUtils.defineModuleGetter(this, "ReceiverStateMachine", // jshint ignore:line
+                               "resource://gre/modules/presentation/ReceiverStateMachine.jsm");
 
 const kProtocolVersion = 1; // need to review isCompatibleServer while fiddling the version number.
 const kLocalCertName = "presentation";
@@ -118,27 +118,25 @@ PresentationControlService.prototype = {
     DEBUG && log("PresentationControlService - service start on port: " + this._port); // jshint ignore:line
 
     // Monitor network interface change to restart server socket.
-    // Only B2G has nsINetworkManager
-    Services.obs.addObserver(this, "network-active-changed", false);
-    Services.obs.addObserver(this, "network:offline-status-changed", false);
+    Services.obs.addObserver(this, "network:offline-status-changed");
 
     this._notifyServerReady();
   },
 
   _notifyServerReady: function() {
-    Services.tm.mainThread.dispatch(() => {
+    Services.tm.dispatchToMainThread(() => {
       if (this._listener) {
         this._listener.onServerReady(this._port, this.certFingerprint);
       }
-    }, Ci.nsIThread.DISPATCH_NORMAL);
+    });
   },
 
   _notifyServerStopped: function(aRv) {
-    Services.tm.mainThread.dispatch(() => {
+    Services.tm.dispatchToMainThread(() => {
       if (this._listener) {
         this._listener.onServerStopped(aRv);
       }
-    }, Ci.nsIThread.DISPATCH_NORMAL);
+    });
   },
 
   isCompatibleServer: function(aVersion) {
@@ -324,7 +322,6 @@ PresentationControlService.prototype = {
       this._serverSocket.close();
       this._serverSocket = null;
 
-      Services.obs.removeObserver(this, "network-active-changed");
       Services.obs.removeObserver(this, "network:offline-status-changed");
 
       this._notifyServerStopped(Cr.NS_OK);
@@ -336,21 +333,6 @@ PresentationControlService.prototype = {
   observe: function(aSubject, aTopic, aData) {
     DEBUG && log("PresentationControlService - observe: " + aTopic); // jshint ignore:line
     switch (aTopic) {
-      case "network-active-changed": {
-        if (!aSubject) {
-          DEBUG && log("No active network"); // jshint ignore:line
-          return;
-        }
-
-        /**
-         * Restart service only when original status is online because other
-         * cases will be handled by "network:offline-status-changed".
-         */
-        if (!Services.io.offline) {
-          this._restartServer();
-        }
-        break;
-      }
       case "network:offline-status-changed": {
         if (aData == "offline") {
           DEBUG && log("network offline"); // jshint ignore:line
@@ -393,7 +375,7 @@ function ChannelDescription(aInit) {
         let wrapper = Cc["@mozilla.org/supports-cstring;1"]
                       .createInstance(Ci.nsISupportsCString);
         wrapper.data = address;
-        this._tcpAddresses.appendElement(wrapper, false);
+        this._tcpAddresses.appendElement(wrapper);
       }
 
       this._tcpPort = aInit.tcpPort;
@@ -681,7 +663,7 @@ TCPControlChannel.prototype = {
                  this._direction); // jshint ignore:line
     this._pump = Cc["@mozilla.org/network/input-stream-pump;1"].
                createInstance(Ci.nsIInputStreamPump);
-    this._pump.init(this._input, -1, -1, 0, 0, false);
+    this._pump.init(this._input, 0, 0, false);
     this._pump.asyncRead(this, null);
     this._stateMachine.onChannelReady();
   },

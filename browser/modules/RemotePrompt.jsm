@@ -11,33 +11,34 @@ var Cu = Components.utils;
 
 this.EXPORTED_SYMBOLS = [ "RemotePrompt" ];
 
-Cu.import("resource:///modules/PlacesUIUtils.jsm");
-Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/SharedPromptUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+
+ChromeUtils.defineModuleGetter(this, "PlacesUIUtils",
+                               "resource:///modules/PlacesUIUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "PrivateBrowsingUtils",
+                               "resource://gre/modules/PrivateBrowsingUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "PromptUtils",
+                               "resource://gre/modules/SharedPromptUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "Services",
+                               "resource://gre/modules/Services.jsm");
 
 var RemotePrompt = {
-  init: function() {
-    let mm = Cc["@mozilla.org/globalmessagemanager;1"].getService(Ci.nsIMessageListenerManager);
-    mm.addMessageListener("Prompt:Open", this);
-  },
-
-  receiveMessage: function(message) {
+  // Listeners are added in nsBrowserGlue.js
+  receiveMessage(message) {
     switch (message.name) {
       case "Prompt:Open":
         if (message.data.uri) {
           this.openModalWindow(message.data, message.target);
         } else {
-          this.openTabPrompt(message.data, message.target)
+          this.openTabPrompt(message.data, message.target);
         }
         break;
     }
   },
 
-  openTabPrompt: function(args, browser) {
+  openTabPrompt(args, browser) {
     let window = browser.ownerGlobal;
-    let tabPrompt = window.gBrowser.getTabModalPromptBox(browser)
-    let callbackInvoked = false;
+    let tabPrompt = window.gBrowser.getTabModalPromptBox(browser);
     let newPrompt;
     let needRemove = false;
     let promptId = args._remoteId;
@@ -93,7 +94,7 @@ var RemotePrompt = {
     }
   },
 
-  openModalWindow: function(args, browser) {
+  openModalWindow(args, browser) {
     let window = browser.ownerGlobal;
     try {
       PromptUtils.fireDialogEvent(window, "DOMWillOpenModalDialog", browser);

@@ -1,5 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+/* eslint-disable mozilla/no-arbitrary-setTimeout */
+
+"use strict";
 
 const TEST_URI = "data:text/html;charset=utf-8,<p>browser_telemetry_sidebar.js</p>";
 
@@ -27,7 +30,7 @@ function* testSidebar(toolbox) {
   info("Testing sidebar");
 
   let inspector = toolbox.getCurrentPanel();
-  let sidebarTools = ["ruleview", "computedview", "fontinspector",
+  let sidebarTools = ["ruleview", "computedview", "layoutview", "fontinspector",
                       "animationinspector"];
 
   // Concatenate the array with itself so that we can open each tool twice.

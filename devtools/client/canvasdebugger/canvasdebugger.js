@@ -10,24 +10,29 @@ const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
 const { SideMenuWidget } = require("resource://devtools/client/shared/widgets/SideMenuWidget.jsm");
 const promise = require("promise");
 const Services = require("Services");
-const EventEmitter = require("devtools/shared/event-emitter");
+const EventEmitter = require("devtools/shared/old-event-emitter");
 const { CallWatcherFront } = require("devtools/shared/fronts/call-watcher");
 const { CanvasFront } = require("devtools/shared/fronts/canvas");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const { extend } = require("devtools/shared/extend");
 const flags = require("devtools/shared/flags");
 const { LocalizationHelper } = require("devtools/shared/l10n");
 const { PluralForm } = require("devtools/shared/plural-form");
-const { Heritage, WidgetMethods, setNamedTimeout, clearNamedTimeout,
+const { WidgetMethods, setNamedTimeout, clearNamedTimeout,
         setConditionalTimeout } = require("devtools/client/shared/widgets/view-helpers");
+
+// Use privileged promise in panel documents to prevent having them to freeze
+// during toolbox destruction. See bug 1402779.
+const Promise = require("Promise");
 
 const CANVAS_ACTOR_RECORDING_ATTEMPT = flags.testing ? 500 : 5000;
 
 const { Task } = require("devtools/shared/task");
 
-XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
+ChromeUtils.defineModuleGetter(this, "FileUtils",
   "resource://gre/modules/FileUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
+ChromeUtils.defineModuleGetter(this, "NetUtil",
   "resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "NetworkHelper", function () {
@@ -75,8 +80,8 @@ const EVENTS = {
 XPCOMUtils.defineConstant(this, "EVENTS", EVENTS);
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
-const STRINGS_URI = "devtools/locale/canvasdebugger.properties";
-const SHARED_STRINGS_URI = "devtools/locale/shared.properties";
+const STRINGS_URI = "devtools/client/locales/canvasdebugger.properties";
+const SHARED_STRINGS_URI = "devtools/client/locales/shared.properties";
 
 const SNAPSHOT_START_RECORDING_DELAY = 10; // ms
 const SNAPSHOT_DATA_EXPORT_MAX_BLOCK = 1000; // ms

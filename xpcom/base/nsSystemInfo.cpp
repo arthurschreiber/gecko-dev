@@ -9,20 +9,28 @@
 #include "nsSystemInfo.h"
 #include "prsystem.h"
 #include "prio.h"
-#include "prprf.h"
 #include "mozilla/SSE.h"
 #include "mozilla/arm.h"
+#include "mozilla/Sprintf.h"
 
 #ifdef XP_WIN
+#include <comutil.h>
 #include <time.h>
+#ifndef __MINGW32__
+#include <iwscapi.h>
+#endif // __MINGW32__
 #include <windows.h>
 #include <winioctl.h>
+#ifndef __MINGW32__
+#include <wscapi.h>
+#endif // __MINGW32__
 #include "base/scoped_handle_win.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsIObserverService.h"
 #include "nsWindowsHelpers.h"
+
 #endif
 
 #ifdef XP_MACOSX
@@ -49,12 +57,6 @@
 #include "mozilla/dom/ContentChild.h"
 #endif
 
-#ifdef MOZ_WIDGET_GONK
-#include <sys/system_properties.h>
-#include "mozilla/Preferences.h"
-#include "nsPrintfCString.h"
-#endif
-
 #ifdef ANDROID
 extern "C" {
 NS_EXPORT int android_sdk_version;
@@ -75,6 +77,8 @@ NS_EXPORT int android_sdk_version;
 // so we must call it before going multithreaded, but nsSystemInfo::Init
 // only happens well after that point.
 uint32_t nsSystemInfo::gUserUmask = 0;
+
+using namespace mozilla::dom;
 
 #if defined (XP_LINUX) && !defined (ANDROID)
 static void
@@ -181,9 +185,7 @@ nsresult GetInstallYear(uint32_t& aYear)
 {
   HKEY hKey;
   LONG status = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-                              NS_LITERAL_STRING(
-                              "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
-                              ).get(),
+                              L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
                               0, KEY_READ | KEY_WOW64_64KEY, &hKey);
 
   if (status != ERROR_SUCCESS) {
@@ -229,7 +231,7 @@ nsresult GetCountryCode(nsAString& aCountryCode)
   }
   // Now get the string for real
   aCountryCode.SetLength(numChars);
-  numChars = GetGeoInfoW(geoid, GEO_ISO2, wwc(aCountryCode.BeginWriting()),
+  numChars = GetGeoInfoW(geoid, GEO_ISO2, char16ptr_t(aCountryCode.BeginWriting()),
                          aCountryCode.Length(), 0);
   if (!numChars) {
     return NS_ERROR_FAILURE;
@@ -241,7 +243,129 @@ nsresult GetCountryCode(nsAString& aCountryCode)
 }
 
 } // namespace
+
+#ifndef __MINGW32__
+
+static HRESULT
+EnumWSCProductList(nsAString& aOutput, NotNull<IWSCProductList*> aProdList)
+{
+  MOZ_ASSERT(aOutput.IsEmpty());
+
+  LONG count;
+  HRESULT hr = aProdList->get_Count(&count);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  for (LONG index = 0; index < count; ++index) {
+    RefPtr<IWscProduct> product;
+    hr = aProdList->get_Item(index, getter_AddRefs(product));
+    if (FAILED(hr)) {
+      return hr;
+    }
+
+    WSC_SECURITY_PRODUCT_STATE state;
+    hr = product->get_ProductState(&state);
+    if (FAILED(hr)) {
+      return hr;
+    }
+
+    // We only care about products that are active
+    if (state == WSC_SECURITY_PRODUCT_STATE_OFF ||
+        state == WSC_SECURITY_PRODUCT_STATE_SNOOZED) {
+      continue;
+    }
+
+    _bstr_t bName;
+    hr = product->get_ProductName(bName.GetAddress());
+    if (FAILED(hr)) {
+      return hr;
+    }
+
+    if (!aOutput.IsEmpty()) {
+      aOutput.AppendLiteral(u";");
+    }
+
+    aOutput.Append((wchar_t*)bName, bName.length());
+  }
+
+  return S_OK;
+}
+
+static nsresult
+GetWindowsSecurityCenterInfo(nsAString& aAVInfo, nsAString& aAntiSpyInfo,
+                             nsAString& aFirewallInfo)
+{
+  aAVInfo.Truncate();
+  aAntiSpyInfo.Truncate();
+  aFirewallInfo.Truncate();
+
+  if (!XRE_IsParentProcess()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  const CLSID clsid = __uuidof(WSCProductList);
+  const IID iid = __uuidof(IWSCProductList);
+
+  // NB: A separate instance of IWSCProductList is needed for each distinct
+  // security provider type; MSDN says that we cannot reuse the same object
+  // and call Initialize() to pave over the previous data.
+
+  WSC_SECURITY_PROVIDER providerTypes[] = { WSC_SECURITY_PROVIDER_ANTIVIRUS,
+                                            WSC_SECURITY_PROVIDER_ANTISPYWARE,
+                                            WSC_SECURITY_PROVIDER_FIREWALL };
+
+  // Each output must match the corresponding entry in providerTypes.
+  nsAString* outputs[] = { &aAVInfo, &aAntiSpyInfo, &aFirewallInfo };
+
+  static_assert(ArrayLength(providerTypes) == ArrayLength(outputs),
+                "Length of providerTypes and outputs arrays must match");
+
+  for (uint32_t index = 0; index < ArrayLength(providerTypes); ++index) {
+    RefPtr<IWSCProductList> prodList;
+    HRESULT hr = ::CoCreateInstance(clsid, nullptr, CLSCTX_INPROC_SERVER, iid,
+                                    getter_AddRefs(prodList));
+    if (FAILED(hr)) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+
+    hr = prodList->Initialize(providerTypes[index]);
+    if (FAILED(hr)) {
+      return NS_ERROR_UNEXPECTED;
+    }
+
+    hr = EnumWSCProductList(*outputs[index], WrapNotNull(prodList.get()));
+    if (FAILED(hr)) {
+      return NS_ERROR_UNEXPECTED;
+    }
+  }
+
+  return NS_OK;
+}
+
+#endif // __MINGW32__
+
 #endif // defined(XP_WIN)
+
+#ifdef XP_MACOSX
+static nsresult GetAppleModelId(nsAutoCString& aModelId)
+{
+  size_t numChars = 0;
+  size_t result = sysctlbyname("hw.model", nullptr, &numChars, nullptr, 0);
+  if (result != 0 || !numChars) {
+    return NS_ERROR_FAILURE;
+  }
+  aModelId.SetLength(numChars);
+  result = sysctlbyname("hw.model", aModelId.BeginWriting(), &numChars, nullptr,
+                        0);
+  if (result != 0) {
+    return NS_ERROR_FAILURE;
+  }
+  // numChars includes null terminator
+  aModelId.Truncate(numChars - 1);
+  return NS_OK;
+}
+#endif
 
 using namespace mozilla;
 
@@ -270,6 +394,7 @@ static const struct PropItems
   { "hasSSE4_2", mozilla::supports_sse4_2 },
   { "hasAVX", mozilla::supports_avx },
   { "hasAVX2", mozilla::supports_avx2 },
+  { "hasAES", mozilla::supports_aes },
   // ARM-specific bits.
   { "hasEDSP", mozilla::supports_edsp },
   { "hasARMv6", mozilla::supports_armv6 },
@@ -340,6 +465,10 @@ GetProcessorInformation(int* physical_cpus, int* cache_size_L2, int* cache_size_
 nsresult
 nsSystemInfo::Init()
 {
+  // This uses the observer service on Windows, so for simplicity
+  // check that it is called from the main thread on all platforms.
+  MOZ_ASSERT(NS_IsMainThread());
+
   nsresult rv;
 
   static const struct
@@ -348,7 +477,6 @@ nsSystemInfo::Init()
     const char* name;
   } items[] = {
     { PR_SI_SYSNAME, "name" },
-    { PR_SI_HOSTNAME, "host" },
     { PR_SI_ARCHITECTURE, "arch" },
     { PR_SI_RELEASE, "version" }
   };
@@ -674,12 +802,48 @@ nsSystemInfo::Init()
       return rv;
     }
   }
+
+#ifndef __MINGW32__
+  nsAutoString avInfo, antiSpyInfo, firewallInfo;
+  if (NS_SUCCEEDED(GetWindowsSecurityCenterInfo(avInfo, antiSpyInfo,
+                                                firewallInfo))) {
+    if (!avInfo.IsEmpty()) {
+      rv = SetPropertyAsAString(NS_LITERAL_STRING("registeredAntiVirus"),
+                                avInfo);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+    }
+
+    if (!antiSpyInfo.IsEmpty()) {
+      rv = SetPropertyAsAString(NS_LITERAL_STRING("registeredAntiSpyware"),
+                                antiSpyInfo);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+    }
+
+    if (!firewallInfo.IsEmpty()) {
+      rv = SetPropertyAsAString(NS_LITERAL_STRING("registeredFirewall"),
+                                firewallInfo);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+    }
+  }
+#endif // __MINGW32__
 #endif
 
 #if defined(XP_MACOSX)
   nsAutoString countryCode;
   if (NS_SUCCEEDED(GetSelectedCityInfo(countryCode))) {
     rv = SetPropertyAsAString(NS_LITERAL_STRING("countryCode"), countryCode);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  nsAutoCString modelId;
+  if (NS_SUCCEEDED(GetAppleModelId(modelId))) {
+    rv = SetPropertyAsACString(NS_LITERAL_STRING("appleModelId"), modelId);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 #endif
@@ -691,25 +855,13 @@ nsSystemInfo::Init()
   char gtkver[64];
   ssize_t gtkver_len = 0;
 
-#if MOZ_WIDGET_GTK == 2
-  extern int gtk_read_end_of_the_pipe;
-
-  if (gtk_read_end_of_the_pipe != -1) {
-    do {
-      gtkver_len = read(gtk_read_end_of_the_pipe, &gtkver, sizeof(gtkver));
-    } while (gtkver_len < 0 && errno == EINTR);
-    close(gtk_read_end_of_the_pipe);
-  }
-#endif
-
   if (gtkver_len <= 0) {
-    gtkver_len = snprintf(gtkver, sizeof(gtkver), "GTK %u.%u.%u",
-                          gtk_major_version, gtk_minor_version,
-                          gtk_micro_version);
+    gtkver_len = SprintfLiteral(gtkver, "GTK %u.%u.%u", gtk_major_version,
+                                gtk_minor_version, gtk_micro_version);
   }
 
   nsAutoCString secondaryLibrary;
-  if (gtkver_len > 0) {
+  if (gtkver_len > 0 && gtkver_len < int(sizeof(gtkver))) {
     secondaryLibrary.Append(nsDependentCSubstring(gtkver, gtkver_len));
   }
 
@@ -748,44 +900,6 @@ nsSystemInfo::Init()
   } else {
     GetAndroidSystemInfo(&info);
     SetupAndroidInfo(info);
-  }
-#endif
-
-#ifdef MOZ_WIDGET_GONK
-  char sdk[PROP_VALUE_MAX];
-  if (__system_property_get("ro.build.version.sdk", sdk)) {
-    android_sdk_version = atoi(sdk);
-    SetPropertyAsInt32(NS_LITERAL_STRING("sdk_version"), android_sdk_version);
-
-    SetPropertyAsACString(NS_LITERAL_STRING("secondaryLibrary"),
-                          nsPrintfCString("SDK %u", android_sdk_version));
-  }
-
-  char characteristics[PROP_VALUE_MAX];
-  if (__system_property_get("ro.build.characteristics", characteristics)) {
-    if (!strcmp(characteristics, "tablet")) {
-      SetPropertyAsBool(NS_LITERAL_STRING("tablet"), true);
-    } else if (!strcmp(characteristics, "tv")) {
-      SetPropertyAsBool(NS_LITERAL_STRING("tv"), true);
-    }
-  }
-
-  nsAutoString str;
-  rv = GetPropertyAsAString(NS_LITERAL_STRING("version"), str);
-  if (NS_SUCCEEDED(rv)) {
-    SetPropertyAsAString(NS_LITERAL_STRING("kernel_version"), str);
-  }
-
-  const nsAdoptingString& b2g_os_name =
-    mozilla::Preferences::GetString("b2g.osName");
-  if (b2g_os_name) {
-    SetPropertyAsAString(NS_LITERAL_STRING("name"), b2g_os_name);
-  }
-
-  const nsAdoptingString& b2g_version =
-    mozilla::Preferences::GetString("b2g.version");
-  if (b2g_version) {
-    SetPropertyAsAString(NS_LITERAL_STRING("version"), b2g_version);
   }
 #endif
 

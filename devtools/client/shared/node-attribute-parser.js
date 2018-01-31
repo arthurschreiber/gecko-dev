@@ -70,9 +70,9 @@ const ATTRIBUTE_TYPES = [
   {namespaceURI: HTML_NS, attributeName: "href", tagName: "area", type: TYPE_URI},
   {namespaceURI: "*", attributeName: "href", tagName: "link", type: TYPE_CSS_RESOURCE_URI,
   /* eslint-enable */
-    isValid: (namespaceURI, tagName, attributes) => {
-      return getAttribute(attributes, "rel") === "stylesheet";
-    }},
+   isValid: (namespaceURI, tagName, attributes) => {
+     return getAttribute(attributes, "rel") === "stylesheet";
+   }},
   /* eslint-disable max-len */
   {namespaceURI: "*", attributeName: "href", tagName: "link", type: TYPE_URI},
   {namespaceURI: HTML_NS, attributeName: "href", tagName: "base", type: TYPE_URI},
@@ -112,8 +112,6 @@ const ATTRIBUTE_TYPES = [
   {namespaceURI: XUL_NS, attributeName: "popup", tagName: "*", type: TYPE_IDREF},
   {namespaceURI: XUL_NS, attributeName: "ref", tagName: "*", type: TYPE_URI},
   {namespaceURI: XUL_NS, attributeName: "removeelement", tagName: "*", type: TYPE_IDREF},
-  {namespaceURI: XUL_NS, attributeName: "sortResource", tagName: "*", type: TYPE_URI},
-  {namespaceURI: XUL_NS, attributeName: "sortResource2", tagName: "*", type: TYPE_URI},
   {namespaceURI: XUL_NS, attributeName: "src", tagName: "stringbundle", type: TYPE_URI},
   {namespaceURI: XUL_NS, attributeName: "template", tagName: "*", type: TYPE_IDREF},
   {namespaceURI: XUL_NS, attributeName: "tooltip", tagName: "*", type: TYPE_IDREF},

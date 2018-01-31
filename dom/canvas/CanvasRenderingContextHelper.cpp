@@ -22,53 +22,44 @@ namespace dom {
 void
 CanvasRenderingContextHelper::ToBlob(JSContext* aCx,
                                      nsIGlobalObject* aGlobal,
-                                     FileCallback& aCallback,
+                                     BlobCallback& aCallback,
                                      const nsAString& aType,
                                      JS::Handle<JS::Value> aParams,
+                                     bool aUsePlaceholder,
                                      ErrorResult& aRv)
 {
   // Encoder callback when encoding is complete.
   class EncodeCallback : public EncodeCompleteCallback
   {
   public:
-    EncodeCallback(nsIGlobalObject* aGlobal, FileCallback* aCallback)
+    EncodeCallback(nsIGlobalObject* aGlobal, BlobCallback* aCallback)
       : mGlobal(aGlobal)
-      , mFileCallback(aCallback) {}
+      , mBlobCallback(aCallback) {}
 
     // This is called on main thread.
-    nsresult ReceiveBlob(already_AddRefed<Blob> aBlob)
+    nsresult ReceiveBlob(already_AddRefed<Blob> aBlob) override
     {
       RefPtr<Blob> blob = aBlob;
 
-      ErrorResult rv;
-      uint64_t size = blob->GetSize(rv);
-      if (rv.Failed()) {
-        rv.SuppressException();
-      } else {
-        AutoJSAPI jsapi;
-        if (jsapi.Init(mGlobal)) {
-          JS_updateMallocCounter(jsapi.cx(), size);
-        }
-      }
-
       RefPtr<Blob> newBlob = Blob::Create(mGlobal, blob->Impl());
 
-      mFileCallback->Call(*newBlob, rv);
+      ErrorResult rv;
+      mBlobCallback->Call(newBlob, rv);
 
       mGlobal = nullptr;
-      mFileCallback = nullptr;
+      mBlobCallback = nullptr;
 
       return rv.StealNSResult();
     }
 
     nsCOMPtr<nsIGlobalObject> mGlobal;
-    RefPtr<FileCallback> mFileCallback;
+    RefPtr<BlobCallback> mBlobCallback;
   };
 
   RefPtr<EncodeCompleteCallback> callback =
     new EncodeCallback(aGlobal, &aCallback);
 
-  ToBlob(aCx, aGlobal, callback, aType, aParams, aRv);
+  ToBlob(aCx, aGlobal, callback, aType, aParams, aUsePlaceholder, aRv);
 }
 
 void
@@ -77,6 +68,7 @@ CanvasRenderingContextHelper::ToBlob(JSContext* aCx,
                                      EncodeCompleteCallback* aCallback,
                                      const nsAString& aType,
                                      JS::Handle<JS::Value> aParams,
+                                     bool aUsePlaceholder,
                                      ErrorResult& aRv)
 {
   nsAutoString type;
@@ -117,11 +109,19 @@ CanvasRenderingContextHelper::ToBlob(JSContext* aCx,
                                        Move(imageBuffer),
                                        format,
                                        GetWidthHeight(),
+                                       aUsePlaceholder,
                                        callback);
 }
 
 already_AddRefed<nsICanvasRenderingContextInternal>
 CanvasRenderingContextHelper::CreateContext(CanvasContextType aContextType)
+{
+  return CreateContextHelper(aContextType, layers::LayersBackend::LAYERS_NONE);
+}
+
+already_AddRefed<nsICanvasRenderingContextInternal>
+CanvasRenderingContextHelper::CreateContextHelper(CanvasContextType aContextType,
+                                                  layers::LayersBackend aCompositorBackend)
 {
   MOZ_ASSERT(aContextType != CanvasContextType::NoContext);
   RefPtr<nsICanvasRenderingContextInternal> ret;
@@ -132,7 +132,7 @@ CanvasRenderingContextHelper::CreateContext(CanvasContextType aContextType)
 
   case CanvasContextType::Canvas2D:
     Telemetry::Accumulate(Telemetry::CANVAS_2D_USED, 1);
-    ret = new CanvasRenderingContext2D();
+    ret = new CanvasRenderingContext2D(aCompositorBackend);
     break;
 
   case CanvasContextType::WebGL1:
@@ -230,13 +230,9 @@ CanvasRenderingContextHelper::UpdateContext(JSContext* aCx,
 
   nsCOMPtr<nsICanvasRenderingContextInternal> currentContext = mCurrentContext;
 
-  nsresult rv = currentContext->SetIsOpaque(GetOpaqueAttr());
-  if (NS_FAILED(rv)) {
-    mCurrentContext = nullptr;
-    return rv;
-  }
+  currentContext->SetIsOpaque(GetOpaqueAttr());
 
-  rv = currentContext->SetContextOptions(aCx, aNewContextOptions,
+  nsresult rv = currentContext->SetContextOptions(aCx, aNewContextOptions,
                                          aRvForDictionaryInit);
   if (NS_FAILED(rv)) {
     mCurrentContext = nullptr;

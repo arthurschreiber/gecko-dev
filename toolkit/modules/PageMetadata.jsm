@@ -8,9 +8,9 @@ this.EXPORTED_SYMBOLS = ["PageMetadata"];
 
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/microformat-shiv.js");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/microformat-shiv.js");
 
 XPCOMUtils.defineLazyServiceGetter(this, "UnescapeService",
                                    "@mozilla.org/feed-unescapehtml;1",
@@ -96,7 +96,7 @@ this.PageMetadata = {
     }
 
     for (let element of elements) {
-      let value = element.getAttribute("content")
+      let value = element.getAttribute("content");
       if (!value) {
         continue;
       }
@@ -174,7 +174,7 @@ this.PageMetadata = {
    * @param {Document} document - Document to extract data from.
    * @param {Object}  result - Existing result object to add properties to.
    */
-  _getLinkData: function(document, result) {
+  _getLinkData(document, result) {
     let elements = document.querySelectorAll("head > link[rel], head > link[id]");
 
     for (let element of elements) {
@@ -283,8 +283,8 @@ this.PageMetadata = {
    * @return {string} Result URL.
    */
   _validateURL(document, url) {
-    let docURI = Services.io.newURI(document.documentURI, null, null);
-    let uri = Services.io.newURI(docURI.resolve(url), null, null);
+    let docURI = Services.io.newURI(document.documentURI);
+    let uri = Services.io.newURI(docURI.resolve(url));
 
     if (["http", "https"].indexOf(uri.scheme) < 0) {
       return null;

@@ -24,6 +24,7 @@
 /* Note: Aborts on OOM. */
 class JSAPITestString {
     js::Vector<char, 0, js::SystemAllocPolicy> chars;
+
   public:
     JSAPITestString() {}
     explicit JSAPITestString(const char* s) { *this += s; }
@@ -32,22 +33,36 @@ class JSAPITestString {
     const char* begin() const { return chars.begin(); }
     const char* end() const { return chars.end(); }
     size_t length() const { return chars.length(); }
+    void clear() { chars.clearAndFree(); }
 
-    JSAPITestString & operator +=(const char* s) {
+    JSAPITestString& operator +=(const char* s) {
         if (!chars.append(s, strlen(s)))
             abort();
         return *this;
     }
 
-    JSAPITestString & operator +=(const JSAPITestString& s) {
+    JSAPITestString& operator +=(const JSAPITestString& s) {
         if (!chars.append(s.begin(), s.length()))
             abort();
         return *this;
     }
 };
 
-inline JSAPITestString operator+(JSAPITestString a, const char* b) { return a += b; }
-inline JSAPITestString operator+(JSAPITestString a, const JSAPITestString& b) { return a += b; }
+inline JSAPITestString
+operator+(const JSAPITestString& a, const char* b)
+{
+    JSAPITestString result = a;
+    result += b;
+    return result;
+}
+
+inline JSAPITestString
+operator+(const JSAPITestString& a, const JSAPITestString& b)
+{
+    JSAPITestString result = a;
+    result += b;
+    return result;
+}
 
 class JSAPITest
 {
@@ -140,10 +155,6 @@ class JSAPITest
         return jsvalToSource(val);
     }
 
-    JSAPITestString toSource(JSVersion v) {
-        return JSAPITestString(JS_VersionToString(v));
-    }
-
     // Note that in some still-supported GCC versions (we think anything before
     // GCC 4.6), this template does not work when the second argument is
     // nullptr. It infers type U = long int. Use CHECK_NULL instead.
@@ -183,7 +194,7 @@ class JSAPITest
             return false; \
     } while (false)
 
-    bool checkSame(JS::Value actualArg, JS::Value expectedArg,
+    bool checkSame(const JS::Value& actualArg, const JS::Value& expectedArg,
                    const char* actualExpr, const char* expectedExpr,
                    const char* filename, int lineno) {
         bool same;
@@ -206,7 +217,16 @@ class JSAPITest
             return fail(JSAPITestString("CHECK failed: " #expr), __FILE__, __LINE__); \
     } while (false)
 
-    bool fail(JSAPITestString msg = JSAPITestString(), const char* filename = "-", int lineno = 0) {
+    bool fail(const JSAPITestString& msg = JSAPITestString(),
+              const char* filename = "-",
+              int lineno = 0)
+    {
+        char location[256];
+        snprintf(location, mozilla::ArrayLength(location), "%s:%d:", filename, lineno);
+
+        JSAPITestString message(location);
+        message += msg;
+
         if (JS_IsExceptionPending(cx)) {
             js::gc::AutoSuppressGC gcoff(cx);
             JS::RootedValue v(cx);
@@ -216,11 +236,15 @@ class JSAPITest
             if (s) {
                 JSAutoByteString bytes(cx, s);
                 if (!!bytes)
-                    msg += bytes.ptr();
+                    message += bytes.ptr();
             }
         }
-        fprintf(stderr, "%s:%d:%.*s\n", filename, lineno, (int) msg.length(), msg.begin());
-        msgs += msg;
+
+        fprintf(stderr, "%.*s\n", int(message.length()), message.begin());
+
+        if (msgs.length() != 0)
+            msgs += " | ";
+        msgs += message;
         return false;
     }
 
@@ -230,7 +254,7 @@ class JSAPITest
         static const JSClassOps cOps = {
             nullptr, nullptr, nullptr, nullptr,
             nullptr, nullptr, nullptr, nullptr,
-            nullptr, nullptr, nullptr,
+            nullptr, nullptr,
             JS_GlobalObjectTraceHook
         };
         static const JSClass c = {
@@ -269,7 +293,7 @@ class JSAPITest
     {
         const size_t MAX_STACK_SIZE =
 /* Assume we can't use more than 5e5 bytes of C stack by default. */
-#if (defined(DEBUG) && defined(__SUNPRO_CC))  || defined(JS_CPU_SPARC)
+#if (defined(DEBUG) && defined(__SUNPRO_CC)) || defined(__sparc__)
             /*
              * Sun compiler uses a larger stack space for js::Interpret() with
              * debug.  Use a bigger gMaxStackSize to make "make check" happy.
@@ -298,14 +322,14 @@ class JSAPITest
         cx = nullptr;
     }
 
-    static void reportWarning(JSContext* cx, const char* message, JSErrorReport* report) {
+    static void reportWarning(JSContext* cx, JSErrorReport* report) {
         MOZ_RELEASE_ASSERT(report);
         MOZ_RELEASE_ASSERT(JSREPORT_IS_WARNING(report->flags));
 
         fprintf(stderr, "%s:%u:%s\n",
                 report->filename ? report->filename : "<no filename>",
                 (unsigned int) report->lineno,
-                message);
+                report->message().c_str());
     }
 
     virtual const JSClass * getGlobalClass() {
@@ -438,6 +462,7 @@ class AutoLeaveZeal
         JS::GCForReason(cx_, GC_SHRINK, JS::gcreason::DEBUG_GC);
     }
     ~AutoLeaveZeal() {
+        JS_SetGCZeal(cx_, 0, 0);
         for (size_t i = 0; i < sizeof(zealBits_) * 8; i++) {
             if (zealBits_ & (1 << i))
                 JS_SetGCZeal(cx_, i, frequency_);

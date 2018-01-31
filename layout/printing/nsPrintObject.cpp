@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,10 +32,6 @@ nsPrintObject::nsPrintObject() :
 nsPrintObject::~nsPrintObject()
 {
   MOZ_COUNT_DTOR(nsPrintObject);
-  for (uint32_t i=0;i<mKids.Length();i++) {
-    nsPrintObject* po = mKids[i];
-    delete po;
-  }
 
   DestroyPresentation();
   if (mDidCreateDocShell && mDocShell) {
@@ -42,13 +39,13 @@ nsPrintObject::~nsPrintObject()
     if (baseWin) {
       baseWin->Destroy();
     }
-  }                            
+  }
   mDocShell = nullptr;
-  mTreeOwner = nullptr; // mTreeOwner must be released after mDocShell; 
+  mTreeOwner = nullptr; // mTreeOwner must be released after mDocShell;
 }
 
 //------------------------------------------------------------------
-nsresult 
+nsresult
 nsPrintObject::Init(nsIDocShell* aDocShell, nsIDOMDocument* aDoc,
                     bool aPrintPreview)
 {
@@ -97,7 +94,7 @@ nsPrintObject::Init(nsIDocShell* aDocShell, nsIDOMDocument* aDoc,
 
 //------------------------------------------------------------------
 // Resets PO by destroying the presentation
-void 
+void
 nsPrintObject::DestroyPresentation()
 {
   if (mPresShell) {
@@ -111,8 +108,3 @@ nsPrintObject::DestroyPresentation()
   mViewManager = nullptr;
 }
 
-bool
-nsPrintObject::MayHavePluginFrames()
-{
-  return mDocument && mDocument->MayHavePluginFramesForPrinting();
-}

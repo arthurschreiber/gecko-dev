@@ -6,27 +6,34 @@
 #ifndef StylesheetTransactions_h
 #define StylesheetTransactions_h
 
+#include "mozilla/EditorBase.h"         // mEditor
 #include "mozilla/EditTransactionBase.h" // for EditTransactionBase, etc.
-#include "mozilla/StyleSheetHandle.h"   // for mozilla::StyleSheetHandle
+#include "mozilla/StyleSheet.h"   // for mozilla::StyleSheet
 #include "nsCycleCollectionParticipant.h"
 #include "nsID.h"                       // for REFNSIID
 #include "nscore.h"                     // for NS_IMETHOD
-
-class nsIEditor;
 
 namespace mozilla {
 
 class AddStyleSheetTransaction final : public EditTransactionBase
 {
+protected:
+  AddStyleSheetTransaction(EditorBase& aEditor, StyleSheet& aStyleSheet);
+
 public:
   /**
-   * Initialize the transaction.
-   * @param aEditor     The object providing core editing operations
-   * @param aSheet      The stylesheet to add
-    */
-  NS_IMETHOD Init(nsIEditor* aEditor, StyleSheetHandle aSheet);
-
-  AddStyleSheetTransaction();
+   * Creates an add style sheet transaction.  This never returns nullptr.
+   *
+   * @param aEditorBase The editor.
+   * @param aSheet      The style sheet to add.
+   */
+  static already_AddRefed<AddStyleSheetTransaction>
+  Create(EditorBase& aEditorBase, StyleSheet& aStyleSheet)
+  {
+    RefPtr<AddStyleSheetTransaction> transaction =
+      new AddStyleSheetTransaction(aEditorBase, aStyleSheet);
+    return transaction.forget();
+  }
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(AddStyleSheetTransaction,
                                            EditTransactionBase)
@@ -36,23 +43,31 @@ public:
 
 protected:
   // The editor that created this transaction.
-  nsIEditor* mEditor;
+  RefPtr<EditorBase> mEditorBase;
   // The style sheet to add.
-  mozilla::StyleSheetHandle::RefPtr mSheet;
+  RefPtr<mozilla::StyleSheet> mSheet;
 };
 
 
 class RemoveStyleSheetTransaction final : public EditTransactionBase
 {
+protected:
+  RemoveStyleSheetTransaction(EditorBase& aEditor, StyleSheet& aStyleSheet);
+
 public:
   /**
-   * Initialize the transaction.
+   * Creates a remove style sheet transaction.  This never returns nullptr.
+   *
    * @param aEditor     The object providing core editing operations.
    * @param aSheet      The stylesheet to remove.
    */
-  NS_IMETHOD Init(nsIEditor* aEditor, StyleSheetHandle aSheet);
-
-  RemoveStyleSheetTransaction();
+  static already_AddRefed<RemoveStyleSheetTransaction>
+  Create(EditorBase& aEditorBase, StyleSheet& aStyleSheet)
+  {
+    RefPtr<RemoveStyleSheetTransaction> transaction =
+      new RemoveStyleSheetTransaction(aEditorBase, aStyleSheet);
+    return transaction.forget();
+  }
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(RemoveStyleSheetTransaction,
                                            EditTransactionBase)
@@ -62,10 +77,9 @@ public:
 
 protected:
   // The editor that created this transaction.
-  nsIEditor* mEditor;
+  RefPtr<EditorBase> mEditorBase;
   // The style sheet to remove.
-  StyleSheetHandle::RefPtr mSheet;
-
+  RefPtr<StyleSheet> mSheet;
 };
 
 } // namespace mozilla

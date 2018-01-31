@@ -10,7 +10,12 @@
 // There are animations in the test page and since, by default, the <body> node
 // is selected, animations will be displayed in the timeline, so the timeline
 // play/resume button will be displayed
+
+requestLongerTimeout(2);
+
 add_task(function* () {
+  requestLongerTimeout(2);
+
   yield addTab(URL_ROOT + "doc_simple_animation.html");
   let {panel, window} = yield openAnimationInspector();
   let {playTimelineButtonEl} = panel;
@@ -21,20 +26,18 @@ add_task(function* () {
   info("Simulate spacebar stroke and check playResume button" +
        " is in paused state");
 
-  // sending the key will lead to a UI_UPDATE_EVENT
-  let onUpdated = panel.once(panel.UI_UPDATED_EVENT);
+  // sending the key will lead to render animation timeline
   EventUtils.sendKey("SPACE", window);
-  yield onUpdated;
+  yield waitForAnimationTimelineRendering(panel);
   ok(playTimelineButtonEl.classList.contains("paused"),
     "The play/resume button is in its paused state");
 
   info("Simulate spacebar stroke and check playResume button" +
        " is in playing state");
 
-  // sending the key will lead to a UI_UPDATE_EVENT
-  onUpdated = panel.once(panel.UI_UPDATED_EVENT);
+  // sending the key will lead to render animation timeline
   EventUtils.sendKey("SPACE", window);
-  yield onUpdated;
+  yield waitForAnimationTimelineRendering(panel);
   ok(!playTimelineButtonEl.classList.contains("paused"),
     "The play/resume button is in its play state again");
 });

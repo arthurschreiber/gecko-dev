@@ -8,8 +8,6 @@
           xmlns="http://www.mozilla.org/xbl"
           xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
-  <binding id="stringbundleset" extends="xul:box"/>
-
   <binding id="stringbundle" extends="xul:spacer">
     <implementation name="XStringBundle">
 
@@ -19,8 +17,7 @@
           <![CDATA[
             try {
               return this.stringBundle.GetStringFromName(aStringKey);
-            }
-            catch (e) {
+            } catch (e) {
               dump("*** Failed to get string " + aStringKey + " in bundle: " + this.src + "\n");
               throw e;
             }
@@ -35,8 +32,7 @@
           <![CDATA[
             try {
               return this.stringBundle.formatStringFromName(aStringKey, aStringsArray, aStringsArray.length);
-            }
-            catch (e) {
+            } catch (e) {
               dump("*** Failed to format string " + aStringKey + " in bundle: " + this.src + "\n");
               throw e;
             }
@@ -52,8 +48,7 @@
                 this._bundle = Components.classes["@mozilla.org/intl/stringbundle;1"]
                                          .getService(Components.interfaces.nsIStringBundleService)
                                          .createBundle(this.src);
-              }
-              catch (e) {
+              } catch (e) {
                 dump("Failed to get stringbundle:\n");
                 dump(e + "\n");
               }

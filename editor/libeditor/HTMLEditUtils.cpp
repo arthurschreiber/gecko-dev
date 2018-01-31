@@ -10,19 +10,19 @@
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc.
 #include "mozilla/EditorBase.h"         // for EditorBase
 #include "mozilla/dom/Element.h"        // for Element, nsINode
-#include "nsAString.h"                  // for nsAString_internal::IsEmpty
+#include "nsAString.h"                  // for nsAString::IsEmpty
 #include "nsCOMPtr.h"                   // for nsCOMPtr, operator==, etc.
 #include "nsCaseTreatment.h"
 #include "nsDebug.h"                    // for NS_PRECONDITION, etc.
 #include "nsError.h"                    // for NS_SUCCEEDED
 #include "nsGkAtoms.h"                  // for nsGkAtoms, nsGkAtoms::a, etc.
 #include "nsHTMLTags.h"
-#include "nsIAtom.h"                    // for nsIAtom
-#include "nsIDOMHTMLAnchorElement.h"    // for nsIDOMHTMLAnchorElement
+#include "nsAtom.h"                    // for nsAtom
 #include "nsIDOMNode.h"                 // for nsIDOMNode
 #include "nsNameSpaceManager.h"        // for kNameSpaceID_None
 #include "nsLiteralString.h"            // for NS_LITERAL_STRING
 #include "nsString.h"                   // for nsAutoString
+#include "mozilla/dom/HTMLAnchorElement.h"
 
 namespace mozilla {
 
@@ -85,17 +85,16 @@ HTMLEditUtils::IsFormatNode(nsINode* aNode)
  * blockquote.
  */
 bool
-HTMLEditUtils::IsNodeThatCanOutdent(nsIDOMNode* aNode)
+HTMLEditUtils::IsNodeThatCanOutdent(nsINode* aNode)
 {
   MOZ_ASSERT(aNode);
-  nsCOMPtr<nsIAtom> nodeAtom = EditorBase::GetTag(aNode);
-  return (nodeAtom == nsGkAtoms::ul)
-      || (nodeAtom == nsGkAtoms::ol)
-      || (nodeAtom == nsGkAtoms::dl)
-      || (nodeAtom == nsGkAtoms::li)
-      || (nodeAtom == nsGkAtoms::dd)
-      || (nodeAtom == nsGkAtoms::dt)
-      || (nodeAtom == nsGkAtoms::blockquote);
+  return aNode->IsAnyOfHTMLElements(nsGkAtoms::ul,
+                                    nsGkAtoms::ol,
+                                    nsGkAtoms::dl,
+                                    nsGkAtoms::li,
+                                    nsGkAtoms::dd,
+                                    nsGkAtoms::dt,
+                                    nsGkAtoms::blockquote);
 }
 
 /**
@@ -128,15 +127,6 @@ bool
 HTMLEditUtils::IsParagraph(nsIDOMNode* aNode)
 {
   return EditorBase::NodeIsType(aNode, nsGkAtoms::p);
-}
-
-/**
- * IsHR() returns true if aNode is an horizontal rule.
- */
-bool
-HTMLEditUtils::IsHR(nsIDOMNode* aNode)
-{
-  return EditorBase::NodeIsType(aNode, nsGkAtoms::hr);
 }
 
 /**
@@ -213,12 +203,6 @@ HTMLEditUtils::IsTableElementButNotTable(nsINode* aNode)
  * IsTable() returns true if aNode is an html table.
  */
 bool
-HTMLEditUtils::IsTable(nsIDOMNode* aNode)
-{
-  return EditorBase::NodeIsType(aNode, nsGkAtoms::table);
-}
-
-bool
 HTMLEditUtils::IsTable(nsINode* aNode)
 {
   return aNode && aNode->IsHTMLElement(nsGkAtoms::table);
@@ -231,6 +215,12 @@ bool
 HTMLEditUtils::IsTableRow(nsIDOMNode* aNode)
 {
   return EditorBase::NodeIsType(aNode, nsGkAtoms::tr);
+}
+
+bool
+HTMLEditUtils::IsTableRow(nsINode* aNode)
+{
+  return aNode && aNode->IsHTMLElement(nsGkAtoms::tr);
 }
 
 /**
@@ -318,6 +308,12 @@ HTMLEditUtils::IsPre(nsIDOMNode* aNode)
   return EditorBase::NodeIsType(aNode, nsGkAtoms::pre);
 }
 
+bool
+HTMLEditUtils::IsPre(nsINode* aNode)
+{
+  return aNode && aNode->IsHTMLElement(nsGkAtoms::pre);
+}
+
 /**
  * IsImage() returns true if aNode is an html image node.
  */
@@ -334,33 +330,22 @@ HTMLEditUtils::IsImage(nsIDOMNode* aNode)
 }
 
 bool
-HTMLEditUtils::IsLink(nsIDOMNode *aNode)
-{
-  nsCOMPtr<nsINode> node = do_QueryInterface(aNode);
-  return node && IsLink(node);
-}
-
-bool
 HTMLEditUtils::IsLink(nsINode* aNode)
 {
   MOZ_ASSERT(aNode);
 
-  nsCOMPtr<nsIDOMHTMLAnchorElement> anchor = do_QueryInterface(aNode);
-  if (anchor)
-  {
-    nsAutoString tmpText;
-    if (NS_SUCCEEDED(anchor->GetHref(tmpText)) && !tmpText.IsEmpty()) {
-      return true;
-    }
+  if (!aNode->IsContent()) {
+    return false;
   }
-  return false;
-}
 
-bool
-HTMLEditUtils::IsNamedAnchor(nsIDOMNode *aNode)
-{
-  nsCOMPtr<nsINode> node = do_QueryInterface(aNode);
-  return node && IsNamedAnchor(node);
+  RefPtr<HTMLAnchorElement> anchor = HTMLAnchorElement::FromContentOrNull(aNode->AsContent());
+  if (!anchor) {
+    return false;
+  }
+
+  nsAutoString tmpText;
+  anchor->GetHref(tmpText);
+  return !tmpText.IsEmpty();
 }
 
 bool
@@ -463,26 +448,24 @@ HTMLEditUtils::IsFormWidget(nsINode* aNode)
 }
 
 bool
-HTMLEditUtils::SupportsAlignAttr(nsIDOMNode* aNode)
+HTMLEditUtils::SupportsAlignAttr(nsINode& aNode)
 {
-  MOZ_ASSERT(aNode);
-  nsCOMPtr<nsIAtom> nodeAtom = EditorBase::GetTag(aNode);
-  return (nodeAtom == nsGkAtoms::hr)
-      || (nodeAtom == nsGkAtoms::table)
-      || (nodeAtom == nsGkAtoms::tbody)
-      || (nodeAtom == nsGkAtoms::tfoot)
-      || (nodeAtom == nsGkAtoms::thead)
-      || (nodeAtom == nsGkAtoms::tr)
-      || (nodeAtom == nsGkAtoms::td)
-      || (nodeAtom == nsGkAtoms::th)
-      || (nodeAtom == nsGkAtoms::div)
-      || (nodeAtom == nsGkAtoms::p)
-      || (nodeAtom == nsGkAtoms::h1)
-      || (nodeAtom == nsGkAtoms::h2)
-      || (nodeAtom == nsGkAtoms::h3)
-      || (nodeAtom == nsGkAtoms::h4)
-      || (nodeAtom == nsGkAtoms::h5)
-      || (nodeAtom == nsGkAtoms::h6);
+  return aNode.IsAnyOfHTMLElements(nsGkAtoms::hr,
+                                   nsGkAtoms::table,
+                                   nsGkAtoms::tbody,
+                                   nsGkAtoms::tfoot,
+                                   nsGkAtoms::thead,
+                                   nsGkAtoms::tr,
+                                   nsGkAtoms::td,
+                                   nsGkAtoms::th,
+                                   nsGkAtoms::div,
+                                   nsGkAtoms::p,
+                                   nsGkAtoms::h1,
+                                   nsGkAtoms::h2,
+                                   nsGkAtoms::h3,
+                                   nsGkAtoms::h4,
+                                   nsGkAtoms::h5,
+                                   nsGkAtoms::h6);
 }
 
 // We use bitmasks to test containment of elements. Elements are marked to be
@@ -518,9 +501,9 @@ HTMLEditUtils::SupportsAlignAttr(nsIDOMNode* aNode)
 #define GROUP_FORMCONTROL      (1 << 6)
 
 // address, applet, article, aside, blockquote, button, center, del, details,
-// dir, div, dl, fieldset, figure, footer, form, h1, h2, h3, h4, h5, h6, header,
-// hgroup, hr, iframe, ins, main, map, menu, nav, noframes, noscript, object,
-// ol, p, pre, table, section, summary, ul
+// dialog, dir, div, dl, fieldset, figure, footer, form, h1, h2, h3, h4, h5,
+// h6, header, hgroup, hr, iframe, ins, main, map, menu, nav, noframes,
+// noscript, object, ol, p, pre, table, section, summary, ul
 #define GROUP_BLOCK            (1 << 7)
 
 // frame, frameset
@@ -584,7 +567,7 @@ HTMLEditUtils::SupportsAlignAttr(nsIDOMNode* aNode)
 struct ElementInfo final
 {
 #ifdef DEBUG
-  eHTMLTags mTag;
+  nsHTMLTag mTag;
 #endif
   uint32_t mGroup;
   uint32_t mCanContainGroups;
@@ -604,9 +587,15 @@ static const ElementInfo kElements[eHTMLTag_userdefined] = {
   ELEM(a, true, false, GROUP_SPECIAL, GROUP_INLINE_ELEMENT),
   ELEM(abbr, true, true, GROUP_PHRASE, GROUP_INLINE_ELEMENT),
   ELEM(acronym, true, true, GROUP_PHRASE, GROUP_INLINE_ELEMENT),
-  ELEM(address, true, true, GROUP_BLOCK,
-       GROUP_INLINE_ELEMENT | GROUP_P),
-  ELEM(applet, true, true, GROUP_SPECIAL | GROUP_BLOCK,
+  ELEM(address, true, true, GROUP_BLOCK, GROUP_INLINE_ELEMENT | GROUP_P),
+  // While applet is no longer a valid tag, removing it here breaks the editor
+  // (compiles, but causes many tests to fail in odd ways). This list is tracked
+  // against the main HTML Tag list, so any changes will require more than just
+  // removing entries.
+  ELEM(applet,
+       true,
+       true,
+       GROUP_SPECIAL | GROUP_BLOCK,
        GROUP_FLOW_ELEMENT | GROUP_OBJECT_CONTENT),
   ELEM(area, false, false, GROUP_MAP_CONTENT, GROUP_NONE),
   ELEM(article, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
@@ -621,24 +610,29 @@ static const ElementInfo kElements[eHTMLTag_userdefined] = {
   ELEM(blockquote, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
   ELEM(body, true, true, GROUP_TOPLEVEL, GROUP_FLOW_ELEMENT),
   ELEM(br, false, false, GROUP_SPECIAL, GROUP_NONE),
-  ELEM(button, true, true, GROUP_FORMCONTROL | GROUP_BLOCK,
-       GROUP_FLOW_ELEMENT),
+  ELEM(button, true, true, GROUP_FORMCONTROL | GROUP_BLOCK, GROUP_FLOW_ELEMENT),
   ELEM(canvas, false, false, GROUP_NONE, GROUP_NONE),
   ELEM(caption, true, true, GROUP_NONE, GROUP_INLINE_ELEMENT),
   ELEM(center, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
   ELEM(cite, true, true, GROUP_PHRASE, GROUP_INLINE_ELEMENT),
   ELEM(code, true, true, GROUP_PHRASE, GROUP_INLINE_ELEMENT),
-  ELEM(col, false, false, GROUP_TABLE_CONTENT | GROUP_COLGROUP_CONTENT,
+  ELEM(col,
+       false,
+       false,
+       GROUP_TABLE_CONTENT | GROUP_COLGROUP_CONTENT,
        GROUP_NONE),
   ELEM(colgroup, true, false, GROUP_NONE, GROUP_COLGROUP_CONTENT),
-  ELEM(content, true, false, GROUP_NONE, GROUP_INLINE_ELEMENT),
   ELEM(data, true, false, GROUP_PHRASE, GROUP_INLINE_ELEMENT),
-  ELEM(datalist, true, false, GROUP_PHRASE,
+  ELEM(datalist,
+       true,
+       false,
+       GROUP_PHRASE,
        GROUP_OPTIONS | GROUP_INLINE_ELEMENT),
   ELEM(dd, true, false, GROUP_DL_CONTENT, GROUP_FLOW_ELEMENT),
   ELEM(del, true, true, GROUP_PHRASE | GROUP_BLOCK, GROUP_FLOW_ELEMENT),
   ELEM(details, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
   ELEM(dfn, true, true, GROUP_PHRASE, GROUP_INLINE_ELEMENT),
+  ELEM(dialog, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
   ELEM(dir, true, false, GROUP_BLOCK, GROUP_LI),
   ELEM(div, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
   ELEM(dl, true, false, GROUP_BLOCK, GROUP_DL_CONTENT),
@@ -647,33 +641,25 @@ static const ElementInfo kElements[eHTMLTag_userdefined] = {
   ELEM(embed, false, false, GROUP_NONE, GROUP_NONE),
   ELEM(fieldset, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
   ELEM(figcaption, true, false, GROUP_FIGCAPTION, GROUP_FLOW_ELEMENT),
-  ELEM(figure, true, true, GROUP_BLOCK,
-       GROUP_FLOW_ELEMENT | GROUP_FIGCAPTION),
+  ELEM(figure, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT | GROUP_FIGCAPTION),
   ELEM(font, true, true, GROUP_SPECIAL, GROUP_INLINE_ELEMENT),
   ELEM(footer, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
   ELEM(form, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
   ELEM(frame, false, false, GROUP_FRAME, GROUP_NONE),
   ELEM(frameset, true, true, GROUP_FRAME, GROUP_FRAME),
-  ELEM(h1, true, false, GROUP_BLOCK | GROUP_HEADING,
-       GROUP_INLINE_ELEMENT),
-  ELEM(h2, true, false, GROUP_BLOCK | GROUP_HEADING,
-       GROUP_INLINE_ELEMENT),
-  ELEM(h3, true, false, GROUP_BLOCK | GROUP_HEADING,
-       GROUP_INLINE_ELEMENT),
-  ELEM(h4, true, false, GROUP_BLOCK | GROUP_HEADING,
-       GROUP_INLINE_ELEMENT),
-  ELEM(h5, true, false, GROUP_BLOCK | GROUP_HEADING,
-       GROUP_INLINE_ELEMENT),
-  ELEM(h6, true, false, GROUP_BLOCK | GROUP_HEADING,
-       GROUP_INLINE_ELEMENT),
+  ELEM(h1, true, false, GROUP_BLOCK | GROUP_HEADING, GROUP_INLINE_ELEMENT),
+  ELEM(h2, true, false, GROUP_BLOCK | GROUP_HEADING, GROUP_INLINE_ELEMENT),
+  ELEM(h3, true, false, GROUP_BLOCK | GROUP_HEADING, GROUP_INLINE_ELEMENT),
+  ELEM(h4, true, false, GROUP_BLOCK | GROUP_HEADING, GROUP_INLINE_ELEMENT),
+  ELEM(h5, true, false, GROUP_BLOCK | GROUP_HEADING, GROUP_INLINE_ELEMENT),
+  ELEM(h6, true, false, GROUP_BLOCK | GROUP_HEADING, GROUP_INLINE_ELEMENT),
   ELEM(head, true, false, GROUP_TOPLEVEL, GROUP_HEAD_CONTENT),
   ELEM(header, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
   ELEM(hgroup, true, false, GROUP_BLOCK, GROUP_HEADING),
   ELEM(hr, false, false, GROUP_BLOCK, GROUP_NONE),
   ELEM(html, true, false, GROUP_TOPLEVEL, GROUP_TOPLEVEL),
   ELEM(i, true, true, GROUP_FONTSTYLE, GROUP_INLINE_ELEMENT),
-  ELEM(iframe, true, true, GROUP_SPECIAL | GROUP_BLOCK,
-       GROUP_FLOW_ELEMENT),
+  ELEM(iframe, true, true, GROUP_SPECIAL | GROUP_BLOCK, GROUP_FLOW_ELEMENT),
   ELEM(image, false, false, GROUP_NONE, GROUP_NONE),
   ELEM(img, false, false, GROUP_SPECIAL | GROUP_PICTURE_CONTENT, GROUP_NONE),
   ELEM(input, false, false, GROUP_FORMCONTROL, GROUP_NONE),
@@ -699,15 +685,15 @@ static const ElementInfo kElements[eHTMLTag_userdefined] = {
   ELEM(noembed, false, false, GROUP_NONE, GROUP_NONE),
   ELEM(noframes, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
   ELEM(noscript, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
-  ELEM(object, true, true, GROUP_SPECIAL | GROUP_BLOCK,
+  ELEM(object,
+       true,
+       true,
+       GROUP_SPECIAL | GROUP_BLOCK,
        GROUP_FLOW_ELEMENT | GROUP_OBJECT_CONTENT),
   // XXX Can contain self and ul because editor does sublists illegally.
-  ELEM(ol, true, true, GROUP_BLOCK | GROUP_OL_UL,
-       GROUP_LI | GROUP_OL_UL),
-  ELEM(optgroup, true, false, GROUP_SELECT_CONTENT,
-       GROUP_OPTIONS),
-  ELEM(option, true, false,
-       GROUP_SELECT_CONTENT | GROUP_OPTIONS, GROUP_LEAF),
+  ELEM(ol, true, true, GROUP_BLOCK | GROUP_OL_UL, GROUP_LI | GROUP_OL_UL),
+  ELEM(optgroup, true, false, GROUP_SELECT_CONTENT, GROUP_OPTIONS),
+  ELEM(option, true, false, GROUP_SELECT_CONTENT | GROUP_OPTIONS, GROUP_LEAF),
   ELEM(output, true, true, GROUP_SPECIAL, GROUP_INLINE_ELEMENT),
   ELEM(p, true, false, GROUP_BLOCK | GROUP_P, GROUP_INLINE_ELEMENT),
   ELEM(param, false, false, GROUP_OBJECT_CONTENT, GROUP_NONE),
@@ -723,12 +709,11 @@ static const ElementInfo kElements[eHTMLTag_userdefined] = {
   ELEM(ruby, true, true, GROUP_PHRASE, GROUP_INLINE_ELEMENT),
   ELEM(s, true, true, GROUP_FONTSTYLE, GROUP_INLINE_ELEMENT),
   ELEM(samp, true, true, GROUP_PHRASE, GROUP_INLINE_ELEMENT),
-  ELEM(script, true, false, GROUP_HEAD_CONTENT | GROUP_SPECIAL,
-       GROUP_LEAF),
+  ELEM(script, true, false, GROUP_HEAD_CONTENT | GROUP_SPECIAL, GROUP_LEAF),
   ELEM(section, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
   ELEM(select, true, false, GROUP_FORMCONTROL, GROUP_SELECT_CONTENT),
-  ELEM(shadow, true, false, GROUP_NONE, GROUP_INLINE_ELEMENT),
   ELEM(small, true, true, GROUP_FONTSTYLE, GROUP_INLINE_ELEMENT),
+  ELEM(slot, true, false, GROUP_NONE, GROUP_FLOW_ELEMENT),
   ELEM(source, false, false, GROUP_PICTURE_CONTENT, GROUP_NONE),
   ELEM(span, true, true, GROUP_SPECIAL, GROUP_INLINE_ELEMENT),
   ELEM(strike, true, true, GROUP_FONTSTYLE, GROUP_INLINE_ELEMENT),
@@ -752,8 +737,7 @@ static const ElementInfo kElements[eHTMLTag_userdefined] = {
   ELEM(tt, true, true, GROUP_FONTSTYLE, GROUP_INLINE_ELEMENT),
   ELEM(u, true, true, GROUP_FONTSTYLE, GROUP_INLINE_ELEMENT),
   // XXX Can contain self and ol because editor does sublists illegally.
-  ELEM(ul, true, true, GROUP_BLOCK | GROUP_OL_UL,
-       GROUP_LI | GROUP_OL_UL),
+  ELEM(ul, true, true, GROUP_BLOCK | GROUP_OL_UL, GROUP_LI | GROUP_OL_UL),
   ELEM(var, true, true, GROUP_PHRASE, GROUP_INLINE_ELEMENT),
   ELEM(video, false, false, GROUP_NONE, GROUP_NONE),
   ELEM(wbr, false, false, GROUP_NONE, GROUP_NONE),
@@ -794,7 +778,7 @@ HTMLEditUtils::CanContain(int32_t aParent, int32_t aChild)
 
   // Special-case button.
   if (aParent == eHTMLTag_button) {
-    static const eHTMLTags kButtonExcludeKids[] = {
+    static const nsHTMLTag kButtonExcludeKids[] = {
       eHTMLTag_a,
       eHTMLTag_fieldset,
       eHTMLTag_form,
@@ -838,6 +822,32 @@ HTMLEditUtils::IsContainer(int32_t aTag)
                "aTag out of range!");
 
   return kElements[aTag - 1].mIsContainer;
+}
+
+bool
+HTMLEditUtils::IsNonListSingleLineContainer(nsINode& aNode)
+{
+  return aNode.IsAnyOfHTMLElements(nsGkAtoms::address,
+                                   nsGkAtoms::div,
+                                   nsGkAtoms::h1,
+                                   nsGkAtoms::h2,
+                                   nsGkAtoms::h3,
+                                   nsGkAtoms::h4,
+                                   nsGkAtoms::h5,
+                                   nsGkAtoms::h6,
+                                   nsGkAtoms::listing,
+                                   nsGkAtoms::p,
+                                   nsGkAtoms::pre,
+                                   nsGkAtoms::xmp);
+}
+
+bool
+HTMLEditUtils::IsSingleLineContainer(nsINode& aNode)
+{
+  return IsNonListSingleLineContainer(aNode) ||
+         aNode.IsAnyOfHTMLElements(nsGkAtoms::li,
+                                   nsGkAtoms::dt,
+                                   nsGkAtoms::dd);
 }
 
 } // namespace mozilla

@@ -118,10 +118,7 @@ WorkerRunnable::DispatchInternal()
     return NS_SUCCEEDED(parent->Dispatch(runnable.forget()));
   }
 
-  nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
-  MOZ_ASSERT(mainThread);
-
-  return NS_SUCCEEDED(mainThread->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL));
+  return NS_SUCCEEDED(mWorkerPrivate->DispatchToMainThread(runnable.forget()));
 }
 
 void
@@ -306,7 +303,7 @@ WorkerRunnable::Run()
   } else {
     kungFuDeathGrip = mWorkerPrivate;
     if (isMainThread) {
-      globalObject = nsGlobalWindow::Cast(mWorkerPrivate->GetWindow());
+      globalObject = nsGlobalWindowInner::Cast(mWorkerPrivate->GetWindow());
     } else {
       globalObject = mWorkerPrivate->GetParent()->GlobalScope();
     }
@@ -557,48 +554,52 @@ WorkerControlRunnable::DispatchInternal()
     return NS_SUCCEEDED(parent->DispatchControlRunnable(runnable.forget()));
   }
 
-  nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
-  MOZ_ASSERT(mainThread);
-
-  return NS_SUCCEEDED(mainThread->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL));
+  return NS_SUCCEEDED(mWorkerPrivate->DispatchToMainThread(runnable.forget()));
 }
 
 NS_IMPL_ISUPPORTS_INHERITED0(WorkerControlRunnable, WorkerRunnable)
 
-WorkerMainThreadRunnable::WorkerMainThreadRunnable(WorkerPrivate* aWorkerPrivate,
-                                                   const nsACString& aTelemetryKey)
-: mWorkerPrivate(aWorkerPrivate)
-, mTelemetryKey(aTelemetryKey)
+WorkerMainThreadRunnable::WorkerMainThreadRunnable(
+  WorkerPrivate* aWorkerPrivate,
+  const nsACString& aTelemetryKey)
+  : mozilla::Runnable("dom::workers::WorkerMainThreadRunnable")
+  , mWorkerPrivate(aWorkerPrivate)
+  , mTelemetryKey(aTelemetryKey)
 {
   mWorkerPrivate->AssertIsOnWorkerThread();
 }
 
 void
-WorkerMainThreadRunnable::Dispatch(ErrorResult& aRv)
+WorkerMainThreadRunnable::Dispatch(Status aFailStatus, mozilla::ErrorResult& aRv)
 {
   mWorkerPrivate->AssertIsOnWorkerThread();
 
   TimeStamp startTime = TimeStamp::NowLoRes();
 
-  AutoSyncLoopHolder syncLoop(mWorkerPrivate);
+  AutoSyncLoopHolder syncLoop(mWorkerPrivate, aFailStatus);
 
-  mSyncLoopTarget = syncLoop.EventTarget();
-  RefPtr<WorkerMainThreadRunnable> runnable(this);
+  mSyncLoopTarget = syncLoop.GetEventTarget();
+  if (!mSyncLoopTarget) {
+    // SyncLoop creation can fail if the worker is shutting down.
+    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    return;
+  }
 
-  DebugOnly<nsresult> rv =
-    NS_DispatchToMainThread(runnable.forget(), NS_DISPATCH_NORMAL);
+  DebugOnly<nsresult> rv = mWorkerPrivate->DispatchToMainThread(this);
   MOZ_ASSERT(NS_SUCCEEDED(rv),
              "Should only fail after xpcom-shutdown-threads and we're gone by then");
 
-  if (!syncLoop.Run()) {
+  bool success = syncLoop.Run();
+
+  Telemetry::Accumulate(Telemetry::SYNC_WORKER_OPERATION, mTelemetryKey,
+                        static_cast<uint32_t>((TimeStamp::NowLoRes() - startTime)
+                                              .ToMilliseconds()));
+
+  Unused << startTime; // Shut the compiler up.
+
+  if (!success) {
     aRv.ThrowUncatchableException();
   }
-
-  // Telemetry is apparently not threadsafe
-  // Telemetry::Accumulate(Telemetry::SYNC_WORKER_OPERATION, mTelemetryKey,
-  //                       static_cast<uint32_t>((TimeStamp::NowLoRes() - startTime)
-  //                                               .ToMilliseconds()));
-  Unused << startTime; // Shut the compiler up.
 }
 
 NS_IMETHODIMP
@@ -630,7 +631,7 @@ bool
 WorkerCheckAPIExposureOnMainThreadRunnable::Dispatch()
 {
   ErrorResult rv;
-  WorkerMainThreadRunnable::Dispatch(rv);
+  WorkerMainThreadRunnable::Dispatch(Terminating, rv);
   bool ok = !rv.Failed();
   rv.SuppressException();
   return ok;
@@ -662,8 +663,10 @@ WorkerSameThreadRunnable::PostDispatch(WorkerPrivate* aWorkerPrivate,
   }
 }
 
-WorkerProxyToMainThreadRunnable::WorkerProxyToMainThreadRunnable(WorkerPrivate* aWorkerPrivate)
-  : mWorkerPrivate(aWorkerPrivate)
+WorkerProxyToMainThreadRunnable::WorkerProxyToMainThreadRunnable(
+  WorkerPrivate* aWorkerPrivate)
+  : mozilla::Runnable("dom::workers::WorkerProxyToMainThreadRunnable")
+  , mWorkerPrivate(aWorkerPrivate)
 {
   MOZ_ASSERT(mWorkerPrivate);
   mWorkerPrivate->AssertIsOnWorkerThread();
@@ -678,13 +681,13 @@ WorkerProxyToMainThreadRunnable::Dispatch()
   mWorkerPrivate->AssertIsOnWorkerThread();
 
   if (NS_WARN_IF(!HoldWorker())) {
-    RunBackOnWorkerThread();
+    RunBackOnWorkerThreadForCleanup();
     return false;
   }
 
-  if (NS_WARN_IF(NS_FAILED(NS_DispatchToMainThread(this)))) {
+  if (NS_WARN_IF(NS_FAILED(mWorkerPrivate->DispatchToMainThread(this)))) {
     ReleaseWorker();
-    RunBackOnWorkerThread();
+    RunBackOnWorkerThreadForCleanup();
     return false;
   }
 
@@ -716,7 +719,8 @@ WorkerProxyToMainThreadRunnable::PostDispatchOnMainThread()
       MOZ_ASSERT(aRunnable);
     }
 
-    // We must call RunBackOnWorkerThread() also if the runnable is canceled.
+    // We must call RunBackOnWorkerThreadForCleanup() also if the runnable is
+    // canceled.
     nsresult
     Cancel() override
     {
@@ -731,7 +735,7 @@ WorkerProxyToMainThreadRunnable::PostDispatchOnMainThread()
       aWorkerPrivate->AssertIsOnWorkerThread();
 
       if (mRunnable) {
-        mRunnable->RunBackOnWorkerThread();
+        mRunnable->RunBackOnWorkerThreadForCleanup();
 
         // Let's release the worker thread.
         mRunnable->ReleaseWorker();
@@ -760,6 +764,10 @@ WorkerProxyToMainThreadRunnable::HoldWorker()
   class SimpleWorkerHolder final : public WorkerHolder
   {
   public:
+    SimpleWorkerHolder()
+      : WorkerHolder("WorkerProxyToMainThreadRunnable::SimpleWorkerHolder")
+    {}
+
     bool Notify(Status aStatus) override
     {
       // We don't care about the notification. We just want to keep the

@@ -1,8 +1,7 @@
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
-                                  "resource://gre/modules/NetUtil.jsm");
+ChromeUtils.defineModuleGetter(this, "NetUtil",
+                               "resource://gre/modules/NetUtil.jsm");
 
 // These tables share the same updateURL.
 const TEST_TABLE_DATA_LIST = [
@@ -31,9 +30,15 @@ const TEST_TABLE_DATA_LIST = [
   }
 ];
 
-// This table has a different update URL (for v4).
+// These tables have a different update URL (for v4).
 const TEST_TABLE_DATA_V4 = {
   tableName: "test-phish-proto",
+  providerName: "google4",
+  updateUrl: "http://localhost:5555/safebrowsing/update?",
+  gethashUrl: "http://localhost:5555/safebrowsing/gethash-v4",
+};
+const TEST_TABLE_DATA_V4_DISABLED = {
+  tableName: "test-unwanted-proto",
   providerName: "google4",
   updateUrl: "http://localhost:5555/safebrowsing/update?",
   gethashUrl: "http://localhost:5555/safebrowsing/gethash-v4",
@@ -60,11 +65,15 @@ let gHttpServV4 = null;
 // These two variables are used to synchronize the last two racing updates
 // (in terms of "update URL") in test_update_all_tables().
 let gUpdatedCntForTableData = 0; // For TEST_TABLE_DATA_LIST.
-let gIsV4Updated = false;   // For TEST_TABLE_DATA_V4.
+let gIsV4Updated = false; // For TEST_TABLE_DATA_V4.
 
-const NEW_CLIENT_STATE = 'sta\0te';
+const NEW_CLIENT_STATE = "sta\0te";
+const CHECKSUM = "\x30\x67\xc7\x2c\x5e\x50\x1c\x31\xe3\xfe\xca\x73\xf0\x47\xdc\x34\x1a\x95\x63\x99\xec\x70\x5e\x0a\xee\x9e\xfb\x17\xa1\x55\x35\x78";
 
-prefBranch.setBoolPref("browser.safebrowsing.debug", true);
+Services.prefs.setBoolPref("browser.safebrowsing.debug", true);
+
+// The "\xFF\xFF" is to generate a base64 string with "/".
+Services.prefs.setCharPref("browser.safebrowsing.id", "Firefox\xFF\xFF");
 
 // Register tables.
 TEST_TABLE_DATA_LIST.forEach(function(t) {
@@ -78,6 +87,12 @@ gListManager.registerTable(TEST_TABLE_DATA_V4.tableName,
                            TEST_TABLE_DATA_V4.providerName,
                            TEST_TABLE_DATA_V4.updateUrl,
                            TEST_TABLE_DATA_V4.gethashUrl);
+
+// To test Bug 1302044.
+gListManager.registerTable(TEST_TABLE_DATA_V4_DISABLED.tableName,
+                           TEST_TABLE_DATA_V4_DISABLED.providerName,
+                           TEST_TABLE_DATA_V4_DISABLED.updateUrl,
+                           TEST_TABLE_DATA_V4_DISABLED.gethashUrl);
 
 const SERVER_INVOLVED_TEST_CASE_LIST = [
   // - Do table0 update.
@@ -122,7 +137,12 @@ const SERVER_INVOLVED_TEST_CASE_LIST = [
     TEST_TABLE_DATA_LIST.forEach(function(t) {
       gListManager.enableUpdate(t.tableName);
     });
+
+    // We register two v4 tables but only enable one of them
+    // to verify that the disabled tables are not updated.
+    // See Bug 1302044.
     gListManager.enableUpdate(TEST_TABLE_DATA_V4.tableName);
+    gListManager.disableUpdate(TEST_TABLE_DATA_V4_DISABLED.tableName);
 
     // Expected results for v2.
     gExpectedUpdateRequest = TEST_TABLE_DATA_LIST[0].tableName + ";a:5:s:2-12\n" +
@@ -136,7 +156,7 @@ const SERVER_INVOLVED_TEST_CASE_LIST = [
     let requestV4 = gUrlUtils.makeUpdateRequestV4([TEST_TABLE_DATA_V4.tableName],
                                                   [""],
                                                   1);
-    gExpectedQueryV4 = "&$req=" + btoa(requestV4);
+    gExpectedQueryV4 = "&$req=" + requestV4;
 
     forceTableUpdate();
   },
@@ -156,14 +176,14 @@ add_test(function test_partialUpdateV4() {
   let requestV4 = gUrlUtils.makeUpdateRequestV4([TEST_TABLE_DATA_V4.tableName],
                                                 [btoa(NEW_CLIENT_STATE)],
                                                 1);
-  gExpectedQueryV4 = "&$req=" + btoa(requestV4);
+  gExpectedQueryV4 = "&$req=" + requestV4;
 
   forceTableUpdate();
 });
 
 // Tests nsIUrlListManager.getGethashUrl.
 add_test(function test_getGethashUrl() {
-  TEST_TABLE_DATA_LIST.forEach(function (t) {
+  TEST_TABLE_DATA_LIST.forEach(function(t) {
     equal(gListManager.getGethashUrl(t.tableName), t.gethashUrl);
   });
   equal(gListManager.getGethashUrl(TEST_TABLE_DATA_V4.tableName),
@@ -199,11 +219,11 @@ function run_test() {
     }
 
     if (gIsV4Updated) {
-      run_next_test();  // All tests are done. Just finish.
+      run_next_test(); // All tests are done. Just finish.
       return;
     }
 
-    do_print("Waiting for TEST_TABLE_DATA_V4 to be tested ...");
+    info("Waiting for TEST_TABLE_DATA_V4 to be tested ...");
   });
 
   gHttpServ.start(4444);
@@ -224,6 +244,8 @@ function run_test() {
 
     // V4 append the base64 encoded request to the query string.
     equal(request.queryString, gExpectedQueryV4);
+    equal(request.queryString.indexOf("+"), -1);
+    equal(request.queryString.indexOf("/"), -1);
 
     // Respond a V2 compatible content for now. In the future we can
     // send a meaningful response to test Bug 1284178 to see if the
@@ -238,11 +260,15 @@ function run_test() {
     //   {
     //     'threat_type': 2, // SOCIAL_ENGINEERING_PUBLIC
     //     'response_type': 2, // FULL_UPDATE
-    //     'new_client_state': 'sta\x00te' // NEW_CLIENT_STATE
+    //     'new_client_state': 'sta\x00te', // NEW_CLIENT_STATE
+    //     'checksum': { "sha256": CHECKSUM }, // CHECKSUM
+    //     'additions': { 'compression_type': RAW,
+    //                    'prefix_size': 4,
+    //                    'raw_hashes': "00000001000000020000000300000004"}
     //   }
     // ]
     //
-    let content = "\x0A\x0C\x08\x02\x20\x02\x3A\x06\x73\x74\x61\x00\x74\x65";
+    let content = "\x0A\x4A\x08\x02\x20\x02\x2A\x18\x08\x01\x12\x14\x08\x04\x12\x10\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x02\x00\x00\x00\x03\x3A\x06\x73\x74\x61\x00\x74\x65\x42\x22\x0A\x20\x30\x67\xC7\x2C\x5E\x50\x1C\x31\xE3\xFE\xCA\x73\xF0\x47\xDC\x34\x1A\x95\x63\x99\xEC\x70\x5E\x0A\xEE\x9E\xFB\x17\xA1\x55\x35\x78\x12\x08\x08\x08\x10\x80\x94\xEB\xDC\x03";
 
     response.bodyOutputStream.write(content, content.length);
 
@@ -254,10 +280,7 @@ function run_test() {
       return;
     }
 
-    // See Bug 1284204. We save the state to pref at the moment to
-    // support partial update until "storing to HashStore" is supported.
-    // Here we poll the pref until the state has been saved.
-    waitUntilStateSavedToPref(NEW_CLIENT_STATE, () => {
+    waitUntilMetaDataSaved(NEW_CLIENT_STATE, CHECKSUM, () => {
       gIsV4Updated = true;
 
       if (gUpdatedCntForTableData === SERVER_INVOLVED_TEST_CASE_LIST.length) {
@@ -266,7 +289,7 @@ function run_test() {
         return;
       }
 
-      do_print("Wait for all sever-involved tests to be done ...");
+      info("Wait for all sever-involved tests to be done ...");
     });
 
   });
@@ -279,8 +302,8 @@ function run_test() {
 // A trick to force updating tables. However, before calling this, we have to
 // call disableAllUpdates() first to clean up the updateCheckers in listmanager.
 function forceTableUpdate() {
-  prefBranch.setCharPref(PREF_NEXTUPDATETIME, "1");
-  prefBranch.setCharPref(PREF_NEXTUPDATETIME_V4, "1");
+  Services.prefs.setCharPref(PREF_NEXTUPDATETIME, "1");
+  Services.prefs.setCharPref(PREF_NEXTUPDATETIME_V4, "1");
   gListManager.maybeToggleUpdateChecking();
 }
 
@@ -292,8 +315,8 @@ function disableAllUpdates() {
 // Since there's no public interface on listmanager to know the update success,
 // we could only rely on the refresh of "nextupdatetime".
 function waitForUpdateSuccess(callback) {
-  let nextupdatetime = parseInt(prefBranch.getCharPref(PREF_NEXTUPDATETIME));
-  do_print("nextupdatetime: " + nextupdatetime);
+  let nextupdatetime = parseInt(Services.prefs.getCharPref(PREF_NEXTUPDATETIME));
+  info("nextupdatetime: " + nextupdatetime);
   if (nextupdatetime !== 1) {
     callback();
     return;
@@ -309,23 +332,4 @@ function readFileToString(aFilename) {
   stream.init(f, -1, 0, 0);
   let buf = NetUtil.readInputStreamToString(stream, stream.available());
   return buf;
-}
-
-function waitUntilStateSavedToPref(expectedState, callback) {
-  const STATE_PREF_NAME_PREFIX = 'browser.safebrowsing.provider.google4.state.';
-
-  let stateBase64 = '';
-
-  try {
-    stateBase64 =
-      prefBranch.getCharPref(STATE_PREF_NAME_PREFIX + 'test-phish-proto');
-  } catch (e) {}
-
-  if (stateBase64 === btoa(expectedState)) {
-    do_print('State has been saved to pref!');
-    callback();
-    return;
-  }
-
-  do_timeout(1000, waitUntilStateSavedToPref.bind(null, expectedState, callback));
 }

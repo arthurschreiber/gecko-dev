@@ -7,7 +7,7 @@
 "use strict";
 
 const {LocalizationHelper} = require("devtools/shared/l10n");
-const L10N = new LocalizationHelper("devtools/locale/inspector.properties");
+const L10N = new LocalizationHelper("devtools/client/locales/inspector.properties");
 
 const Editor = require("devtools/client/sourceeditor/editor");
 const beautify = require("devtools/shared/jsbeautify/beautify");
@@ -44,6 +44,7 @@ function EventTooltip(tooltip, eventListenerInfos, toolbox) {
   this._headerClicked = this._headerClicked.bind(this);
   this._debugClicked = this._debugClicked.bind(this);
   this.destroy = this.destroy.bind(this);
+  this._subscriptions = [];
 }
 
 EventTooltip.prototype = {
@@ -62,24 +63,21 @@ EventTooltip.prototype = {
     this.container = doc.createElementNS(XHTML_NS, "div");
     this.container.className = "devtools-tooltip-events-container";
 
+    const sourceMapService = this._toolbox.sourceMapURLService;
+
+    const Bubbling = L10N.getStr("eventsTooltip.Bubbling");
+    const Capturing = L10N.getStr("eventsTooltip.Capturing");
     for (let listener of this._eventListenerInfos) {
-      let phase = listener.capturing ? "Capturing" : "Bubbling";
+      let phase = listener.capturing ? Capturing : Bubbling;
       let level = listener.DOM0 ? "DOM0" : "DOM2";
+
+      // Create this early so we can refer to it from a closure, below.
+      let content = doc.createElementNS(XHTML_NS, "div");
 
       // Header
       let header = doc.createElementNS(XHTML_NS, "div");
       header.className = "event-header devtools-toolbar";
       this.container.appendChild(header);
-
-      if (!listener.hide.debugger) {
-        let debuggerIcon = doc.createElementNS(XHTML_NS, "img");
-        debuggerIcon.className = "event-tooltip-debugger-icon";
-        debuggerIcon.setAttribute("src",
-          "chrome://devtools/skin/images/tool-debugger.svg");
-        let openInDebugger = L10N.getStr("eventsTooltip.openInDebugger");
-        debuggerIcon.setAttribute("title", openInDebugger);
-        header.appendChild(debuggerIcon);
-      }
 
       if (!listener.hide.type) {
         let eventTypeLabel = doc.createElementNS(XHTML_NS, "span");
@@ -89,12 +87,56 @@ EventTooltip.prototype = {
         header.appendChild(eventTypeLabel);
       }
 
-      if (!listener.hide.filename) {
-        let filename = doc.createElementNS(XHTML_NS, "span");
-        filename.className = "event-tooltip-filename devtools-monospace";
-        filename.textContent = listener.origin;
-        filename.setAttribute("title", listener.origin);
-        header.appendChild(filename);
+      let filename = doc.createElementNS(XHTML_NS, "span");
+      filename.className = "event-tooltip-filename devtools-monospace";
+
+      let text = listener.origin;
+      let title = text;
+      if (listener.hide.filename) {
+        text = L10N.getStr("eventsTooltip.unknownLocation");
+        title = L10N.getStr("eventsTooltip.unknownLocationExplanation");
+      } else {
+        const location = this._parseLocation(text);
+        if (location) {
+          let callback = (enabled, url, line, column) => {
+            // Do nothing if the tooltip was destroyed while we were
+            // waiting for a response.
+            if (this._tooltip) {
+              const newUrl = enabled ? url : location.url;
+              const newLine = enabled ? line : location.line;
+
+              let newURI = newUrl + ":" + newLine;
+              filename.textContent = newURI;
+              filename.setAttribute("title", newURI);
+              let eventEditor = this._eventEditors.get(content);
+              eventEditor.uri = newURI;
+
+              // This is emitted for testing.
+              this._tooltip.emit("event-tooltip-source-map-ready");
+            }
+          };
+
+          sourceMapService.subscribe(location.url, location.line, null, callback);
+          this._subscriptions.push({
+            url: location.url,
+            line: location.line,
+            callback
+          });
+        }
+      }
+
+      filename.textContent = text;
+      filename.setAttribute("title", title);
+      header.appendChild(filename);
+
+      if (!listener.hide.debugger) {
+        let debuggerIcon = doc.createElementNS(XHTML_NS, "img");
+        debuggerIcon.className = "event-tooltip-debugger-icon";
+        debuggerIcon.setAttribute("src",
+          "chrome://devtools/skin/images/jump-definition.svg");
+        let openInDebugger = L10N.getStr("eventsTooltip.openInDebugger");
+        debuggerIcon.setAttribute("title", openInDebugger);
+        header.appendChild(debuggerIcon);
       }
 
       let attributesContainer = doc.createElementNS(XHTML_NS, "div");
@@ -135,20 +177,18 @@ EventTooltip.prototype = {
         let dom0 = doc.createElementNS(XHTML_NS, "span");
         dom0.className = "event-tooltip-attributes";
         dom0.textContent = level;
-        dom0.setAttribute("title", level);
         attributesBox.appendChild(dom0);
       }
 
       // Content
-      let content = doc.createElementNS(XHTML_NS, "div");
       let editor = new Editor(config);
       this._eventEditors.set(content, {
         editor: editor,
         handler: listener.handler,
-        searchString: listener.searchString,
         uri: listener.origin,
         dom0: listener.DOM0,
-        appended: false
+        native: listener.native,
+        appended: false,
       });
 
       content.className = "event-tooltip-content-box";
@@ -175,6 +215,7 @@ EventTooltip.prototype = {
     let doc = this._tooltip.doc;
     let header = event.currentTarget;
     let content = header.nextElementSibling;
+    header.classList.toggle("content-expanded");
 
     if (content.hasAttribute("open")) {
       content.removeAttribute("open");
@@ -222,62 +263,37 @@ EventTooltip.prototype = {
     let header = event.currentTarget;
     let content = header.nextElementSibling;
 
-    let {uri, searchString, dom0} = this._eventEditors.get(content);
+    let {uri} = this._eventEditors.get(content);
 
-    if (uri && uri !== "?") {
+    let location = this._parseLocation(uri);
+    if (location) {
       // Save a copy of toolbox as it will be set to null when we hide the tooltip.
       let toolbox = this._toolbox;
 
       this._tooltip.hide();
 
+      toolbox.viewSourceInDebugger(location.url, location.line);
+    }
+  },
+
+  /**
+   * Parse URI and return {url, line}; or return null if it can't be parsed.
+   */
+  _parseLocation: function (uri) {
+    if (uri && uri !== "?") {
       uri = uri.replace(/"/g, "");
 
-      let showSource = ({ DebuggerView }) => {
-        let matches = uri.match(/(.*):(\d+$)/);
-        let line = 1;
+      let matches = uri.match(/(.*):(\d+$)/);
 
-        if (matches) {
-          uri = matches[1];
-          line = matches[2];
-        }
-
-        let item = DebuggerView.Sources.getItemForAttachment(a => a.source.url === uri);
-        if (item) {
-          let actor = item.attachment.source.actor;
-          DebuggerView.setEditorLocation(
-            actor, line, {noDebug: true}
-          ).then(() => {
-            if (dom0) {
-              let text = DebuggerView.editor.getText();
-              let index = text.indexOf(searchString);
-              let lastIndex = text.lastIndexOf(searchString);
-
-              // To avoid confusion we only search for DOM0 event handlers when
-              // there is only one possible match in the file.
-              if (index !== -1 && index === lastIndex) {
-                text = text.substr(0, index);
-                let newlineMatches = text.match(/\n/g);
-
-                if (newlineMatches) {
-                  DebuggerView.editor.setCursor({
-                    line: newlineMatches.length
-                  });
-                }
-              }
-            }
-          });
-        }
-      };
-
-      let debuggerAlreadyOpen = toolbox.getPanel("jsdebugger");
-      toolbox.selectTool("jsdebugger").then(({ panelWin: dbg }) => {
-        if (debuggerAlreadyOpen) {
-          showSource(dbg);
-        } else {
-          dbg.once(dbg.EVENTS.SOURCES_ADDED, () => showSource(dbg));
-        }
-      });
+      if (matches) {
+        return {
+          url: matches[1],
+          line: parseInt(matches[2], 10),
+        };
+      }
+      return {url: uri, line: 1};
     }
+    return null;
   },
 
   destroy: function () {
@@ -304,6 +320,12 @@ EventTooltip.prototype = {
     let sourceNodes = this.container.querySelectorAll(".event-tooltip-debugger-icon");
     for (let node of sourceNodes) {
       node.removeEventListener("click", this._debugClicked);
+    }
+
+    const sourceMapService = this._toolbox.sourceMapURLService;
+    for (let subscription of this._subscriptions) {
+      sourceMapService.unsubscribe(subscription.url, subscription.line, null,
+                                   subscription.callback);
     }
 
     this._eventListenerInfos = this._toolbox = this._tooltip = null;

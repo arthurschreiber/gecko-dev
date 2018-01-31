@@ -28,6 +28,8 @@
 #include "nsIStringBundle.h"
 #include "nsToolkitCompsCID.h"
 
+#include "mozilla/dom/Element.h"
+
 NativeMenuItemTarget* nsMenuBarX::sNativeEventTarget = nil;
 nsMenuBarX* nsMenuBarX::sLastGeckoMenuBarPainted = nullptr;
 NSMenu* sApplicationMenu = nil;
@@ -44,7 +46,8 @@ static nsIContent* sQuitItemContent   = nullptr;
 
 NS_IMPL_ISUPPORTS(nsNativeMenuServiceX, nsINativeMenuService)
 
-NS_IMETHODIMP nsNativeMenuServiceX::CreateNativeMenuBar(nsIWidget* aParent, nsIContent* aMenuBarNode)
+NS_IMETHODIMP nsNativeMenuServiceX::CreateNativeMenuBar(nsIWidget* aParent,
+                                                        mozilla::dom::Element* aMenuBarElement)
 {
   NS_ASSERTION(NS_IsMainThread(), "Attempting to create native menu bar on wrong thread!");
 
@@ -52,11 +55,41 @@ NS_IMETHODIMP nsNativeMenuServiceX::CreateNativeMenuBar(nsIWidget* aParent, nsIC
   if (!mb)
     return NS_ERROR_OUT_OF_MEMORY;
 
-  return mb->Create(aParent, aMenuBarNode);
+  return mb->Create(aParent, aMenuBarElement);
 }
 
+//
+// ApplicationMenuDelegate Objective-C class
+//
+
+@implementation ApplicationMenuDelegate
+
+- (id)initWithApplicationMenu:(nsMenuBarX*)aApplicationMenu
+{
+  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
+
+  if ((self = [super init])) {
+    mApplicationMenu = aApplicationMenu;
+  }
+  return self;
+
+  NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
+}
+
+- (void)menuWillOpen:(NSMenu*)menu
+{
+  mApplicationMenu->ApplicationMenuOpened();
+}
+
+- (void)menuDidClose:(NSMenu*)menu
+{
+}
+
+@end
+
 nsMenuBarX::nsMenuBarX()
-: nsMenuGroupOwnerX(), mParentWindow(nullptr)
+: nsMenuGroupOwnerX(), mParentWindow(nullptr), mNeedsRebuild(false),
+  mApplicationMenuDelegate(nil)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
@@ -92,12 +125,16 @@ nsMenuBarX::~nsMenuBarX()
   // before the registration hash table is destroyed.
   mMenuArray.Clear();
 
+  if (mApplicationMenuDelegate) {
+    [mApplicationMenuDelegate release];
+  }
+
   [mNativeMenu release];
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
-nsresult nsMenuBarX::Create(nsIWidget* aParent, nsIContent* aContent)
+nsresult nsMenuBarX::Create(nsIWidget* aParent, Element* aContent)
 {
   if (!aParent)
     return NS_ERROR_INVALID_ARG;
@@ -108,7 +145,7 @@ nsresult nsMenuBarX::Create(nsIWidget* aParent, nsIContent* aContent)
   if (mContent) {
     AquifyMenuBar();
 
-    nsresult rv = nsMenuGroupOwnerX::Create(mContent);
+    nsresult rv = nsMenuGroupOwnerX::Create(aContent);
     if (NS_FAILED(rv))
       return rv;
 
@@ -126,14 +163,12 @@ nsresult nsMenuBarX::Create(nsIWidget* aParent, nsIContent* aContent)
 
 void nsMenuBarX::ConstructNativeMenus()
 {
-  uint32_t count = mContent->GetChildCount();
-  for (uint32_t i = 0; i < count; i++) {
-    nsIContent *menuContent = mContent->GetChildAt(i);
-    if (menuContent &&
-        menuContent->IsXULElement(nsGkAtoms::menu)) {
+  for (nsIContent* menuContent = mContent->GetFirstChild();
+       menuContent; menuContent = menuContent->GetNextSibling()) {
+    if (menuContent->IsXULElement(nsGkAtoms::menu)) {
       nsMenuX* newMenu = new nsMenuX();
       if (newMenu) {
-        nsresult rv = newMenu->Create(this, this, menuContent);
+        nsresult rv = newMenu->Create(this, this, menuContent->AsElement());
         if (NS_SUCCEEDED(rv))
           InsertMenuAtIndex(newMenu, GetMenuCount());
         else
@@ -159,14 +194,14 @@ void nsMenuBarX::ConstructFallbackNativeMenus()
     return;
   }
 
-  nsXPIDLString labelUTF16;
-  nsXPIDLString keyUTF16;
+  nsAutoString labelUTF16;
+  nsAutoString keyUTF16;
 
-  const char16_t* labelProp = u"quitMenuitem.label";
-  const char16_t* keyProp = u"quitMenuitem.key";
+  const char* labelProp = "quitMenuitem.label";
+  const char* keyProp = "quitMenuitem.key";
 
-  stringBundle->GetStringFromName(labelProp, getter_Copies(labelUTF16));
-  stringBundle->GetStringFromName(keyProp, getter_Copies(keyUTF16));
+  stringBundle->GetStringFromName(labelProp, labelUTF16);
+  stringBundle->GetStringFromName(keyProp, keyUTF16);
 
   NSString* labelStr = [NSString stringWithUTF8String:
                         NS_ConvertUTF16toUTF8(labelUTF16).get()];
@@ -178,6 +213,11 @@ void nsMenuBarX::ConstructFallbackNativeMenus()
   }
 
   sApplicationMenu = [[[[NSApp mainMenu] itemAtIndex:0] submenu] retain];
+  if (!mApplicationMenuDelegate) {
+    mApplicationMenuDelegate =
+      [[ApplicationMenuDelegate alloc] initWithApplicationMenu:this];
+  }
+  [sApplicationMenu setDelegate:mApplicationMenuDelegate];
   NSMenuItem* quitMenuItem = [[[NSMenuItem alloc] initWithTitle:labelStr
                                                   action:@selector(menuItemHit:)
                                                   keyEquivalent:keyStr] autorelease];
@@ -265,15 +305,19 @@ void nsMenuBarX::RemoveMenuAtIndex(uint32_t aIndex)
 
 void nsMenuBarX::ObserveAttributeChanged(nsIDocument* aDocument,
                                          nsIContent* aContent,
-                                         nsIAtom* aAttribute)
+                                         nsAtom* aAttribute)
 {
 }
 
 void nsMenuBarX::ObserveContentRemoved(nsIDocument* aDocument,
+                                       nsIContent* aContainer,
                                        nsIContent* aChild,
-                                       int32_t aIndexInContainer)
+                                       nsIContent* aPreviousSibling)
 {
-  RemoveMenuAtIndex(aIndexInContainer);
+  nsINode* parent = NODE_FROM(aContainer, aDocument);
+  MOZ_ASSERT(parent);
+  int32_t index = parent->ComputeIndexOf(aPreviousSibling) + 1;
+  RemoveMenuAtIndex(index);
 }
 
 void nsMenuBarX::ObserveContentInserted(nsIDocument* aDocument,
@@ -284,7 +328,7 @@ void nsMenuBarX::ObserveContentInserted(nsIDocument* aDocument,
   if (newMenu) {
     nsresult rv = newMenu->Create(this, this, aChild);
     if (NS_SUCCEEDED(rv))
-      InsertMenuAtIndex(newMenu, aContainer->IndexOf(aChild));
+      InsertMenuAtIndex(newMenu, aContainer->ComputeIndexOf(aChild));
     else
       delete newMenu;
   }
@@ -443,7 +487,7 @@ char nsMenuBarX::GetLocalizedAccelKey(const char *shortcutID)
   NS_ConvertASCIItoUTF16 shortcutIDStr((const char *)shortcutID);
   nsCOMPtr<nsIDOMElement> shortcutElement;
   domDoc->GetElementById(shortcutIDStr, getter_AddRefs(shortcutElement));
-  nsCOMPtr<nsIContent> shortcutContent = do_QueryInterface(shortcutElement);
+  nsCOMPtr<Element> shortcutContent = do_QueryInterface(shortcutElement);
   if (!shortcutContent)
     return 0;
 
@@ -472,6 +516,27 @@ void nsMenuBarX::ResetNativeApplicationMenu()
   sApplicationMenuIsFallback = NO;
 }
 
+void nsMenuBarX::SetNeedsRebuild()
+{
+  mNeedsRebuild = true;
+}
+
+void nsMenuBarX::ApplicationMenuOpened()
+{
+  if (mNeedsRebuild) {
+    if (!mMenuArray.IsEmpty()) {
+      ResetNativeApplicationMenu();
+      CreateApplicationMenu(mMenuArray[0].get());
+    }
+    mNeedsRebuild = false;
+  }
+}
+
+bool nsMenuBarX::PerformKeyEquivalent(NSEvent* theEvent)
+{
+  return [mNativeMenu performSuperKeyEquivalent:theEvent];
+}
+
 // Hide the item in the menu by setting the 'hidden' attribute. Returns it in |outHiddenNode| so
 // the caller can hang onto it if they so choose. It is acceptable to pass nsull
 // for |outHiddenNode| if the caller doesn't care about the hidden node.
@@ -479,11 +544,11 @@ void nsMenuBarX::HideItem(nsIDOMDocument* inDoc, const nsAString & inID, nsICont
 {
   nsCOMPtr<nsIDOMElement> menuItem;
   inDoc->GetElementById(inID, getter_AddRefs(menuItem));
-  nsCOMPtr<nsIContent> menuContent(do_QueryInterface(menuItem));
-  if (menuContent) {
-    menuContent->SetAttr(kNameSpaceID_None, nsGkAtoms::hidden, NS_LITERAL_STRING("true"), false);
+  nsCOMPtr<Element> menuElement(do_QueryInterface(menuItem));
+  if (menuElement) {
+    menuElement->SetAttr(kNameSpaceID_None, nsGkAtoms::hidden, NS_LITERAL_STRING("true"), false);
     if (outHiddenNode) {
-      *outHiddenNode = menuContent.get();
+      *outHiddenNode = menuElement.get();
       NS_IF_ADDREF(*outHiddenNode);
     }
   }
@@ -532,8 +597,9 @@ NSMenuItem* nsMenuBarX::CreateNativeAppMenuItem(nsMenuX* inMenu, const nsAString
     return nil;
   }
 
-  nsCOMPtr<nsIDOMDocument> domdoc(do_QueryInterface(doc));
-  if (!domdoc) {
+  RefPtr<mozilla::dom::Element> menuItem =
+    doc->GetElementById(nodeID);
+  if (!menuItem) {
     return nil;
   }
 
@@ -541,36 +607,27 @@ NSMenuItem* nsMenuBarX::CreateNativeAppMenuItem(nsMenuX* inMenu, const nsAString
   nsAutoString label;
   nsAutoString modifiers;
   nsAutoString key;
-  nsCOMPtr<nsIDOMElement> menuItem;
-  domdoc->GetElementById(nodeID, getter_AddRefs(menuItem));
-  if (menuItem) {
-    menuItem->GetAttribute(NS_LITERAL_STRING("label"), label);
-    menuItem->GetAttribute(NS_LITERAL_STRING("modifiers"), modifiers);
-    menuItem->GetAttribute(NS_LITERAL_STRING("key"), key);
-  }
-  else {
-    return nil;
-  }
+  menuItem->GetAttribute(NS_LITERAL_STRING("label"), label);
+  menuItem->GetAttribute(NS_LITERAL_STRING("modifiers"), modifiers);
+  menuItem->GetAttribute(NS_LITERAL_STRING("key"), key);
 
   // Get more information about the key equivalent. Start by
   // finding the key node we need.
   NSString* keyEquiv = nil;
   unsigned int macKeyModifiers = 0;
   if (!key.IsEmpty()) {
-    nsCOMPtr<nsIDOMElement> keyElement;
-    domdoc->GetElementById(key, getter_AddRefs(keyElement));
+    RefPtr<Element> keyElement = doc->GetElementById(key);
     if (keyElement) {
-      nsCOMPtr<nsIContent> keyContent (do_QueryInterface(keyElement));
       // first grab the key equivalent character
       nsAutoString keyChar(NS_LITERAL_STRING(" "));
-      keyContent->GetAttr(kNameSpaceID_None, nsGkAtoms::key, keyChar);
+      keyElement->GetAttr(kNameSpaceID_None, nsGkAtoms::key, keyChar);
       if (!keyChar.EqualsLiteral(" ")) {
         keyEquiv = [[NSString stringWithCharacters:reinterpret_cast<const unichar*>(keyChar.get())
                                             length:keyChar.Length()] lowercaseString];
       }
       // now grab the key equivalent modifiers
       nsAutoString modifiersStr;
-      keyContent->GetAttr(kNameSpaceID_None, nsGkAtoms::modifiers, modifiersStr);
+      keyElement->GetAttr(kNameSpaceID_None, nsGkAtoms::modifiers, modifiersStr);
       uint8_t geckoModifiers = nsMenuUtilsX::GeckoModifiersForNodeAttribute(modifiersStr);
       macKeyModifiers = nsMenuUtilsX::MacModifiersForGeckoModifiers(geckoModifiers);
     }
@@ -644,6 +701,12 @@ nsresult nsMenuBarX::CreateApplicationMenu(nsMenuX* inMenu)
 */
 
   if (sApplicationMenu) {
+    if (!mApplicationMenuDelegate) {
+      mApplicationMenuDelegate =
+        [[ApplicationMenuDelegate alloc] initWithApplicationMenu:this];
+    }
+    [sApplicationMenu setDelegate:mApplicationMenuDelegate];
+
     // This code reads attributes we are going to care about from the DOM elements
 
     NSMenuItem *itemBeingAdded = nil;
@@ -813,6 +876,11 @@ static BOOL gMenuItemsExecuteCommands = YES;
 
   // Return NO so that we can handle the event via NSView's "keyDown:".
   return NO;
+}
+
+- (BOOL)performSuperKeyEquivalent:(NSEvent*)theEvent
+{
+  return [super performKeyEquivalent:theEvent];
 }
 
 @end

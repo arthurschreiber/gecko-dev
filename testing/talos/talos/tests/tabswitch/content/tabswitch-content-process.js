@@ -1,7 +1,7 @@
 const {classes: Cc, utils: Cu, interfaces: Ci} = Components;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const CHROME_URI = "chrome://tabswitch/content/test.html";
 
@@ -11,7 +11,7 @@ class TabSwitchAboutModule {
   }
 
   newChannel(aURI, aLoadInfo) {
-    let uri = Services.io.newURI(CHROME_URI, null, null);
+    let uri = Services.io.newURI(CHROME_URI);
     let chan = Services.io.newChannelFromURIWithLoadInfo(uri, aLoadInfo);
     chan.originalURI = aURI;
     return chan;

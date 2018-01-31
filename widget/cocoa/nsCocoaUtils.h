@@ -34,6 +34,7 @@ enum {
 class nsIWidget;
 
 namespace mozilla {
+class TimeStamp;
 namespace gfx {
 class SourceSurface;
 } // namespace gfx
@@ -143,6 +144,13 @@ public:
                                 NSToIntRound(aPt.y * aBackingScale));
   }
 
+  static LayoutDeviceIntPoint
+  CocoaPointsToDevPixelsRoundDown(const NSPoint& aPt, CGFloat aBackingScale)
+  {
+    return LayoutDeviceIntPoint(NSToIntFloor(aPt.x * aBackingScale),
+                                NSToIntFloor(aPt.y * aBackingScale));
+  }
+
   static LayoutDeviceIntRect
   CocoaPointsToDevPixels(const NSRect& aRect, CGFloat aBackingScale)
   {
@@ -184,10 +192,10 @@ public:
   DevPixelsToCocoaPoints(const LayoutDeviceIntRect& aRect,
                          CGFloat aBackingScale)
   {
-    return NSMakeRect((CGFloat)aRect.x / aBackingScale,
-                      (CGFloat)aRect.y / aBackingScale,
-                      (CGFloat)aRect.width / aBackingScale,
-                      (CGFloat)aRect.height / aBackingScale);
+    return NSMakeRect((CGFloat)aRect.X() / aBackingScale,
+                      (CGFloat)aRect.Y() / aBackingScale,
+                      (CGFloat)aRect.Width() / aBackingScale,
+                      (CGFloat)aRect.Height() / aBackingScale);
   }
 
   // Returns the given y coordinate, which must be in screen coordinates,
@@ -320,6 +328,14 @@ public:
                                             NSEvent *aEvent);
 
   /**
+   * Makes a cocoa event from a widget keyboard event.
+   */
+  static NSEvent* MakeNewCococaEventFromWidgetEvent(
+                    const mozilla::WidgetKeyboardEvent& aKeyEvent,
+                    NSInteger aWindowNumber,
+                    NSGraphicsContext* aContext);
+
+  /**
    * Initializes aNPCocoaEvent.
    */
   static void InitNPCocoaEvent(NPCocoaEvent* aNPCocoaEvent);
@@ -377,6 +393,12 @@ public:
            const nsTArray<mozilla::FontRange>& aFontRanges,
            const bool aIsVertical,
            const CGFloat aBackingScaleFactor);
+
+  /**
+   * Compute TimeStamp from an event's timestamp.
+   * If aEventTime is 0, this returns current timestamp.
+   */
+  static mozilla::TimeStamp GetEventTimeStamp(NSTimeInterval aEventTime);
 };
 
 #endif // nsCocoaUtils_h_

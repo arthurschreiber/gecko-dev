@@ -10,14 +10,43 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/NonRefcountedDOMObject.h"
+#include "nsString.h"
 
 namespace mozilla {
 namespace dom {
 
+class Promise;
+class PromiseReturner;
+
 class TestFunctions : public NonRefcountedDOMObject {
 public:
+  static TestFunctions* Constructor(GlobalObject& aGlobal, ErrorResult& aRv);
+
   static void
   ThrowUncatchableException(GlobalObject& aGlobal, ErrorResult& aRv);
+
+  static Promise*
+  PassThroughPromise(GlobalObject& aGlobal, Promise& aPromise);
+
+  static already_AddRefed<Promise>
+  PassThroughCallbackPromise(GlobalObject& aGlobal,
+                             PromiseReturner& aCallback,
+                             ErrorResult& aRv);
+
+  void SetStringData(const nsAString& aString);
+
+  void GetStringDataAsAString(nsAString& aString);
+  void GetStringDataAsAString(uint32_t aLength, nsAString& aString);
+  void GetStringDataAsDOMString(const Optional<uint32_t>& aLength,
+                                DOMString& aString);
+
+  void TestThrowNsresult(ErrorResult& aError);
+  void TestThrowNsresultFromNative(ErrorResult& aError);
+
+  bool WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto,
+                  JS::MutableHandle<JSObject*> aWrapper);
+private:
+  nsString mStringData;
 };
 
 } // namespace dom

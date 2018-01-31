@@ -1,6 +1,6 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: sts=8 sw=2 ts=2 tw=99 et :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -9,9 +9,12 @@
 #include "gfxPrefs.h"
 #include "mozilla/gfx/Logging.h"
 #include "nsITimer.h"
+#include "mozilla/Preferences.h"
 
 namespace mozilla {
 namespace gfx {
+
+using namespace ipc;
 
 GPUProcessHost::GPUProcessHost(Listener* aListener)
  : GeckoChildProcessHost(GeckoProcessType_GPU),
@@ -35,8 +38,15 @@ GPUProcessHost::Launch()
 {
   MOZ_ASSERT(mLaunchPhase == LaunchPhase::Unlaunched);
   MOZ_ASSERT(!mGPUChild);
+  MOZ_ASSERT(!gfxPlatform::IsHeadless());
+
+#if defined(XP_WIN) && defined(MOZ_SANDBOX)
+  mSandboxLevel = Preferences::GetInt("security.sandbox.gpu.level");
+#endif
 
   mLaunchPhase = LaunchPhase::Waiting;
+  mLaunchTime = TimeStamp::Now();
+
   if (!GeckoChildProcessHost::AsyncLaunch()) {
     mLaunchPhase = LaunchPhase::Complete;
     return false;
@@ -51,7 +61,13 @@ GPUProcessHost::WaitForLaunch()
     return !!mGPUChild;
   }
 
-  int32_t timeoutMs = gfxPrefs::GPUProcessDevTimeoutMs();
+  int32_t timeoutMs = gfxPrefs::GPUProcessTimeoutMs();
+
+  // If one of the following environment variables are set we can effectively
+  // ignore the timeout - as we can guarantee the compositor process will be terminated
+  if (PR_GetEnv("MOZ_DEBUG_CHILD_PROCESS") || PR_GetEnv("MOZ_DEBUG_CHILD_PAUSE")) {
+    timeoutMs = 0;
+  }
 
   // Our caller expects the connection to be finished after we return, so we
   // immediately set up the IPDL actor and fire callbacks. The IO thread will
@@ -148,12 +164,12 @@ GPUProcessHost::Shutdown()
     // unexpected.
     mShutdownRequested = true;
 
-#ifdef NS_FREE_PERMANENT_DATA
     // The channel might already be closed if we got here unexpectedly.
     if (!mChannelClosed) {
       mGPUChild->Close();
     }
-#else
+
+#ifndef NS_FREE_PERMANENT_DATA
     // No need to communicate shutdown, the GPU process doesn't need to
     // communicate anything back.
     KillHard("NormalShutdown");
@@ -174,25 +190,18 @@ GPUProcessHost::Shutdown()
 void
 GPUProcessHost::OnChannelClosed()
 {
-  if (!mShutdownRequested) {
+  mChannelClosed = true;
+
+  if (!mShutdownRequested && mListener) {
     // This is an unclean shutdown. Notify our listener that we're going away.
-    mChannelClosed = true;
-    if (mListener) {
-      mListener->OnProcessUnexpectedShutdown(this);
-    }
+    mListener->OnProcessUnexpectedShutdown(this);
+  } else {
+    DestroyProcess();
   }
 
   // Release the actor.
   GPUChild::Destroy(Move(mGPUChild));
   MOZ_ASSERT(!mGPUChild);
-
-  // If the owner of GPUProcessHost already requested shutdown, we can now
-  // schedule destruction. Otherwise we must wait for someone to call
-  // Shutdown. Note that GPUProcessManager calls Shutdown within
-  // OnProcessUnexpectedShutdown.
-  if (mShutdownRequested) {
-    DestroyProcess();
-  }
 }
 
 void
@@ -204,8 +213,6 @@ GPUProcessHost::KillHard(const char* aReason)
   }
 
   SetAlreadyDead();
-  XRE_GetIOMessageLoop()->PostTask(
-    NewRunnableFunction(&ProcessWatcher::EnsureProcessTerminated, handle, /*force=*/true));
 }
 
 uint64_t
@@ -222,6 +229,12 @@ DelayedDeleteSubprocess(GeckoChildProcessHost* aSubprocess)
 }
 
 void
+GPUProcessHost::KillProcess()
+{
+  KillHard("DiagnosticKill");
+}
+
+void
 GPUProcessHost::DestroyProcess()
 {
   // Cancel all tasks. We don't want anything triggering after our caller
@@ -232,7 +245,7 @@ GPUProcessHost::DestroyProcess()
   }
 
   MessageLoop::current()->
-    PostTask(NewRunnableFunction(DelayedDeleteSubprocess, this));
+    PostTask(NewRunnableFunction("DestroyProcessRunnable", DelayedDeleteSubprocess, this));
 }
 
 } // namespace gfx

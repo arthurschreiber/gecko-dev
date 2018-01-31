@@ -21,7 +21,7 @@
 nsresult
 NS_NewDOMDocumentType(nsIDOMDocumentType** aDocType,
                       nsNodeInfoManager *aNodeInfoManager,
-                      nsIAtom *aName,
+                      nsAtom *aName,
                       const nsAString& aPublicId,
                       const nsAString& aSystemId,
                       const nsAString& aInternalSubset)
@@ -35,7 +35,7 @@ NS_NewDOMDocumentType(nsIDOMDocumentType** aDocType,
 
 already_AddRefed<mozilla::dom::DocumentType>
 NS_NewDOMDocumentType(nsNodeInfoManager* aNodeInfoManager,
-                      nsIAtom *aName,
+                      nsAtom *aName,
                       const nsAString& aPublicId,
                       const nsAString& aSystemId,
                       const nsAString& aInternalSubset,
@@ -49,8 +49,7 @@ NS_NewDOMDocumentType(nsNodeInfoManager* aNodeInfoManager,
   already_AddRefed<mozilla::dom::NodeInfo> ni =
     aNodeInfoManager->GetNodeInfo(nsGkAtoms::documentTypeNodeName, nullptr,
                                   kNameSpaceID_None,
-                                  nsIDOMNode::DOCUMENT_TYPE_NODE,
-                                  aName);
+                                  nsINode::DOCUMENT_TYPE_NODE, aName);
 
   RefPtr<mozilla::dom::DocumentType> docType =
     new mozilla::dom::DocumentType(ni, aPublicId, aSystemId, aInternalSubset);
@@ -75,7 +74,7 @@ DocumentType::DocumentType(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo,
   mSystemId(aSystemId),
   mInternalSubset(aInternalSubset)
 {
-  MOZ_ASSERT(mNodeInfo->NodeType() == nsIDOMNode::DOCUMENT_TYPE_NODE,
+  MOZ_ASSERT(mNodeInfo->NodeType() == DOCUMENT_TYPE_NODE,
              "Bad NodeType in aNodeInfo");
 }
 
@@ -93,7 +92,7 @@ DocumentType::IsNodeOfType(uint32_t aFlags) const
   // nsGenericDOMDataNode for convinience. Doctypes aren't really
   // data nodes (they have a null .nodeValue and don't implement
   // nsIDOMCharacterData)
-  return !(aFlags & ~eCONTENT);
+  return false;
 }
 
 const nsTextFragment*
@@ -102,7 +101,7 @@ DocumentType::GetText()
   return nullptr;
 }
 
-NS_IMETHODIMP    
+NS_IMETHODIMP
 DocumentType::GetName(nsAString& aName)
 {
   aName = NodeName();
@@ -129,13 +128,6 @@ NS_IMETHODIMP
 DocumentType::GetInternalSubset(nsAString& aInternalSubset)
 {
   aInternalSubset = mInternalSubset;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-DocumentType::MozRemove()
-{
-  Remove();
   return NS_OK;
 }
 

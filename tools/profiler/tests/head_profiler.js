@@ -6,6 +6,9 @@ const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cu = Components.utils;
 
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+
 function getInflatedStackLocations(thread, sample) {
   let stackTable = thread.stackTable;
   let frameTable = thread.frameTable;

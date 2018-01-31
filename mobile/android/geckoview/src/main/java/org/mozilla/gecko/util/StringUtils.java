@@ -5,14 +5,16 @@
 
 package org.mozilla.gecko.util;
 
+import android.graphics.Paint;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.support.annotation.NonNull;
 import android.text.TextUtils;
 
-import org.mozilla.gecko.AppConstants.Versions;
-
+import java.nio.charset.Charset;
 import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 public class StringUtils {
@@ -20,6 +22,12 @@ public class StringUtils {
 
     private static final String FILTER_URL_PREFIX = "filter://";
     private static final String USER_ENTERED_URL_PREFIX = "user-entered:";
+
+
+    /**
+     * The UTF-8 charset.
+     */
+    public static final Charset UTF_8 = Charset.forName("UTF-8");
 
     /*
      * This method tries to guess if the given string could be a search query or URL,
@@ -43,15 +51,15 @@ public class StringUtils {
     public static boolean isSearchQuery(String text, boolean wasSearchQuery) {
         // We remove leading and trailing white spaces when decoding URLs
         text = text.trim();
-        if (text.length() == 0)
+        if (text.length() == 0) {
             return wasSearchQuery;
-
+        }
         int colon = text.indexOf(':');
         int dot = text.indexOf('.');
         int space = text.indexOf(' ');
 
-        // If a space is found before any dot and colon, we assume this is a search query
-        if (space > -1 && (colon == -1 || space < colon) && (dot == -1 || space < dot)) {
+        // If a space is found in a trimmed string, we assume this is a search query(Bug 1278245)
+        if (space > -1) {
             return true;
         }
         // Otherwise, if a dot or a colon is found, we assume this is a URL
@@ -96,20 +104,19 @@ public class StringUtils {
             return url;
         }
 
-        int start = 0;
-        int end = url.length();
+        String newURL = url;
 
-        if (url.startsWith("http://")) {
-            start = 7;
-        } else if (url.startsWith("https://") && flags == UrlFlags.STRIP_HTTPS) {
-            start = 8;
+        if (newURL.startsWith("http://")) {
+            newURL = newURL.replace("http://", "");
+        } else if (newURL.startsWith("https://") && flags == UrlFlags.STRIP_HTTPS) {
+            newURL = newURL.replace("https://", "");
         }
 
-        if (url.endsWith("/")) {
-            end--;
+        if (newURL.endsWith("/")) {
+            newURL = newURL.substring(0, newURL.length() - 1);
         }
 
-        return url.substring(start, end);
+        return newURL;
     }
 
     public static boolean isHttpOrHttps(String url) {
@@ -224,7 +231,7 @@ public class StringUtils {
     }
 
     /**
-     * Compatibility layer for API < 11.
+     * Compatibility layer for API &lt; 11.
      *
      * Returns a set of the unique names of all query parameters. Iterating
      * over the set will return the names in order of their first occurrence.
@@ -235,39 +242,18 @@ public class StringUtils {
      * @return a set of decoded names
      */
     public static Set<String> getQueryParameterNames(Uri uri) {
-        if (Versions.feature11Plus) {
-            return uri.getQueryParameterNames();
+        return uri.getQueryParameterNames();
+    }
+
+    /**
+     * @return  the index of the path segment of URLs
+     */
+    public static int pathStartIndex(String text) {
+        if (text.contains("://")) {
+            return text.indexOf('/', text.indexOf("://") + 3);
+        } else {
+            return text.indexOf('/');
         }
-
-        // Logic below copied from Uri.java included with Android 5.0.0.
-        if (uri.isOpaque()) {
-            throw new UnsupportedOperationException("This isn't a hierarchical URI.");
-        }
-
-        String query = uri.getEncodedQuery();
-        if (query == null) {
-            return Collections.emptySet();
-        }
-
-        Set<String> names = new LinkedHashSet<String>();
-        int start = 0;
-        do {
-            int next = query.indexOf('&', start);
-            int end = (next == -1) ? query.length() : next;
-
-            int separator = query.indexOf('=', start);
-            if (separator > end || separator == -1) {
-                separator = end;
-            }
-
-            String name = query.substring(start, separator);
-            names.add(Uri.decode(name));
-
-            // Move start to end of name.
-            start = end + 1;
-        } while (start < query.length());
-
-        return Collections.unmodifiableSet(names);
     }
 
     public static String safeSubstring(@NonNull final String str, final int start, final int end) {
@@ -302,5 +288,34 @@ public class StringUtils {
         }
 
         return "\u200E" + text;
+    }
+
+    /**
+     * Case-insensitive version of {@link String#startsWith(String)}.
+     */
+    public static boolean caseInsensitiveStartsWith(String text, String prefix) {
+        return caseInsensitiveStartsWith(text, prefix, 0);
+    }
+
+    /**
+     * Case-insensitive version of {@link String#startsWith(String, int)}.
+     */
+    public static boolean caseInsensitiveStartsWith(String text, String prefix, int start) {
+        return text.regionMatches(true, start, prefix, 0, prefix.length());
+    }
+
+    /**
+     * Measures the width of the given substring when rendered using the specified Paint.
+     *
+     * @param text      String to measure and return its width
+     * @param start     Index of the first char in the string to measure
+     * @param end       1 past the last char in the string measure
+     * @param textPaint the paint used to render the text
+     * @return          the width of the specified substring in screen pixels
+     */
+    public static int getTextWidth(final String text, final int start, final int end, final Paint textPaint) {
+        final Rect bounds = new Rect();
+        textPaint.getTextBounds(text, start, end, bounds);
+        return bounds.width();
     }
 }

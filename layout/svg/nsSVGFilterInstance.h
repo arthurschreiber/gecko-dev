@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -85,8 +86,7 @@ public:
                       nsIContent* aTargetContent,
                       const UserSpaceMetrics& aMetrics,
                       const gfxRect& aTargetBBox,
-                      const gfxSize& aUserSpaceToFilterSpaceScale,
-                      const gfxSize& aFilterSpaceToUserSpaceScale);
+                      const gfxSize& aUserSpaceToFilterSpaceScale);
 
   /**
    * Returns true if the filter instance was created successfully.
@@ -98,22 +98,17 @@ public:
    * FilterPrimitiveDescription for each one. Appends the new
    * FilterPrimitiveDescription(s) to the aPrimitiveDescrs list. Also, appends
    * new images from feImage filter primitive elements to the aInputImages list.
+   * aInputIsTainted describes whether the input to this filter is tainted, i.e.
+   * whether it contains security-sensitive content. This is needed to propagate
+   * taintedness to the FilterPrimitive that take tainted inputs. Something being
+   * tainted means that it contains security sensitive content.
+   * The input to this filter is the previous filter's output, i.e. the last
+   * element in aPrimitiveDescrs, or the SourceGraphic input if this is the first
+   * filter in the filter chain.
    */
   nsresult BuildPrimitives(nsTArray<FilterPrimitiveDescription>& aPrimitiveDescrs,
-                           nsTArray<RefPtr<SourceSurface>>& aInputImages);
-
-  /**
-   * Returns the user specified "filter region", in the filtered element's user
-   * space, after it has been adjusted out (if necessary) so that its edges
-   * coincide with pixel boundaries of the offscreen surface into which the
-   * filtered output would/will be painted.
-   */
-  gfxRect GetFilterRegion() const { return mUserSpaceBounds; }
-
-  /**
-   * Returns the size of the user specified "filter region", in filter space.
-   */
-  nsIntRect GetFilterSpaceBounds() const { return mFilterSpaceBounds; }
+                           nsTArray<RefPtr<SourceSurface>>& aInputImages,
+                           bool aInputIsTainted);
 
   float GetPrimitiveNumber(uint8_t aCtxType, const nsSVGNumber2 *aNumber) const
   {
@@ -166,11 +161,6 @@ private:
   float GetPrimitiveNumber(uint8_t aCtxType, float aValue) const;
 
   /**
-   * Transform a rect between user space and filter space.
-   */
-  gfxRect FilterSpaceToUserSpace(const gfxRect& aFilterSpaceRect) const;
-
-  /**
    * Returns the transform from frame space to the coordinate space that
    * GetCanvasTM transforms to. "Frame space" is the origin of a frame, aka the
    * top-left corner of its border box, aka the top left corner of its mRect.
@@ -199,11 +189,11 @@ private:
                             const nsDataHashtable<nsStringHashKey, int32_t>& aImageTable,
                             nsTArray<int32_t>& aSourceIndices);
 
-  /**
+   /**
    * Compute the filter region in user space, filter space, and filter
    * space.
    */
-  nsresult ComputeBounds();
+  bool ComputeBounds();
 
   /**
    * The SVG reference filter originally from the style system.
@@ -238,14 +228,12 @@ private:
   /**
    * The "filter region" in various spaces.
    */
-  gfxRect mUserSpaceBounds;
   nsIntRect mFilterSpaceBounds;
 
   /**
    * The scale factors between user space and filter space.
    */
   gfxSize mUserSpaceToFilterSpaceScale;
-  gfxSize mFilterSpaceToUserSpaceScale;
 
   /**
    * The 'primitiveUnits' attribute value (objectBoundingBox or userSpaceOnUse).
@@ -255,16 +243,16 @@ private:
   /**
    * The index of the FilterPrimitiveDescription that this SVG filter should use
    * as its SourceGraphic, or the SourceGraphic keyword index if this is the
-   * first filter in a chain.
+   * first filter in a chain. Initialized in BuildPrimitives
    */
-  int32_t mSourceGraphicIndex;
+  MOZ_INIT_OUTSIDE_CTOR int32_t mSourceGraphicIndex;
 
   /**
    * The index of the FilterPrimitiveDescription that this SVG filter should use
    * as its SourceAlpha, or the SourceAlpha keyword index if this is the first
-   * filter in a chain.
+   * filter in a chain. Initialized in BuildPrimitives
    */
-  int32_t mSourceAlphaIndex;
+  MOZ_INIT_OUTSIDE_CTOR int32_t mSourceAlphaIndex;
 
   /**
    * SourceAlpha is available if GetOrCreateSourceAlphaIndex has been called.

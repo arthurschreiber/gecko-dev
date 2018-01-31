@@ -13,6 +13,7 @@
 
 #include "PersistenceType.h"
 
+class nsIFile;
 class nsIRunnable;
 
 #define IDB_DIRECTORY_NAME "idb"
@@ -30,11 +31,9 @@ class UsageInfo;
 class Client
 {
 public:
-  NS_IMETHOD_(MozExternalRefCountType)
-  AddRef() = 0;
+  typedef mozilla::Atomic<bool> AtomicBool;
 
-  NS_IMETHOD_(MozExternalRefCountType)
-  Release() = 0;
+  NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
 
   enum Type {
     IDB = 0,
@@ -92,17 +91,31 @@ public:
     return NS_OK;
   }
 
-  // Methods which are called on the IO thred.
+  // Methods which are called on the IO thread.
+  virtual nsresult
+  UpgradeStorageFrom1_0To2_0(nsIFile* aDirectory)
+  {
+    return NS_OK;
+  }
+
+  virtual nsresult
+  UpgradeStorageFrom2_0To2_1(nsIFile* aDirectory)
+  {
+    return NS_OK;
+  }
+
   virtual nsresult
   InitOrigin(PersistenceType aPersistenceType,
              const nsACString& aGroup,
              const nsACString& aOrigin,
+             const AtomicBool& aCanceled,
              UsageInfo* aUsageInfo) = 0;
 
   virtual nsresult
   GetUsageForOrigin(PersistenceType aPersistenceType,
                     const nsACString& aGroup,
                     const nsACString& aOrigin,
+                    const AtomicBool& aCanceled,
                     UsageInfo* aUsageInfo) = 0;
 
   virtual void
@@ -112,7 +125,7 @@ public:
   virtual void
   ReleaseIOThreadObjects() = 0;
 
-  // Methods which are called on the background thred.
+  // Methods which are called on the background thread.
   virtual void
   AbortOperations(const nsACString& aOrigin) = 0;
 

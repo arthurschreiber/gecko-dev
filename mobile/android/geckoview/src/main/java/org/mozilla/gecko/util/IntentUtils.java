@@ -6,9 +6,13 @@
 
 package org.mozilla.gecko.util;
 
+import android.content.ComponentName;
 import android.content.Intent;
 import android.os.Bundle;
+import android.support.annotation.CheckResult;
 import android.support.annotation.NonNull;
+import android.text.TextUtils;
+
 import org.mozilla.gecko.mozglue.SafeIntent;
 
 import java.util.HashMap;
@@ -27,12 +31,9 @@ public class IntentUtils {
 
     /**
      * Returns a list of environment variables and their values. These are parsed from an Intent extra
-     * with the key -> value format:
-     *   env# -> ENV_VAR=VALUE
+     * with the key -&gt; value format: env# -&gt; ENV_VAR=VALUE, where # is an integer starting at 0.
      *
-     * # in env# is expected to be increasing from 0.
-     *
-     * @return A Map of environment variable name to value, e.g. ENV_VAR -> VALUE
+     * @return A Map of environment variable name to value, e.g. ENV_VAR -&gt; VALUE
      */
     public static HashMap<String, String> getEnvVarMap(@NonNull final SafeIntent intent) {
         // Optimization: get matcher for re-use. Pattern.matcher creates a new object every time so it'd be great
@@ -86,5 +87,21 @@ public class IntentUtils {
 
     public static boolean getBooleanExtraSafe(final Intent intent, final String name, final boolean defaultValue) {
         return new SafeIntent(intent).getBooleanExtra(name, defaultValue);
+    }
+
+    /**
+     * Gets whether or not we're in automation from the passed in environment variables.
+     *
+     * We need to read environment variables from the intent string
+     * extra because environment variables from our test harness aren't set
+     * until Gecko is loaded, and we need to know this before then.
+     *
+     * The return value of this method should be used early since other
+     * initialization may depend on its results.
+     */
+    @CheckResult
+    public static boolean getIsInAutomationFromEnvironment(final SafeIntent intent) {
+        final HashMap<String, String> envVars = IntentUtils.getEnvVarMap(intent);
+        return !TextUtils.isEmpty(envVars.get(IntentUtils.ENV_VAR_IN_AUTOMATION));
     }
 }

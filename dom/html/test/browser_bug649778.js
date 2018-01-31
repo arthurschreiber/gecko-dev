@@ -4,8 +4,8 @@
 var testPath = "http://mochi.test:8888/browser/dom/html/test/";
 var popup;
 
-var {LoadContextInfo} = Cu.import("resource://gre/modules/LoadContextInfo.jsm", null);
-var {Services} = Cu.import("resource://gre/modules/Services.jsm", null);
+var {LoadContextInfo} = ChromeUtils.import("resource://gre/modules/LoadContextInfo.jsm", null);
+var {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm", null);
 
 function checkCache(url, inMemory, shouldExist, cb)
 {
@@ -35,7 +35,7 @@ function checkCache(url, inMemory, shouldExist, cb)
     };
   };
 
-  storage.asyncOpenURI(Services.io.newURI(url, null, null), "",
+  storage.asyncOpenURI(Services.io.newURI(url), "",
                        Components.interfaces.nsICacheStorage.OPEN_READONLY,
                        new CheckCacheListener(inMemory, shouldExist));
 }

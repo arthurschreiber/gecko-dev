@@ -16,6 +16,7 @@
 #include "nsClassHashtable.h"
 #include "nsCOMPtr.h"
 #include "nsHashKeys.h"
+#include "nsINamed.h"
 #include "nsITimer.h"
 
 class nsIEventTarget;
@@ -45,6 +46,7 @@ class FileManagerInfo;
 class IndexedDatabaseManager final
   : public nsIObserver
   , public nsITimerCallback
+  , public nsINamed
 {
   typedef mozilla::dom::quota::PersistenceType PersistenceType;
   typedef mozilla::dom::quota::QuotaManager QuotaManager;
@@ -64,6 +66,7 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
   NS_DECL_NSITIMERCALLBACK
+  NS_DECL_NSINAMED
 
   // Returns a non-owning reference.
   static IndexedDatabaseManager*
@@ -131,6 +134,12 @@ public:
   static bool
   IsFileHandleEnabled();
 
+  static uint32_t
+  DataThreshold();
+
+  static uint32_t
+  MaxSerializedMsgSize();
+
   void
   ClearBackgroundActor();
 
@@ -180,10 +189,8 @@ public:
   nsresult
   FlushPendingFileDeletions();
 
-#ifdef ENABLE_INTL_API
   static const nsCString&
   GetLocale();
-#endif
 
   static mozilla::Mutex&
   FileMutex()
@@ -232,9 +239,7 @@ private:
   // and FileInfo.mSliceRefCnt
   mozilla::Mutex mFileMutex;
 
-#ifdef ENABLE_INTL_API
   nsCString mLocale;
-#endif
 
   indexedDB::BackgroundUtilsChild* mBackgroundActor;
 

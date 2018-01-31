@@ -9,21 +9,16 @@
   * for Rule View's filter swatches
   */
 
-const EventEmitter = require("devtools/shared/event-emitter");
-const { Cc, Ci } = require("chrome");
+const EventEmitter = require("devtools/shared/old-event-emitter");
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
 const { LocalizationHelper } = require("devtools/shared/l10n");
-const STRINGS_URI = "devtools/locale/filterwidget.properties";
+const STRINGS_URI = "devtools/client/locales/filterwidget.properties";
 const L10N = new LocalizationHelper(STRINGS_URI);
 
-const {cssTokenizer} = require("devtools/shared/css-parsing-utils");
+const {cssTokenizer} = require("devtools/shared/css/parsing-utils");
 
 const asyncStorage = require("devtools/shared/async-storage");
-
-loader.lazyGetter(this, "DOMUtils", () => {
-  return Cc["@mozilla.org/inspector/dom-utils;1"].getService(Ci.inIDOMUtils);
-});
 
 const DEFAULT_FILTER_TYPE = "length";
 const UNIT_MAPPING = {
@@ -115,11 +110,14 @@ const SPECIAL_VALUES = new Set(["none", "unset", "initial", "inherit"]);
  *        The widget container.
  * @param {String} value
  *        CSS filter value
+ * @param {Function} cssIsValid
+ *        Test whether css name / value is valid.
  */
-function CSSFilterEditorWidget(el, value = "") {
+function CSSFilterEditorWidget(el, value = "", cssIsValid) {
   this.doc = el.ownerDocument;
   this.win = this.doc.defaultView;
   this.el = el;
+  this._cssIsValid = cssIsValid;
 
   this._addButtonClick = this._addButtonClick.bind(this);
   this._removeButtonClick = this._removeButtonClick.bind(this);
@@ -159,6 +157,7 @@ CSSFilterEditorWidget.prototype = {
     let newPresetPlaceholder = L10N.getStr("newPresetPlaceholder");
     let savePresetButton = L10N.getStr("savePresetButton");
 
+    // eslint-disable-next-line no-unsanitized/property
     this.el.innerHTML = `
       <div class="filters-list">
         <div id="filters"></div>
@@ -213,6 +212,7 @@ CSSFilterEditorWidget.prototype = {
     let select = this.filterSelect;
     filterList.forEach(filter => {
       let option = this.doc.createElementNS(XHTML_NS, "option");
+      // eslint-disable-next-line no-unsanitized/property
       option.innerHTML = option.value = filter.name;
       select.appendChild(option);
     });
@@ -570,7 +570,7 @@ CSSFilterEditorWidget.prototype = {
         // If the click happened on the remove button.
         presets.splice(id, 1);
         this.setPresets(presets).then(this.renderPresets,
-                                      ex => console.error(ex));
+                                      console.error);
       } else {
         // Or if the click happened on a preset.
         let p = presets[id];
@@ -578,7 +578,7 @@ CSSFilterEditorWidget.prototype = {
         this.setCssValue(p.value);
         this.addPresetInput.value = p.name;
       }
-    }, ex => console.error(ex));
+    }, console.error);
   },
 
   _togglePresets: function () {
@@ -607,8 +607,8 @@ CSSFilterEditorWidget.prototype = {
       }
 
       this.setPresets(presets).then(this.renderPresets,
-                                    ex => console.error(ex));
-    }, ex => console.error(ex));
+                                    console.error);
+    }, console.error);
   },
 
   /**
@@ -625,6 +625,7 @@ CSSFilterEditorWidget.prototype = {
    */
   render: function () {
     if (!this.filters.length) {
+  // eslint-disable-next-line no-unsanitized/property
       this.filtersList.innerHTML = `<p> ${L10N.getStr("emptyFilterList")} <br />
                                  ${L10N.getStr("addUsingList")} </p>`;
       this.emit("render");
@@ -706,6 +707,7 @@ CSSFilterEditorWidget.prototype = {
       }
 
       if (!presets || !presets.length) {
+      // eslint-disable-next-line no-unsanitized/property
         this.presetsList.innerHTML = `<p>${L10N.getStr("emptyPresetList")}</p>`;
         this.emit("render");
         return;
@@ -768,7 +770,7 @@ CSSFilterEditorWidget.prototype = {
       // If the specified value is invalid, replace it with the
       // default.
       if (name !== "url") {
-        if (!DOMUtils.cssPropertyIsValid("filter", name + "(" + value + ")")) {
+        if (!this._cssIsValid("filter", name + "(" + value + ")")) {
           value = null;
         }
       }
@@ -945,12 +947,12 @@ CSSFilterEditorWidget.prototype = {
       }
 
       return presets;
-    }, e => console.error(e));
+    }, console.error);
   },
 
   setPresets: function (presets) {
     return asyncStorage.setItem("cssFilterPresets", presets)
-      .catch(e => console.error(e));
+      .catch(console.error);
   }
 };
 

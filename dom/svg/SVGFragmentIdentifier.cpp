@@ -96,14 +96,14 @@ public:
         return false;
       }
       mSVGView->mTransforms = new nsSVGAnimatedTransformList();
-      if (NS_FAILED(mSVGView->mTransforms->SetBaseValueString(aParams))) {
+      if (NS_FAILED(mSVGView->mTransforms->SetBaseValueString(aParams, mRoot))) {
         return false;
       }
     } else if (IsMatchingParameter(aToken, NS_LITERAL_STRING("zoomAndPan"))) {
       if (mSVGView->mZoomAndPan.IsExplicitlySet()) {
         return false;
       }
-      nsIAtom* valAtom = NS_GetStaticAtom(aParams);
+      nsAtom* valAtom = NS_GetStaticAtom(aParams);
       if (!valAtom ||
           NS_FAILED(mSVGView->mZoomAndPan.SetBaseValueAtom(
                       valAtom, mRoot))) {

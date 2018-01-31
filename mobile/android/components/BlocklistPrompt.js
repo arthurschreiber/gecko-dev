@@ -6,8 +6,8 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 const Cc = Components.classes;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // -----------------------------------------------------------------------
 // BlocklistPrompt Service
@@ -28,14 +28,14 @@ BlocklistPrompt.prototype = {
         // Notify all windows that an application quit has been requested
         var cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].createInstance(Ci.nsISupportsPRBool);
         Services.obs.notifyObservers(cancelQuit, "quit-application-requested", "restart");
-  
+
         // If nothing aborted, quit the app
         if (cancelQuit.data == false) {
           let appStartup = Cc["@mozilla.org/toolkit/app-startup;1"].getService(Ci.nsIAppStartup);
           appStartup.quit(Ci.nsIAppStartup.eRestart | Ci.nsIAppStartup.eAttemptQuit);
         }
       };
-      
+
       let buttons = [{accessKey: null,
                       label: bundle.GetStringFromName("notificationRestart.button"),
                       callback: restartCallback}];

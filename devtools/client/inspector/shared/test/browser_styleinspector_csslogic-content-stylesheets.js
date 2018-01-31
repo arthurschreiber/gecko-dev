@@ -15,7 +15,7 @@ const TEST_URI_AUTHOR = TEST_URL_ROOT + "doc_author-sheet.html";
 const TEST_URI_XUL = TEST_URL_ROOT + "doc_content_stylesheet.xul";
 const XUL_URI = Cc["@mozilla.org/network/io-service;1"]
                 .getService(Ci.nsIIOService)
-                .newURI(TEST_URI_XUL, null, null);
+                .newURI(TEST_URI_XUL);
 var ssm = Components.classes["@mozilla.org/scriptsecuritymanager;1"]
                             .getService(Ci.nsIScriptSecurityManager);
 const XUL_PRINCIPAL = ssm.createCodebasePrincipal(XUL_URI, {});
@@ -25,21 +25,19 @@ add_task(function* () {
 
   info("Checking stylesheets on HTML document");
   yield addTab(TEST_URI_HTML);
-  let target = getNode("#target");
 
-  let {inspector} = yield openInspector();
+  let {inspector, testActor} = yield openInspector();
   yield selectNode("#target", inspector);
 
   info("Checking stylesheets");
-  yield checkSheets(target);
+  yield checkSheets("#target", testActor);
 
   info("Checking authored stylesheets");
   yield addTab(TEST_URI_AUTHOR);
 
   ({inspector} = yield openInspector());
-  target = getNode("#target");
   yield selectNode("#target", inspector);
-  yield checkSheets(target);
+  yield checkSheets("#target", testActor);
 
   info("Checking stylesheets on XUL document");
   info("Allowing XUL content");
@@ -47,10 +45,9 @@ add_task(function* () {
   yield addTab(TEST_URI_XUL);
 
   ({inspector} = yield openInspector());
-  target = getNode("#target");
   yield selectNode("#target", inspector);
 
-  yield checkSheets(target);
+  yield checkSheets("#target", testActor);
   info("Disallowing XUL content");
   disallowXUL();
 });
@@ -67,9 +64,8 @@ function disallowXUL() {
       Ci.nsIPermissionManager.DENY_ACTION);
 }
 
-function* checkSheets(target) {
-  let sheets = yield executeInContent("Test:GetStyleSheetsInfoForNode", {},
-    {target});
+function* checkSheets(targetSelector, testActor) {
+  let sheets = yield testActor.getStyleSheetsInfoForNode(targetSelector);
 
   for (let sheet of sheets) {
     if (!sheet.href ||

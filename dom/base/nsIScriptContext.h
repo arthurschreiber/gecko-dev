@@ -8,14 +8,14 @@
 #define nsIScriptContext_h__
 
 #include "nscore.h"
-#include "nsStringGlue.h"
+#include "nsString.h"
 #include "nsISupports.h"
 #include "nsCOMPtr.h"
 #include "jspubtd.h"
-#include "js/GCAPI.h"
 
 class nsIScriptGlobalObject;
 
+// Must be kept in sync with xpcom/rust/xpcom/src/interfaces/nonidl.rs
 #define NS_ISCRIPTCONTEXT_IID \
 { 0x54cbe9cf, 0x7282, 0x421a, \
  { 0x91, 0x6f, 0xd0, 0x70, 0x73, 0xde, 0xb8, 0xc0 } }
@@ -85,7 +85,6 @@ public:
    */
   virtual void SetWindowProxy(JS::Handle<JSObject*> aWindowProxy) = 0;
   virtual JSObject* GetWindowProxy() = 0;
-  virtual JSObject* GetWindowProxyPreserveColor() = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIScriptContext, NS_ISCRIPTCONTEXT_IID)

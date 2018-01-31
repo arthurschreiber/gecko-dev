@@ -6,12 +6,11 @@ const { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 const DB_VERSION = 6; // The database schema version
 const PERMISSION_SAVE_LOGINS = "login-saving";
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://gre/modules/Promise.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "LoginHelper",
-                                  "resource://gre/modules/LoginHelper.jsm");
+ChromeUtils.defineModuleGetter(this, "LoginHelper",
+                               "resource://gre/modules/LoginHelper.jsm");
 
 /**
  * Object that manages a database transaction properly so consumers don't have
@@ -31,12 +30,12 @@ function Transaction(aDatabase) {
 }
 
 Transaction.prototype = {
-  commit : function() {
+  commit() {
     if (this._hasTransaction)
       this._db.commitTransaction();
   },
 
-  rollback : function() {
+  rollback() {
     if (this._hasTransaction)
       this._db.rollbackTransaction();
   },
@@ -47,10 +46,10 @@ function LoginManagerStorage_mozStorage() { }
 
 LoginManagerStorage_mozStorage.prototype = {
 
-  classID : Components.ID("{8c2023b9-175c-477e-9761-44ae7b549756}"),
-  QueryInterface : XPCOMUtils.generateQI([Ci.nsILoginManagerStorage,
+  classID: Components.ID("{8c2023b9-175c-477e-9761-44ae7b549756}"),
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsILoginManagerStorage,
                                           Ci.nsIInterfaceRequestor]),
-  getInterface : function(aIID) {
+  getInterface(aIID) {
     if (aIID.equals(Ci.nsIVariant)) {
       // Allows unwrapping the JavaScript object for regression tests.
       return this;
@@ -63,7 +62,7 @@ LoginManagerStorage_mozStorage.prototype = {
     throw new Components.Exception("Interface not available", Cr.NS_ERROR_NO_INTERFACE);
   },
 
-  __crypto : null,  // nsILoginManagerCrypto service
+  __crypto: null,  // nsILoginManagerCrypto service
   get _crypto() {
     if (!this.__crypto)
       this.__crypto = Cc["@mozilla.org/login-manager/crypto/SDR;1"].
@@ -76,14 +75,6 @@ LoginManagerStorage_mozStorage.prototype = {
     if (!this.__profileDir)
       this.__profileDir = Services.dirsvc.get("ProfD", Ci.nsIFile);
     return this.__profileDir;
-  },
-
-  __storageService: null, // Storage service for using mozStorage
-  get _storageService() {
-    if (!this.__storageService)
-      this.__storageService = Cc["@mozilla.org/storage/service;1"].
-                              getService(Ci.mozIStorageService);
-    return this.__storageService;
   },
 
   __uuidService: null,
@@ -99,18 +90,18 @@ LoginManagerStorage_mozStorage.prototype = {
   _dbSchema: {
     tables: {
       moz_logins:         "id                  INTEGER PRIMARY KEY," +
-                          "hostname            TEXT NOT NULL,"       +
-                          "httpRealm           TEXT,"                +
-                          "formSubmitURL       TEXT,"                +
-                          "usernameField       TEXT NOT NULL,"       +
-                          "passwordField       TEXT NOT NULL,"       +
-                          "encryptedUsername   TEXT NOT NULL,"       +
-                          "encryptedPassword   TEXT NOT NULL,"       +
-                          "guid                TEXT,"                +
-                          "encType             INTEGER,"             +
-                          "timeCreated         INTEGER,"             +
-                          "timeLastUsed        INTEGER,"             +
-                          "timePasswordChanged INTEGER,"             +
+                          "hostname            TEXT NOT NULL," +
+                          "httpRealm           TEXT," +
+                          "formSubmitURL       TEXT," +
+                          "usernameField       TEXT NOT NULL," +
+                          "passwordField       TEXT NOT NULL," +
+                          "encryptedUsername   TEXT NOT NULL," +
+                          "encryptedPassword   TEXT NOT NULL," +
+                          "guid                TEXT," +
+                          "encType             INTEGER," +
+                          "timeCreated         INTEGER," +
+                          "timeLastUsed        INTEGER," +
+                          "timePasswordChanged INTEGER," +
                           "timesUsed           INTEGER",
       // Changes must be reflected in this._dbAreExpectedColumnsPresent(),
       // this._searchLogins(), and this.modifyLogin().
@@ -119,7 +110,7 @@ LoginManagerStorage_mozStorage.prototype = {
                           "hostname           TEXT UNIQUE ON CONFLICT REPLACE",
 
       moz_deleted_logins: "id                  INTEGER PRIMARY KEY," +
-                          "guid                TEXT,"                +
+                          "guid                TEXT," +
                           "timeDeleted         INTEGER",
     },
     indices: {
@@ -145,17 +136,17 @@ LoginManagerStorage_mozStorage.prototype = {
       }
     }
   },
-  _dbConnection : null,  // The database connection
-  _dbStmts      : null,  // Database statements for memoization
+  _dbConnection: null,  // The database connection
+  _dbStmts: null,  // Database statements for memoization
 
-  _signonsFile  : null,  // nsIFile for "signons.sqlite"
+  _signonsFile: null,  // nsIFile for "signons.sqlite"
 
 
   /*
    * Internal method used by regression tests only.  It overrides the default
    * database location.
    */
-  initWithFile : function(aDBFile) {
+  initWithFile(aDBFile) {
     if (aDBFile)
       this._signonsFile = aDBFile;
 
@@ -163,7 +154,7 @@ LoginManagerStorage_mozStorage.prototype = {
   },
 
 
-  initialize : function () {
+  initialize() {
     this._dbStmts = {};
 
     let isFirstRun;
@@ -200,16 +191,18 @@ LoginManagerStorage_mozStorage.prototype = {
    * Internal method used by regression tests only.  It is called before
    * replacing this storage module with a new instance.
    */
-  terminate : function () {
+  terminate() {
     return Promise.resolve();
   },
 
 
-  addLogin : function (login) {
+  addLogin(login, preEncrypted = false) {
     // Throws if there are bogus values.
     LoginHelper.checkLoginValues(login);
 
-    let [encUsername, encPassword, encType] = this._encryptLogin(login);
+    let [encUsername, encPassword, encType] = preEncrypted ?
+      [login.username, login.password, this._crypto.defaultEncType] :
+      this._encryptLogin(login);
 
     // Clone the login, so we don't modify the caller's object.
     let loginClone = login.clone();
@@ -254,7 +247,7 @@ LoginManagerStorage_mozStorage.prototype = {
       encryptedUsername:   encUsername,
       encryptedPassword:   encPassword,
       guid:                loginClone.guid,
-      encType:             encType,
+      encType,
       timeCreated:         loginClone.timeCreated,
       timeLastUsed:        loginClone.timeLastUsed,
       timePasswordChanged: loginClone.timePasswordChanged,
@@ -276,10 +269,11 @@ LoginManagerStorage_mozStorage.prototype = {
 
     // Send a notification that a login was added.
     LoginHelper.notifyStorageChanged("addLogin", loginClone);
+    return loginClone;
   },
 
 
-  removeLogin : function (login) {
+  removeLogin(login) {
     let [idToDelete, storedLogin] = this._getIdForLogin(login);
     if (!idToDelete)
       throw new Error("No matching logins");
@@ -296,8 +290,8 @@ LoginManagerStorage_mozStorage.prototype = {
       transaction.commit();
     } catch (e) {
       this.log("_removeLogin failed: " + e.name + " : " + e.message);
-      throw new Error("Couldn't write to database, login not removed.");
       transaction.rollback();
+      throw new Error("Couldn't write to database, login not removed.");
     } finally {
       if (stmt) {
         stmt.reset();
@@ -306,7 +300,7 @@ LoginManagerStorage_mozStorage.prototype = {
     LoginHelper.notifyStorageChanged("removeLogin", storedLogin);
   },
 
-  modifyLogin : function (oldLogin, newLoginData) {
+  modifyLogin(oldLogin, newLoginData) {
     let [idToModify, oldStoredLogin] = this._getIdForLogin(oldLogin);
     if (!idToModify)
       throw new Error("No matching logins");
@@ -359,7 +353,7 @@ LoginManagerStorage_mozStorage.prototype = {
       encryptedUsername:   encUsername,
       encryptedPassword:   encPassword,
       guid:                newLogin.guid,
-      encType:             encType,
+      encType,
       timeCreated:         newLogin.timeCreated,
       timeLastUsed:        newLogin.timeLastUsed,
       timePasswordChanged: newLogin.timePasswordChanged,
@@ -386,7 +380,7 @@ LoginManagerStorage_mozStorage.prototype = {
   /**
    * Returns an array of nsILoginInfo.
    */
-  getAllLogins : function (count) {
+  getAllLogins(count) {
     let [logins, ids] = this._searchLogins({});
 
     // decrypt entries for caller.
@@ -405,7 +399,7 @@ LoginManagerStorage_mozStorage.prototype = {
    *
    * @return {nsILoginInfo[]} which are decrypted.
    */
-  searchLogins : function(count, matchData) {
+  searchLogins(count, matchData) {
     let realMatchData = {};
     let options = {};
     // Convert nsIPropertyBag to normal JS object
@@ -443,7 +437,7 @@ LoginManagerStorage_mozStorage.prototype = {
    * is an array of encrypted nsLoginInfo and ids is an array of associated
    * ids in the database.
    */
-  _searchLogins : function (matchData, aOptions = {
+  _searchLogins(matchData, aOptions = {
     schemeUpgrades: false,
   }) {
     let conditions = [], params = {};
@@ -464,10 +458,10 @@ LoginManagerStorage_mozStorage.prototype = {
             params[field] = value;
             let valueURI;
             try {
-              if (aOptions.schemeUpgrades && (valueURI = Services.io.newURI(value, null, null)) &&
+              if (aOptions.schemeUpgrades && (valueURI = Services.io.newURI(value)) &&
                   valueURI.scheme == "https") {
                 condition += ` OR ${field} = :http${field}`;
-                params["http" + field] = "http://" + valueURI.hostPort;
+                params["http" + field] = "http://" + valueURI.displayHostPort;
               }
             } catch (ex) {
               // newURI will throw for some values (e.g. chrome://FirefoxAccounts)
@@ -550,7 +544,7 @@ LoginManagerStorage_mozStorage.prototype = {
   /**
    * Moves a login to the deleted logins table
    */
-  storeDeletedLogin : function(aLogin) {
+  storeDeletedLogin(aLogin) {
     let stmt = null;
     try {
       this.log("Storing " + aLogin.guid + " in deleted passwords\n");
@@ -571,7 +565,7 @@ LoginManagerStorage_mozStorage.prototype = {
   /**
    * Removes all logins from storage.
    */
-  removeAllLogins : function () {
+  removeAllLogins() {
     this.log("Removing all logins");
     let query;
     let stmt;
@@ -599,15 +593,15 @@ LoginManagerStorage_mozStorage.prototype = {
   },
 
 
-  findLogins : function (count, hostname, formSubmitURL, httpRealm) {
+  findLogins(count, hostname, formSubmitURL, httpRealm) {
     let loginData = {
-      hostname: hostname,
-      formSubmitURL: formSubmitURL,
-      httpRealm: httpRealm
+      hostname,
+      formSubmitURL,
+      httpRealm
     };
     let matchData = { };
     for (let field of ["hostname", "formSubmitURL", "httpRealm"])
-      if (loginData[field] != '')
+      if (loginData[field] != "")
         matchData[field] = loginData[field];
     let [logins, ids] = this._searchLogins(matchData);
 
@@ -620,7 +614,7 @@ LoginManagerStorage_mozStorage.prototype = {
   },
 
 
-  countLogins : function (hostname, formSubmitURL, httpRealm) {
+  countLogins(hostname, formSubmitURL, httpRealm) {
 
     let _countLoginsHelper = (hostname, formSubmitURL, httpRealm) => {
       // Do checks for null and empty strings, adjust conditions and params
@@ -669,10 +663,10 @@ LoginManagerStorage_mozStorage.prototype = {
    * found, both items will be null. The returned login contains the actual
    * stored login (useful for looking at the actual nsILoginMetaInfo values).
    */
-  _getIdForLogin : function (login) {
+  _getIdForLogin(login) {
     let matchData = { };
     for (let field of ["hostname", "formSubmitURL", "httpRealm"])
-      if (login[field] != '')
+      if (login[field] != "")
         matchData[field] = login[field];
     let [logins, ids] = this._searchLogins(matchData);
 
@@ -704,28 +698,28 @@ LoginManagerStorage_mozStorage.prototype = {
    * statement being created. This fixes the cases where nulls are involved
    * and the empty string is supposed to be a wildcard match
    */
-  _buildConditionsAndParams : function (hostname, formSubmitURL, httpRealm) {
+  _buildConditionsAndParams(hostname, formSubmitURL, httpRealm) {
     let conditions = [], params = {};
 
     if (hostname == null) {
       conditions.push("hostname isnull");
-    } else if (hostname != '') {
+    } else if (hostname != "") {
       conditions.push("hostname = :hostname");
-      params["hostname"] = hostname;
+      params.hostname = hostname;
     }
 
     if (formSubmitURL == null) {
       conditions.push("formSubmitURL isnull");
-    } else if (formSubmitURL != '') {
+    } else if (formSubmitURL != "") {
       conditions.push("formSubmitURL = :formSubmitURL OR formSubmitURL = ''");
-      params["formSubmitURL"] = formSubmitURL;
+      params.formSubmitURL = formSubmitURL;
     }
 
     if (httpRealm == null) {
       conditions.push("httpRealm isnull");
-    } else if (httpRealm != '') {
+    } else if (httpRealm != "") {
       conditions.push("httpRealm = :httpRealm");
-      params["httpRealm"] = httpRealm;
+      params.httpRealm = httpRealm;
     }
 
     return [conditions, params];
@@ -735,9 +729,9 @@ LoginManagerStorage_mozStorage.prototype = {
   /**
    * Checks to see if the specified GUID already exists.
    */
-  _isGuidUnique : function (guid) {
+  _isGuidUnique(guid) {
     let query = "SELECT COUNT(1) AS numLogins FROM moz_logins WHERE guid = :guid";
-    let params = { guid: guid };
+    let params = { guid };
 
     let stmt, numLogins;
     try {
@@ -760,7 +754,7 @@ LoginManagerStorage_mozStorage.prototype = {
    * Returns the encrypted username, password, and encrypton type for the specified
    * login. Can throw if the user cancels a master password entry.
    */
-  _encryptLogin : function (login) {
+  _encryptLogin(login) {
     let encUsername = this._crypto.encrypt(login.username);
     let encPassword = this._crypto.encrypt(login.password);
     let encType     = this._crypto.defaultEncType;
@@ -780,7 +774,7 @@ LoginManagerStorage_mozStorage.prototype = {
    * to lose unencrypted entries (eg, because the user clicked Cancel
    * instead of entering their master password)
    */
-  _decryptLogins : function (logins) {
+  _decryptLogins(logins) {
     let result = [];
 
     for (let login of logins) {
@@ -801,7 +795,6 @@ LoginManagerStorage_mozStorage.prototype = {
   },
 
 
-  //**************************************************************************//
   // Database Creation & Access
 
   /**
@@ -809,7 +802,7 @@ LoginManagerStorage_mozStorage.prototype = {
    * Returns the wrapped statement for execution.  Will use memoization
    * so that statements can be reused.
    */
-  _dbCreateStatement : function (query, params) {
+  _dbCreateStatement(query, params) {
     let wrappedStmt = this._dbStmts[query];
     // Memoize the statements
     if (!wrappedStmt) {
@@ -829,11 +822,11 @@ LoginManagerStorage_mozStorage.prototype = {
    * Attempts to initialize the database. This creates the file if it doesn't
    * exist, performs any migrations, etc. Return if this is the first run.
    */
-  _dbInit : function () {
+  _dbInit() {
     this.log("Initializing Database");
     let isFirstRun = false;
     try {
-      this._dbConnection = this._storageService.openDatabase(this._signonsFile);
+      this._dbConnection = Services.storage.openDatabase(this._signonsFile);
       // Get the version of the schema in the file. It will be 0 if the
       // database has not been created yet.
       let version = this._dbConnection.schemaVersion;
@@ -852,11 +845,11 @@ LoginManagerStorage_mozStorage.prototype = {
       throw e;
     }
 
-    Services.obs.addObserver(this, "profile-before-change", false);
+    Services.obs.addObserver(this, "profile-before-change");
     return isFirstRun;
   },
 
-  observe: function (subject, topic, data) {
+  observe(subject, topic, data) {
     switch (topic) {
       case "profile-before-change":
         Services.obs.removeObserver(this, "profile-before-change");
@@ -865,27 +858,27 @@ LoginManagerStorage_mozStorage.prototype = {
     }
   },
 
-  _dbCreate: function () {
+  _dbCreate() {
     this.log("Creating Database");
     this._dbCreateSchema();
     this._dbConnection.schemaVersion = DB_VERSION;
   },
 
 
-  _dbCreateSchema : function () {
+  _dbCreateSchema() {
     this._dbCreateTables();
     this._dbCreateIndices();
   },
 
 
-  _dbCreateTables : function () {
+  _dbCreateTables() {
     this.log("Creating Tables");
     for (let name in this._dbSchema.tables)
       this._dbConnection.createTable(name, this._dbSchema.tables[name]);
   },
 
 
-  _dbCreateIndices : function () {
+  _dbCreateIndices() {
     this.log("Creating Indices");
     for (let name in this._dbSchema.indices) {
       let index = this._dbSchema.indices[name];
@@ -896,7 +889,7 @@ LoginManagerStorage_mozStorage.prototype = {
   },
 
 
-  _dbMigrate : function (oldVersion) {
+  _dbMigrate(oldVersion) {
     this.log("Attempting to migrate from version " + oldVersion);
 
     if (oldVersion > DB_VERSION) {
@@ -929,7 +922,7 @@ LoginManagerStorage_mozStorage.prototype = {
         this[migrateFunction]();
       }
     } catch (e) {
-      this.log("Migration failed: "  + e);
+      this.log("Migration failed: " + e);
       transaction.rollback();
       throw e;
     }
@@ -943,7 +936,7 @@ LoginManagerStorage_mozStorage.prototype = {
   /**
    * Version 2 adds a GUID column. Existing logins are assigned a random GUID.
    */
-  _dbMigrateToVersion2 : function () {
+  _dbMigrateToVersion2() {
     // Check to see if GUID column already exists, add if needed
     let query;
     if (!this._dbColumnExists("guid")) {
@@ -975,7 +968,7 @@ LoginManagerStorage_mozStorage.prototype = {
     query = "UPDATE moz_logins SET guid = :guid WHERE id = :id";
     for (let id of ids) {
       let params = {
-        id:   id,
+        id,
         guid: this._uuidService.generateUUID().toString()
       };
 
@@ -997,7 +990,7 @@ LoginManagerStorage_mozStorage.prototype = {
   /**
    * Version 3 adds a encType column.
    */
-  _dbMigrateToVersion3 : function () {
+  _dbMigrateToVersion3() {
     // Check to see if encType column already exists, add if needed
     let query;
     if (!this._dbColumnExists("encType")) {
@@ -1019,8 +1012,8 @@ LoginManagerStorage_mozStorage.prototype = {
       while (stmt.executeStep()) {
         let params = { id: stmt.row.id };
         // We will tag base64 logins correctly, but no longer support their use.
-        if (stmt.row.encryptedUsername.charAt(0) == '~' ||
-            stmt.row.encryptedPassword.charAt(0) == '~')
+        if (stmt.row.encryptedUsername.charAt(0) == "~" ||
+            stmt.row.encryptedPassword.charAt(0) == "~")
           params.encType = Ci.nsILoginManagerCrypto.ENCTYPE_BASE64;
         else
           params.encType = Ci.nsILoginManagerCrypto.ENCTYPE_SDR;
@@ -1057,7 +1050,7 @@ LoginManagerStorage_mozStorage.prototype = {
    * Version 4 adds timeCreated, timeLastUsed, timePasswordChanged,
    * and timesUsed columns
    */
-  _dbMigrateToVersion4 : function () {
+  _dbMigrateToVersion4() {
     let query;
     // Add the new columns, if needed.
     for (let column of ["timeCreated", "timeLastUsed", "timePasswordChanged", "timesUsed"]) {
@@ -1112,7 +1105,7 @@ LoginManagerStorage_mozStorage.prototype = {
   /**
    * Version 5 adds the moz_deleted_logins table
    */
-  _dbMigrateToVersion5 : function () {
+  _dbMigrateToVersion5() {
     if (!this._dbConnection.tableExists("moz_deleted_logins")) {
       this._dbConnection.createTable("moz_deleted_logins", this._dbSchema.tables.moz_deleted_logins);
     }
@@ -1122,7 +1115,7 @@ LoginManagerStorage_mozStorage.prototype = {
    * Version 6 migrates all the hosts from
    * moz_disabledHosts to the permission manager.
    */
-  _dbMigrateToVersion6 : function () {
+  _dbMigrateToVersion6() {
     let disabledHosts = [];
     let query = "SELECT hostname FROM moz_disabledHosts";
     let stmt;
@@ -1136,7 +1129,7 @@ LoginManagerStorage_mozStorage.prototype = {
 
       for (let host of disabledHosts) {
         try {
-          let uri = Services.io.newURI(host, null, null);
+          let uri = Services.io.newURI(host);
           Services.perms.add(uri, PERMISSION_SAVE_LOGINS, Services.perms.DENY_ACTION);
         } catch (e) {
           Cu.reportError(e);
@@ -1158,7 +1151,7 @@ LoginManagerStorage_mozStorage.prototype = {
    * Sanity check to ensure that the columns this version of the code expects
    * are present in the DB we're using.
    */
-  _dbAreExpectedColumnsPresent : function () {
+  _dbAreExpectedColumnsPresent() {
     let query = "SELECT " +
                    "id, " +
                    "hostname, " +
@@ -1203,7 +1196,7 @@ LoginManagerStorage_mozStorage.prototype = {
   /**
    * Checks to see if the named column already exists.
    */
-  _dbColumnExists : function (columnName) {
+  _dbColumnExists(columnName) {
     let query = "SELECT " + columnName + " FROM moz_logins";
     try {
       let stmt = this._dbConnection.createStatement(query);
@@ -1215,7 +1208,7 @@ LoginManagerStorage_mozStorage.prototype = {
     }
   },
 
-  _dbClose : function () {
+  _dbClose() {
     this.log("Closing the DB connection.");
     // Finalize all statements to free memory, avoid errors later
     for (let query in this._dbStmts) {
@@ -1238,13 +1231,13 @@ LoginManagerStorage_mozStorage.prototype = {
    * Called when database creation fails. Finalizes database statements,
    * closes the database connection, deletes the database file.
    */
-  _dbCleanup : function (backup) {
+  _dbCleanup(backup) {
     this.log("Cleaning up DB file - close & remove & backup=" + backup);
 
     // Create backup file
     if (backup) {
       let backupFile = this._signonsFile.leafName + ".corrupt";
-      this._storageService.backupDatabaseFile(this._signonsFile, backupFile);
+      Services.storage.backupDatabaseFile(this._signonsFile, backupFile);
     }
 
     this._dbClose();

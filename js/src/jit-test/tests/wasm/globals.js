@@ -1,27 +1,24 @@
-// |jit-test| test-also-wasm-baseline
-load(libdir + "wasm.js");
-
 const { Instance, Module } = WebAssembly;
 
 // Locally-defined globals
-assertErrorMessage(() => evalText(`(module (global))`), SyntaxError, /parsing/);
-assertErrorMessage(() => evalText(`(module (global i32))`), SyntaxError, /parsing/);
-assertErrorMessage(() => evalText(`(module (global i32 immutable))`), SyntaxError, /parsing/);
+assertErrorMessage(() => wasmEvalText(`(module (global))`), SyntaxError, /parsing/);
+assertErrorMessage(() => wasmEvalText(`(module (global i32))`), SyntaxError, /parsing/);
+assertErrorMessage(() => wasmEvalText(`(module (global (mut i32)))`), SyntaxError, /parsing/);
 
 // Initializer expressions.
-assertErrorMessage(() => evalText(`(module (global i32 (f32.const 13.37)))`), TypeError, /type mismatch/);
-assertErrorMessage(() => evalText(`(module (global f64 (f32.const 13.37)))`), TypeError, /type mismatch/);
-assertErrorMessage(() => evalText(`(module (global i32 (i32.add (i32.const 13) (i32.const 37))))`), TypeError, /failed to read end/);
+wasmFailValidateText(`(module (global i32 (f32.const 13.37)))`, /type mismatch/);
+wasmFailValidateText(`(module (global f64 (f32.const 13.37)))`, /type mismatch/);
+wasmFailValidateText(`(module (global i32 (i32.add (i32.const 13) (i32.const 37))))`, /failed to read end/);
 
-assertErrorMessage(() => evalText(`(module (global i32 (get_global 0)))`), TypeError, /out of range/);
-assertErrorMessage(() => evalText(`(module (global i32 (get_global 1)) (global i32 immutable (i32.const 1)))`), TypeError, /out of range/);
+wasmFailValidateText(`(module (global i32 (get_global 0)))`, /out of range/);
+wasmFailValidateText(`(module (global i32 (get_global 1)) (global i32 (i32.const 1)))`, /out of range/);
 
 // Test a well-defined global section.
-function testInner(type, initialValue, nextValue, coercion, assertFunc = assertEq)
+function testInner(type, initialValue, nextValue, coercion)
 {
-    var module = evalText(`(module
+    var module = wasmEvalText(`(module
+        (global (mut ${type}) (${type}.const ${initialValue}))
         (global ${type} (${type}.const ${initialValue}))
-        (global ${type} immutable (${type}.const ${initialValue}))
 
         (func $get (result ${type}) (get_global 0))
         (func $set (param ${type}) (set_global 0 (get_local 0)))
@@ -34,11 +31,11 @@ function testInner(type, initialValue, nextValue, coercion, assertFunc = assertE
         (export "set" $set)
     )`).exports;
 
-    assertFunc(module.get(), coercion(initialValue));
+    assertEq(module.get(), coercion(initialValue));
     assertEq(module.set(coercion(nextValue)), undefined);
-    assertFunc(module.get(), coercion(nextValue));
+    assertEq(module.get(), coercion(nextValue));
 
-    assertFunc(module.get_cst(), coercion(initialValue));
+    assertEq(module.get_cst(), coercion(initialValue));
 }
 
 testInner('i32', 13, 37, x => x|0);
@@ -46,23 +43,24 @@ testInner('f32', 13.37, 0.1989, Math.fround);
 testInner('f64', 13.37, 0.1989, x => +x);
 
 // Semantic errors.
-assertErrorMessage(() => evalText(`(module (global i32 (i32.const 1337)) (func (set_global 1 (i32.const 0))))`), TypeError, /out of range/);
-assertErrorMessage(() => evalText(`(module (global i32 immutable (i32.const 1337)) (func (set_global 0 (i32.const 0))))`), TypeError, /can't write an immutable global/);
+wasmFailValidateText(`(module (global (mut i32) (i32.const 1337)) (func (set_global 1 (i32.const 0))))`, /out of range/);
+wasmFailValidateText(`(module (global i32 (i32.const 1337)) (func (set_global 0 (i32.const 0))))`, /can't write an immutable global/);
 
 // Big module with many variables: test that setting one doesn't overwrite the
 // other ones.
-function get_set(i, type) { return `
-    (func $get_${i} (result ${type}) (get_global ${i}))
-    (func $set_${i} (param ${type}) (set_global ${i} (get_local 0)))
-`
+function get_set(i, type) {
+    return `
+        (func $get_${i} (result ${type}) (get_global ${i}))
+        (func $set_${i} (param ${type}) (set_global ${i} (get_local 0)))
+    `;
 }
 
-var module = evalText(`(module
-    (global i32 (i32.const 42))
-    (global i32 (i32.const 10))
-    (global f32 (f32.const 13.37))
-    (global f64 (f64.const 13.37))
-    (global i32 (i32.const -18))
+var module = wasmEvalText(`(module
+    (global (mut i32) (i32.const 42))
+    (global (mut i32) (i32.const 10))
+    (global (mut f32) (f32.const 13.37))
+    (global (mut f64) (f64.const 13.37))
+    (global (mut i32) (i32.const -18))
 
     ${get_set(0, 'i32')}
     ${get_set(1, 'i32')}
@@ -93,15 +91,14 @@ for (let i = 0; i < 5; i++) {
 }
 
 // Initializer expressions can also be used in elem section initializers.
-assertErrorMessage(() => evalText(`(module (import "globals" "a" (global f32 immutable)) (table (resizable 4)) (elem (get_global 0) $f) (func $f))`), TypeError, /type mismatch/);
+wasmFailValidateText(`(module (import "globals" "a" (global f32)) (table 4 anyfunc) (elem (get_global 0) $f) (func $f))`, /type mismatch/);
 
-module = evalText(`(module
-    (import "globals" "a" (global i32 immutable))
-    (table (resizable 4))
+module = wasmEvalText(`(module
+    (import "globals" "a" (global i32))
+    (table (export "tbl") 4 anyfunc)
     (elem (get_global 0) $f)
     (func $f)
     (export "f" $f)
-    (export "tbl" table)
 )`, {
     globals: {
         a: 1
@@ -110,44 +107,100 @@ module = evalText(`(module
 assertEq(module.f, module.tbl.get(1));
 
 // Import/export rules.
-assertErrorMessage(() => evalText(`(module (import "globals" "x" (global i32)))`), TypeError, /can't import.* mutable globals in the MVP/);
-assertErrorMessage(() => evalText(`(module (global i32 (i32.const 42)) (export "" global 0))`), TypeError, /can't .*export mutable globals in the MVP/);
+wasmFailValidateText(`(module (import "globals" "x" (global (mut i32))))`, /can't import.* mutable globals in the MVP/);
+wasmFailValidateText(`(module (global (mut i32) (i32.const 42)) (export "" global 0))`, /can't .*export mutable globals in the MVP/);
 
 // Import/export semantics.
-module = evalText(`(module
- (import $g "globals" "x" (global i32 immutable))
+module = wasmEvalText(`(module
+ (import $g "globals" "x" (global i32))
  (func $get (result i32) (get_global $g))
  (export "getter" $get)
  (export "value" global 0)
 )`, { globals: {x: 42} }).exports;
 
 assertEq(module.getter(), 42);
-assertEq(module.value, 42);
+// Adapt to ongoing experiment with WebAssembly.Global.
+// assertEq() will not trigger @@toPrimitive, so we must have a cast here.
+if (typeof WebAssembly.Global === "function")
+    assertEq(Number(module.value), 42);
+else
+    assertEq(module.value, 42);
+
+// Can only import numbers (no implicit coercions).
+module = new WebAssembly.Module(wasmTextToBinary(`(module
+    (global (import "globs" "i32") i32)
+    (global (import "globs" "f32") f32)
+    (global (import "globs" "f64") f32)
+)`));
+
+const assertLinkFails = (m, imp, err) => {
+    assertErrorMessage(() => new WebAssembly.Instance(m, imp), WebAssembly.LinkError, err);
+}
+
+var imp = {
+    globs: {
+        i32: 0,
+        f32: Infinity,
+        f64: NaN
+    }
+};
+
+let i = new WebAssembly.Instance(module, imp);
+
+for (let v of [
+    null,
+    {},
+    "42",
+    /not a number/,
+    false,
+    undefined,
+    Symbol(),
+    { valueOf() { return 42; } }
+]) {
+    imp.globs.i32 = v;
+    assertLinkFails(module, imp, /not a Number/);
+
+    imp.globs.i32 = 0;
+    imp.globs.f32 = v;
+    assertLinkFails(module, imp, /not a Number/);
+
+    imp.globs.f32 = Math.fround(13.37);
+    imp.globs.f64 = v;
+    assertLinkFails(module, imp, /not a Number/);
+
+    imp.globs.f64 = 13.37;
+}
 
 // Imported globals and locally defined globals use the same index space.
-module = evalText(`(module
- (import "globals" "x" (global i32 immutable))
- (global i32 immutable (i32.const 1337))
+module = wasmEvalText(`(module
+ (import "globals" "x" (global i32))
+ (global i32 (i32.const 1337))
  (export "imported" global 0)
  (export "defined" global 1)
 )`, { globals: {x: 42} }).exports;
 
-assertEq(module.imported, 42);
-assertEq(module.defined, 1337);
+// See comment earlier about WebAssembly.Global
+if (typeof WebAssembly.Global === "function") {
+    assertEq(Number(module.imported), 42);
+    assertEq(Number(module.defined), 1337);
+} else {
+    assertEq(module.imported, 42);
+    assertEq(module.defined, 1337);
+}
 
 // Initializer expressions can reference an imported immutable global.
-assertErrorMessage(() => evalText(`(module (global f32 immutable (f32.const 13.37)) (global i32 (get_global 0)))`), TypeError, /must reference a global immutable import/);
-assertErrorMessage(() => evalText(`(module (global f32 (f32.const 13.37)) (global i32 (get_global 0)))`), TypeError, /must reference a global immutable import/);
-assertErrorMessage(() => evalText(`(module (global i32 (i32.const 0)) (global i32 (get_global 0)))`), TypeError, /must reference a global immutable import/);
+wasmFailValidateText(`(module (global f32 (f32.const 13.37)) (global i32 (get_global 0)))`, /must reference a global immutable import/);
+wasmFailValidateText(`(module (global (mut f32) (f32.const 13.37)) (global i32 (get_global 0)))`, /must reference a global immutable import/);
+wasmFailValidateText(`(module (global (mut i32) (i32.const 0)) (global i32 (get_global 0)))`, /must reference a global immutable import/);
 
-assertErrorMessage(() => evalText(`(module (import "globals" "a" (global f32 immutable)) (global i32 (get_global 0)))`), TypeError, /type mismatch/);
+wasmFailValidateText(`(module (import "globals" "a" (global f32)) (global i32 (get_global 0)))`, /type mismatch/);
 
 function testInitExpr(type, initialValue, nextValue, coercion, assertFunc = assertEq) {
-    var module = evalText(`(module
-        (import "globals" "a" (global ${type} immutable))
+    var module = wasmEvalText(`(module
+        (import "globals" "a" (global ${type}))
 
-        (global ${type} (get_global 0))
-        (global ${type} immutable (get_global 0))
+        (global $glob_mut (mut ${type}) (get_global 0))
+        (global $glob_imm ${type} (get_global 0))
 
         (func $get0 (result ${type}) (get_global 0))
 
@@ -161,6 +214,7 @@ function testInitExpr(type, initialValue, nextValue, coercion, assertFunc = asse
         (export "get_cst" $get_cst)
 
         (export "set1" $set1)
+        (export "global_imm" (global $glob_imm))
     )`, {
         globals: {
             a: coercion(initialValue)
@@ -169,10 +223,20 @@ function testInitExpr(type, initialValue, nextValue, coercion, assertFunc = asse
 
     assertFunc(module.get0(), coercion(initialValue));
     assertFunc(module.get1(), coercion(initialValue));
+    // See comment earlier about WebAssembly.Global
+    if (typeof WebAssembly.Global === "function")
+	assertFunc(Number(module.global_imm), coercion(initialValue));
+    else
+	assertFunc(module.global_imm, coercion(initialValue));
 
     assertEq(module.set1(coercion(nextValue)), undefined);
     assertFunc(module.get1(), coercion(nextValue));
     assertFunc(module.get0(), coercion(initialValue));
+    // See comment earlier about WebAssembly.Global
+    if (typeof WebAssembly.Global === "function")
+	assertFunc(Number(module.global_imm), coercion(initialValue));
+    else
+	assertFunc(module.global_imm, coercion(initialValue));
 
     assertFunc(module.get_cst(), coercion(initialValue));
 }
@@ -182,23 +246,107 @@ testInitExpr('f32', 13.37, 0.1989, Math.fround);
 testInitExpr('f64', 13.37, 0.1989, x => +x);
 
 // Int64.
+module = new WebAssembly.Module(wasmTextToBinary(`(module (import "globals" "x" (global i64)))`));
+assertErrorMessage(() => new WebAssembly.Instance(module, {globals: {x:42}}),
+                   WebAssembly.LinkError,
+                   /cannot pass i64 to or from JS/);
+
+module = new WebAssembly.Module(wasmTextToBinary(`(module (global i64 (i64.const 42)) (export "" global 0))`));
+assertErrorMessage(() => new WebAssembly.Instance(module), WebAssembly.LinkError, /cannot pass i64 to or from JS/);
+
+// Test inner
+var initialValue = '0x123456789abcdef0';
+var nextValue = '0x531642753864975F';
+wasmAssert(`(module
+    (global (mut i64) (i64.const ${initialValue}))
+    (global i64 (i64.const ${initialValue}))
+    (func $get (result i64) (get_global 0))
+    (func $set (param i64) (set_global 0 (get_local 0)))
+    (func $get_cst (result i64) (get_global 1))
+    (export "get" $get)
+    (export "get_cst" $get_cst)
+    (export "set" $set)
+)`, [
+    {type: 'i64', func: '$get', expected: initialValue},
+    {type: 'i64', func: '$set', args: [`i64.const ${nextValue}`]},
+    {type: 'i64', func: '$get', expected: nextValue},
+    {type: 'i64', func: '$get_cst', expected: initialValue},
+]);
+
+// Custom NaN.
 {
-    assertErrorMessage(() => evalText(`(module (import "globals" "x" (global i64 immutable)))`), TypeError, /can't import.* an Int64 global/);
-    assertErrorMessage(() => evalText(`(module (global i64 immutable (i64.const 42)) (export "" global 0))`), TypeError, /can't .*export an Int64 global/);
+    let dv = new DataView(new ArrayBuffer(8));
+    module = wasmEvalText(`(module
+     (global $g f64 (f64.const -nan:0xe7ffff1591120))
+     (global $h f32 (f32.const -nan:0x651234))
+     (export "nan64" (global $g))(export "nan32" (global $h))
+    )`, {}).exports;
 
-    setJitCompilerOption('wasm.test-mode', 1);
-    testInner('i64', '0x531642753864975F', '0x123456789abcdef0', createI64, assertEqI64);
-    testInitExpr('i64', '0x531642753864975F', '0x123456789abcdef0', createI64, assertEqI64);
+    dv.setFloat64(0, module.nan64, true);
+    assertEq(dv.getUint32(4, true), 0x7ff80000);
+    assertEq(dv.getUint32(0, true), 0x00000000);
 
-    module = evalText(`(module
-     (import "globals" "x" (global i64 immutable))
-     (global i64 immutable (i64.const 0xFAFADADABABA))
-     (export "imported" global 0)
-     (export "defined" global 1)
-    )`, { globals: {x: createI64('0x1234567887654321')} }).exports;
+    dv.setFloat32(0, module.nan32, true);
+    assertEq(dv.getUint32(0, true), 0x7fc00000);
+}
 
-    assertEqI64(module.imported, createI64('0x1234567887654321'));
-    assertEqI64(module.defined, createI64('0xFAFADADABABA'));
+// WebAssembly.Global experiment
 
-    setJitCompilerOption('wasm.test-mode', 0);
+if (typeof WebAssembly.Global === "function") {
+
+    // These types should work:
+    assertEq(new WebAssembly.Global({type: "i32"}) instanceof WebAssembly.Global, true);
+    assertEq(new WebAssembly.Global({type: "f32"}) instanceof WebAssembly.Global, true);
+    assertEq(new WebAssembly.Global({type: "f64"}) instanceof WebAssembly.Global, true);
+
+    // These types should not work:
+    assertErrorMessage(() => new WebAssembly.Global({type: "i64"}),
+		       TypeError,
+		       /bad type for a WebAssembly.Global/);
+    assertErrorMessage(() => new WebAssembly.Global({}),
+		       TypeError,
+		       /bad type for a WebAssembly.Global/);
+    assertErrorMessage(() => new WebAssembly.Global({type: "fnord"}),
+		       TypeError,
+		       /bad type for a WebAssembly.Global/);
+    assertErrorMessage(() => new WebAssembly.Global(),
+		       TypeError,
+		       /WebAssembly.Global requires more than 0 arguments/);
+
+    // Coercion of init value; ".value" accessor
+    assertEq((new WebAssembly.Global({type: "i32", value: 3.14})).value, 3);
+    assertEq((new WebAssembly.Global({type: "f32", value: { valueOf: () => 33.5 }})).value, 33.5);
+
+    // Misc internal conversions
+    let g = new WebAssembly.Global({type: "i32", value: 42});
+
+    // @@toPrimitive
+    assertEq(g - 5, 37);
+    assertEq(String(g), "42");
+
+    // @@toStringTag
+    assertEq(g.toString(), "[object WebAssembly.Global]");
+
+    // An exported global should appear as a WebAssembly.Global instance:
+    let i =
+	new WebAssembly.Instance(
+	    new WebAssembly.Module(
+		wasmTextToBinary(`(module (global (export "g") i32 (i32.const 42)))`)));
+
+    assertEq(typeof i.exports.g, "object");
+    assertEq(i.exports.g instanceof WebAssembly.Global, true);
+
+    // An exported global can be imported into another instance even if
+    // it is an object:
+    let j =
+	new WebAssembly.Instance(
+	    new WebAssembly.Module(
+		wasmTextToBinary(`(module
+				   (global (import "" "g") i32)
+				   (func (export "f") (result i32)
+				    (get_global 0)))`)),
+	    { "": { "g": i.exports.g }});
+
+    // And when it is then accessed it has the right value:
+    assertEq(j.exports.f(), 42);
 }

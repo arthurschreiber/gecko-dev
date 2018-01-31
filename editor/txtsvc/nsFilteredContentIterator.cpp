@@ -4,12 +4,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/mozalloc.h"
+#include "mozilla/Move.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsDebug.h"
 #include "nsError.h"
 #include "nsFilteredContentIterator.h"
-#include "nsIAtom.h"
+#include "nsAtom.h"
 #include "nsIContent.h"
 #include "nsIContentIterator.h"
 #include "nsIDOMNode.h"
@@ -18,6 +19,8 @@
 #include "nsISupportsUtils.h"
 #include "nsITextServicesFilter.h"
 #include "nsRange.h"
+
+using namespace mozilla;
 
 //------------------------------------------------------------
 nsFilteredContentIterator::nsFilteredContentIterator(nsITextServicesFilter* aFilter) :
@@ -78,17 +81,66 @@ nsFilteredContentIterator::Init(nsINode* aRoot)
 nsresult
 nsFilteredContentIterator::Init(nsIDOMRange* aRange)
 {
-  NS_ENSURE_TRUE(mPreIterator, NS_ERROR_FAILURE);
-  NS_ENSURE_TRUE(mIterator, NS_ERROR_FAILURE);
-  NS_ENSURE_ARG_POINTER(aRange);
-  mIsOutOfRange    = false;
-  mDirection       = eForward;
+  if (NS_WARN_IF(!aRange)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  nsRange* range = static_cast<nsRange*>(aRange);
+  if (NS_WARN_IF(!range->IsPositioned())) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  mRange = range->CloneRange();
+
+  return InitWithRange();
+}
+
+//------------------------------------------------------------
+nsresult
+nsFilteredContentIterator::Init(nsINode* aStartContainer, uint32_t aStartOffset,
+                                nsINode* aEndContainer, uint32_t aEndOffset)
+{
+  return Init(RawRangeBoundary(aStartContainer, aStartOffset),
+              RawRangeBoundary(aEndContainer, aEndOffset));
+}
+
+nsresult
+nsFilteredContentIterator::Init(const RawRangeBoundary& aStart,
+                                const RawRangeBoundary& aEnd)
+{
+  RefPtr<nsRange> range;
+  nsresult rv = nsRange::CreateRange(aStart, aEnd, getter_AddRefs(range));
+  if (NS_WARN_IF(NS_FAILED(rv)) || NS_WARN_IF(!range) ||
+      NS_WARN_IF(!range->IsPositioned())) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  MOZ_ASSERT(range->StartRef() == aStart);
+  MOZ_ASSERT(range->EndRef() == aEnd);
+
+  mRange = Move(range);
+
+  return InitWithRange();
+}
+
+nsresult
+nsFilteredContentIterator::InitWithRange()
+{
+  MOZ_ASSERT(mRange);
+  MOZ_ASSERT(mRange->IsPositioned());
+
+  if (NS_WARN_IF(!mPreIterator) || NS_WARN_IF(!mIterator)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  mIsOutOfRange = false;
+  mDirection = eForward;
   mCurrentIterator = mPreIterator;
 
-  mRange = static_cast<nsRange*>(aRange)->CloneRange();
-
   nsresult rv = mPreIterator->Init(mRange);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
   return mIterator->Init(mRange);
 }
 
@@ -141,10 +193,9 @@ nsFilteredContentIterator::First()
   }
 
   nsINode *currentNode = mCurrentIterator->GetCurrentNode();
-  nsCOMPtr<nsIDOMNode> node(do_QueryInterface(currentNode));
 
   bool didCross;
-  CheckAdvNode(node, didCross, eForward);
+  CheckAdvNode(currentNode, didCross, eForward);
 }
 
 //------------------------------------------------------------
@@ -172,18 +223,17 @@ nsFilteredContentIterator::Last()
   }
 
   nsINode *currentNode = mCurrentIterator->GetCurrentNode();
-  nsCOMPtr<nsIDOMNode> node(do_QueryInterface(currentNode));
 
   bool didCross;
-  CheckAdvNode(node, didCross, eBackward);
+  CheckAdvNode(currentNode, didCross, eBackward);
 }
 
 ///////////////////////////////////////////////////////////////////////////
 // ContentToParentOffset: returns the content node's parent and offset.
 //
 static void
-ContentToParentOffset(nsIContent *aContent, nsIDOMNode **aParent,
-                      int32_t *aOffset)
+ContentToParentOffset(nsIContent* aContent, nsIContent** aParent,
+                      int32_t* aOffset)
 {
   if (!aParent || !aOffset)
     return;
@@ -194,14 +244,12 @@ ContentToParentOffset(nsIContent *aContent, nsIDOMNode **aParent,
   if (!aContent)
     return;
 
-  nsIContent* parent = aContent->GetParent();
-
+  nsCOMPtr<nsIContent> parent = aContent->GetParent();
   if (!parent)
     return;
 
-  *aOffset = parent->IndexOf(aContent);
-
-  CallQueryInterface(parent, aParent);
+  *aOffset = parent->ComputeIndexOf(aContent);
+  parent.forget(aParent);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -209,13 +257,13 @@ ContentToParentOffset(nsIContent *aContent, nsIDOMNode **aParent,
 // the traversal of the range in the specified mode.
 //
 static bool
-ContentIsInTraversalRange(nsIContent *aContent,   bool aIsPreMode,
-                          nsIDOMNode *aStartNode, int32_t aStartOffset,
-                          nsIDOMNode *aEndNode,   int32_t aEndOffset)
+ContentIsInTraversalRange(nsIContent* aContent, bool aIsPreMode,
+                          nsINode* aStartContainer, int32_t aStartOffset,
+                          nsINode* aEndContainer, int32_t aEndOffset)
 {
-  NS_ENSURE_TRUE(aStartNode && aEndNode && aContent, false);
+  NS_ENSURE_TRUE(aStartContainer && aEndContainer && aContent, false);
 
-  nsCOMPtr<nsIDOMNode> parentNode;
+  nsCOMPtr<nsIContent> parentNode;
   int32_t indx = 0;
 
   ContentToParentOffset(aContent, getter_AddRefs(parentNode), &indx);
@@ -225,46 +273,45 @@ ContentIsInTraversalRange(nsIContent *aContent,   bool aIsPreMode,
   if (!aIsPreMode)
     ++indx;
 
-  int32_t startRes = nsContentUtils::ComparePoints(aStartNode, aStartOffset,
-                                                   parentNode, indx);
-  int32_t endRes = nsContentUtils::ComparePoints(aEndNode, aEndOffset,
+  int32_t startRes =
+    nsContentUtils::ComparePoints(aStartContainer, aStartOffset,
+                                  parentNode, indx);
+  int32_t endRes = nsContentUtils::ComparePoints(aEndContainer, aEndOffset,
                                                  parentNode, indx);
   return (startRes <= 0) && (endRes >= 0);
 }
 
 static bool
-ContentIsInTraversalRange(nsRange* aRange, nsIDOMNode* aNextNode, bool aIsPreMode)
+ContentIsInTraversalRange(nsRange* aRange, nsIContent* aNextContent, bool aIsPreMode)
 {
-  nsCOMPtr<nsIContent> content(do_QueryInterface(aNextNode));
-  NS_ENSURE_TRUE(content && aRange, false);
+  // XXXbz we have a caller below (in AdvanceNode) who passes null for
+  // aNextContent!
+  NS_ENSURE_TRUE(aNextContent && aRange, false);
 
-  nsCOMPtr<nsIDOMNode> sNode;
-  nsCOMPtr<nsIDOMNode> eNode;
-  int32_t sOffset;
-  int32_t eOffset;
-  aRange->GetStartContainer(getter_AddRefs(sNode));
-  aRange->GetStartOffset(&sOffset);
-  aRange->GetEndContainer(getter_AddRefs(eNode));
-  aRange->GetEndOffset(&eOffset);
-  return ContentIsInTraversalRange(content, aIsPreMode, sNode, sOffset, eNode, eOffset);
+  return ContentIsInTraversalRange(aNextContent, aIsPreMode,
+                                   aRange->GetStartContainer(),
+                                   static_cast<int32_t>(aRange->StartOffset()),
+                                   aRange->GetEndContainer(),
+                                   static_cast<int32_t>(aRange->EndOffset()));
 }
 
 //------------------------------------------------------------
 // Helper function to advance to the next or previous node
 nsresult
-nsFilteredContentIterator::AdvanceNode(nsIDOMNode* aNode, nsIDOMNode*& aNewNode, eDirectionType aDir)
+nsFilteredContentIterator::AdvanceNode(nsINode* aNode, nsINode*& aNewNode, eDirectionType aDir)
 {
-  nsCOMPtr<nsIDOMNode> nextNode;
+  nsCOMPtr<nsIContent> nextNode;
   if (aDir == eForward) {
-    aNode->GetNextSibling(getter_AddRefs(nextNode));
+    nextNode = aNode->GetNextSibling();
   } else {
-    aNode->GetPreviousSibling(getter_AddRefs(nextNode));
+    nextNode = aNode->GetPreviousSibling();
   }
 
   if (nextNode) {
     // If we got here, that means we found the nxt/prv node
     // make sure it is in our DOMRange
-    bool intersects = ContentIsInTraversalRange(mRange, nextNode, aDir == eForward);
+    bool intersects = ContentIsInTraversalRange(mRange, nextNode,
+                                                aDir == eForward);
     if (intersects) {
       aNewNode = nextNode;
       NS_ADDREF(aNewNode);
@@ -272,11 +319,12 @@ nsFilteredContentIterator::AdvanceNode(nsIDOMNode* aNode, nsIDOMNode*& aNewNode,
     }
   } else {
     // The next node was null so we need to walk up the parent(s)
-    nsCOMPtr<nsIDOMNode> parent;
-    aNode->GetParentNode(getter_AddRefs(parent));
+    nsCOMPtr<nsINode> parent = aNode->GetParentNode();
     NS_ASSERTION(parent, "parent can't be nullptr");
 
     // Make sure the parent is in the DOMRange before going further
+    // XXXbz why are we passing nextNode, not the parent???  If this gets fixed,
+    // then ContentIsInTraversalRange can stop null-checking its second arg.
     bool intersects = ContentIsInTraversalRange(mRange, nextNode, aDir == eForward);
     if (intersects) {
       // Now find the nxt/prv node after/before this node
@@ -297,21 +345,21 @@ nsFilteredContentIterator::AdvanceNode(nsIDOMNode* aNode, nsIDOMNode*& aNewNode,
 //------------------------------------------------------------
 // Helper function to see if the next/prev node should be skipped
 void
-nsFilteredContentIterator::CheckAdvNode(nsIDOMNode* aNode, bool& aDidSkip, eDirectionType aDir)
+nsFilteredContentIterator::CheckAdvNode(nsINode* aNode, bool& aDidSkip, eDirectionType aDir)
 {
   aDidSkip      = false;
   mIsOutOfRange = false;
 
   if (aNode && mFilter) {
-    nsCOMPtr<nsIDOMNode> currentNode = aNode;
+    nsCOMPtr<nsINode> currentNode = aNode;
     bool skipIt;
     while (1) {
-      nsresult rv = mFilter->Skip(aNode, &skipIt);
+      nsresult rv = mFilter->Skip(aNode->AsDOMNode(), &skipIt);
       if (NS_SUCCEEDED(rv) && skipIt) {
         aDidSkip = true;
         // Get the next/prev node and then
         // see if we should skip that
-        nsCOMPtr<nsIDOMNode> advNode;
+        nsCOMPtr<nsINode> advNode;
         rv = AdvanceNode(aNode, *getter_AddRefs(advNode), aDir);
         if (NS_SUCCEEDED(rv) && advNode) {
           aNode = advNode;
@@ -357,8 +405,7 @@ nsFilteredContentIterator::Next()
   // don't check to see if we can skip it
   nsINode *currentNode = mCurrentIterator->GetCurrentNode();
 
-  nsCOMPtr<nsIDOMNode> node(do_QueryInterface(currentNode));
-  CheckAdvNode(node, mDidSkip, eForward);
+  CheckAdvNode(currentNode, mDidSkip, eForward);
 }
 
 void
@@ -389,8 +436,7 @@ nsFilteredContentIterator::Prev()
   // don't check to see if we can skip it
   nsINode *currentNode = mCurrentIterator->GetCurrentNode();
 
-  nsCOMPtr<nsIDOMNode> node(do_QueryInterface(currentNode));
-  CheckAdvNode(node, mDidSkip, eBackward);
+  CheckAdvNode(currentNode, mDidSkip, eBackward);
 }
 
 nsINode *

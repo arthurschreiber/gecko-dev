@@ -8,12 +8,11 @@
 
 #include "EditAggregateTransaction.h"
 #include "mozilla/EditorUtils.h"
+#include "mozilla/Maybe.h"
 #include "nsIAbsorbingTransaction.h"
 #include "nsIDOMNode.h"
 #include "nsCOMPtr.h"
 #include "nsWeakPtr.h"
-#include "nsWeakReference.h"
-#include "nsAutoPtr.h"
 
 namespace mozilla {
 
@@ -26,14 +25,37 @@ class CompositionTransaction;
  * transactions it has absorbed.
  */
 
-class PlaceholderTransaction final : public EditAggregateTransaction,
-                                     public nsIAbsorbingTransaction,
-                                     public nsSupportsWeakReference
+class PlaceholderTransaction final
+ : public EditAggregateTransaction
+ , public nsIAbsorbingTransaction
 {
-public:
-  NS_DECL_ISUPPORTS_INHERITED
+protected:
+  PlaceholderTransaction(EditorBase& aEditorBase,
+                         nsAtom* aName,
+                         Maybe<SelectionState>&& aSelState);
 
-  PlaceholderTransaction();
+public:
+  /**
+   * Creates a placeholder transaction.  This never returns nullptr.
+   *
+   * @param aEditorBase     The editor.
+   * @param aName           The name of creating transaction.
+   * @param aSelState       The selection state of aEditorBase.
+   */
+  static already_AddRefed<PlaceholderTransaction>
+  Create(EditorBase& aEditorBase,
+         nsAtom* aName,
+         Maybe<SelectionState>&& aSelState)
+  {
+    // Make sure to move aSelState into a local variable to null out the original
+    // Maybe<SelectionState> variable.
+    Maybe<SelectionState> selState(Move(aSelState));
+    RefPtr<PlaceholderTransaction> transaction =
+      new PlaceholderTransaction(aEditorBase, aName, Move(selState));
+    return transaction.forget();
+  }
+
+  NS_DECL_ISUPPORTS_INHERITED
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(PlaceholderTransaction,
                                            EditAggregateTransaction)
@@ -46,10 +68,7 @@ public:
 
 // ------------ nsIAbsorbingTransaction -----------------------
 
-  NS_IMETHOD Init(nsIAtom* aName, SelectionState* aSelState,
-                  EditorBase* aEditorBase) override;
-
-  NS_IMETHOD GetTxnName(nsIAtom** aName) override;
+  NS_IMETHOD GetTxnName(nsAtom** aName) override;
 
   NS_IMETHOD StartSelectionEquals(SelectionState* aSelState,
                                   bool* aResult) override;
@@ -61,30 +80,35 @@ public:
 
   NS_IMETHOD Commit() override;
 
+  NS_IMETHOD_(PlaceholderTransaction*) AsPlaceholderTransaction() override
+  {
+    return this;
+  }
+
   nsresult RememberEndingSelection();
 
 protected:
   virtual ~PlaceholderTransaction();
 
-  // Do we auto absorb any and all transaction?
-  bool mAbsorb;
+  // The editor for this transaction.
+  RefPtr<EditorBase> mEditorBase;
+
   nsWeakPtr mForwarding;
   // First IME txn in this placeholder - used for IME merging.
   mozilla::CompositionTransaction* mCompositionTransaction;
-  // Do we stop auto absorbing any matching placeholder transactions?
-  bool mCommitted;
 
   // These next two members store the state of the selection in a safe way.
   // Selection at the start of the transaction is stored, as is the selection
   // at the end.  This is so that UndoTransaction() and RedoTransaction() can
   // restore the selection properly.
 
-  // Use a pointer because this is constructed before we exist.
-  nsAutoPtr<SelectionState> mStartSel;
+  SelectionState mStartSel;
   SelectionState mEndSel;
 
-  // The editor for this transaction.
-  EditorBase* mEditorBase;
+  // Do we auto absorb any and all transaction?
+  bool mAbsorb;
+  // Do we stop auto absorbing any matching placeholder transactions?
+  bool mCommitted;
 };
 
 } // namespace mozilla

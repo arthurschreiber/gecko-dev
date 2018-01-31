@@ -171,7 +171,7 @@ nsFilePicker::nsFilePicker()
   : mSelectedType(0)
   , mRunning(false)
   , mAllowURLs(false)
-#if (MOZ_WIDGET_GTK == 3)
+#ifdef MOZ_WIDGET_GTK
   , mFileChooserDelegate(nullptr)
 #endif
 {
@@ -352,7 +352,7 @@ nsFilePicker::GetFiles(nsISimpleEnumerator **aFiles)
   return NS_ERROR_FAILURE;
 }
 
-NS_IMETHODIMP
+nsresult
 nsFilePicker::Show(int16_t *aReturn)
 {
   NS_ENSURE_ARG_POINTER(aReturn);
@@ -376,7 +376,7 @@ nsFilePicker::Open(nsIFilePickerShownCallback *aCallback)
   if (mRunning)
     return NS_ERROR_NOT_AVAILABLE;
 
-  nsXPIDLCString title;
+  nsCString title;
   title.Adopt(ToNewUTF8String(mTitle));
 
   GtkWindow *parent_widget =
@@ -394,7 +394,7 @@ nsFilePicker::Open(nsIFilePickerShownCallback *aCallback)
   }
 
   GtkWidget *file_chooser =
-      gtk_file_chooser_dialog_new(title, parent_widget, action,
+      gtk_file_chooser_dialog_new(title.get(), parent_widget, action,
                                   GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
                                   accept_button, GTK_RESPONSE_ACCEPT,
                                   nullptr);
@@ -448,7 +448,7 @@ nsFilePicker::Open(nsIFilePickerShownCallback *aCallback)
       nsAutoCString directory;
       defaultPath->GetNativePath(directory);
 
-#if (MOZ_WIDGET_GTK == 3)
+#ifdef MOZ_WIDGET_GTK
       // Workaround for problematic refcounting in GTK3 before 3.16.
       // We need to keep a reference to the dialog's internal delegate.
       // Otherwise, if our dialog gets destroyed, we'll lose the dialog's
@@ -585,7 +585,7 @@ nsFilePicker::Done(GtkWidget* file_chooser, gint response)
   // been released.
   gtk_widget_destroy(file_chooser);
 
-#if (MOZ_WIDGET_GTK == 3)
+#ifdef MOZ_WIDGET_GTK
       if (mFileChooserDelegate) {
         // Properly deref our acquired reference. We call this after
         // gtk_widget_destroy() to try and ensure that pending file info

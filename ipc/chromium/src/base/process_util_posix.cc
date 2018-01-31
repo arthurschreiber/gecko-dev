@@ -23,12 +23,14 @@
 #include "base/logging.h"
 #include "base/platform_thread.h"
 #include "base/process_util.h"
-#include "base/sys_info.h"
 #include "base/time.h"
 #include "base/waitable_event.h"
 #include "base/dir_reader_posix.h"
 
 #include "mozilla/UniquePtr.h"
+// For PR_DuplicateEnvironment:
+#include "prenv.h"
+#include "prmem.h"
 
 const int kMicrosecondsPerSecond = 1000000;
 
@@ -70,6 +72,11 @@ ProcessId GetProcId(ProcessHandle process) {
 bool KillProcess(ProcessHandle process_id, int exit_code, bool wait) {
   bool result = kill(process_id, SIGTERM) == 0;
 
+  if (!result && (errno == ESRCH)) {
+    result = true;
+    wait = false;
+  }
+
   if (result && wait) {
     int tries = 60;
     bool exited = false;
@@ -77,6 +84,9 @@ bool KillProcess(ProcessHandle process_id, int exit_code, bool wait) {
     while (tries-- > 0) {
       int pid = HANDLE_EINTR(waitpid(process_id, NULL, WNOHANG));
       if (pid == process_id) {
+        exited = true;
+        break;
+      } else if (errno == ECHILD) {
         exited = true;
         break;
       }
@@ -117,7 +127,7 @@ void CloseSuperfluousFds(const base::InjectiveMultimap& saved_mapping) {
 #if defined(ANDROID)
   static const rlim_t kSystemDefaultMaxFds = 1024;
   static const char kFDDir[] = "/proc/self/fd";
-#elif defined(OS_LINUX)
+#elif defined(OS_LINUX) || defined(OS_SOLARIS)
   static const rlim_t kSystemDefaultMaxFds = 8192;
   static const char kFDDir[] = "/proc/self/fd";
 #elif defined(OS_MACOSX)
@@ -209,7 +219,7 @@ void CloseSuperfluousFds(const base::InjectiveMultimap& saved_mapping) {
 // TODO(agl): Remove this function. It's fundamentally broken for multithreaded
 // apps.
 void SetAllFDsToCloseOnExec() {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_SOLARIS)
   const char fd_dir[] = "/proc/self/fd";
 #elif defined(OS_MACOSX) || defined(OS_BSD)
   const char fd_dir[] = "/dev/fd";
@@ -237,19 +247,6 @@ void SetAllFDsToCloseOnExec() {
     }
   }
 }
-
-ProcessMetrics::ProcessMetrics(ProcessHandle process) : process_(process),
-                                                        last_time_(0),
-                                                        last_system_time_(0) {
-  processor_count_ = base::SysInfo::NumberOfProcessors();
-}
-
-// static
-ProcessMetrics* ProcessMetrics::CreateProcessMetrics(ProcessHandle process) {
-  return new ProcessMetrics(process);
-}
-
-ProcessMetrics::~ProcessMetrics() { }
 
 bool DidProcessCrash(bool* child_exited, ProcessHandle handle) {
   int status;
@@ -298,51 +295,43 @@ bool DidProcessCrash(bool* child_exited, ProcessHandle handle) {
   return false;
 }
 
-namespace {
-
-int64_t TimeValToMicroseconds(const struct timeval& tv) {
-  return tv.tv_sec * kMicrosecondsPerSecond + tv.tv_usec;
-}
-
-}
-
-int ProcessMetrics::GetCPUUsage() {
-  struct timeval now;
-  struct rusage usage;
-
-  int retval = gettimeofday(&now, NULL);
-  if (retval)
-    return 0;
-  retval = getrusage(RUSAGE_SELF, &usage);
-  if (retval)
-    return 0;
-
-  int64_t system_time = (TimeValToMicroseconds(usage.ru_stime) +
-                       TimeValToMicroseconds(usage.ru_utime)) /
-                        processor_count_;
-  int64_t time = TimeValToMicroseconds(now);
-
-  if ((last_system_time_ == 0) || (last_time_ == 0)) {
-    // First call, just set the last values.
-    last_system_time_ = system_time;
-    last_time_ = time;
-    return 0;
+void
+FreeEnvVarsArray::operator()(char** array)
+{
+  for (char** varPtr = array; *varPtr != nullptr; ++varPtr) {
+    free(*varPtr);
   }
+  delete[] array;
+}
 
-  int64_t system_time_delta = system_time - last_system_time_;
-  int64_t time_delta = time - last_time_;
-  DCHECK(time_delta != 0);
-  if (time_delta == 0)
-    return 0;
+EnvironmentArray
+BuildEnvironmentArray(const environment_map& env_vars_to_set)
+{
+  base::environment_map combined_env_vars = env_vars_to_set;
+  char **environ = PR_DuplicateEnvironment();
+  for (char** varPtr = environ; *varPtr != nullptr; ++varPtr) {
+    std::string varString = *varPtr;
+    size_t equalPos = varString.find_first_of('=');
+    std::string varName = varString.substr(0, equalPos);
+    std::string varValue = varString.substr(equalPos + 1);
+    if (combined_env_vars.find(varName) == combined_env_vars.end()) {
+      combined_env_vars[varName] = varValue;
+    }
+    PR_Free(*varPtr); // PR_DuplicateEnvironment() uses PR_Malloc().
+  }
+  PR_Free(environ); // PR_DuplicateEnvironment() uses PR_Malloc().
 
-  // We add time_delta / 2 so the result is rounded.
-  int cpu = static_cast<int>((system_time_delta * 100 + time_delta / 2) /
-                             time_delta);
-
-  last_system_time_ = system_time;
-  last_time_ = time;
-
-  return cpu;
+  EnvironmentArray array(new char*[combined_env_vars.size() + 1]);
+  size_t i = 0;
+  for (const auto& key_val : combined_env_vars) {
+    std::string entry(key_val.first);
+    entry += "=";
+    entry += key_val.second;
+    array[i] = strdup(entry.c_str());
+    i++;
+  }
+  array[i] = nullptr;
+  return array;
 }
 
 }  // namespace base

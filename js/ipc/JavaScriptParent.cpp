@@ -9,6 +9,7 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "nsJSUtils.h"
+#include "nsIScriptError.h"
 #include "jsfriendapi.h"
 #include "jswrapper.h"
 #include "js/Proxy.h"
@@ -72,9 +73,11 @@ ForbidCPOWsInCompatibleAddon(const nsACString& aAddonId)
         return false;
     }
 
-    nsCString allow;
+    nsAutoCString allow;
     allow.Assign(',');
-    allow.Append(Preferences::GetCString("dom.ipc.cpows.allow-cpows-in-compat-addons"));
+    nsAutoCString pref;
+    Preferences::GetCString("dom.ipc.cpows.allow-cpows-in-compat-addons", pref);
+    allow.Append(pref);
     allow.Append(',');
 
     nsCString searchString(",");
@@ -102,7 +105,7 @@ JavaScriptParent::allowMessage(JSContext* cx)
 
     bool warn = !isSafe;
     nsIGlobalObject* global = dom::GetIncumbentGlobal();
-    JSObject* jsGlobal = global ? global->GetGlobalJSObject() : nullptr;
+    JS::Rooted<JSObject*> jsGlobal(cx, global ? global->GetGlobalJSObject() : nullptr);
     if (jsGlobal) {
         JSAutoCompartment ac(cx, jsGlobal);
         JSAddonId* addonId = JS::AddonIdOfObject(jsGlobal);
@@ -110,7 +113,7 @@ JavaScriptParent::allowMessage(JSContext* cx)
         if (!xpc::CompartmentPrivate::Get(jsGlobal)->allowCPOWs) {
             if (!addonId && ForbidUnsafeBrowserCPOWs() && !isSafe) {
                 Telemetry::Accumulate(Telemetry::BROWSER_SHIM_USAGE_BLOCKED, 1);
-                JS_ReportError(cx, "unsafe CPOW usage forbidden");
+                JS_ReportErrorASCII(cx, "unsafe CPOW usage forbidden");
                 return false;
             }
 
@@ -122,7 +125,7 @@ JavaScriptParent::allowMessage(JSContext* cx)
                 Telemetry::Accumulate(Telemetry::ADDON_FORBIDDEN_CPOW_USAGE, addonIdCString);
 
                 if (ForbidCPOWsInCompatibleAddon(addonIdCString)) {
-                    JS_ReportError(cx, "CPOW usage forbidden in this add-on");
+                    JS_ReportErrorASCII(cx, "CPOW usage forbidden in this add-on");
                     return false;
                 }
 
@@ -165,22 +168,24 @@ JavaScriptParent::trace(JSTracer* trc)
 JSObject*
 JavaScriptParent::scopeForTargetObjects()
 {
-    // CPWOWs from the child need to point into the parent's unprivileged junk
+    // CPOWs from the child need to point into the parent's unprivileged junk
     // scope so that a compromised child cannot compromise the parent. In
     // practice, this means that a child process can only (a) hold parent
     // objects alive and (b) invoke them if they are callable.
     return xpc::UnprivilegedJunkScope();
 }
 
-mozilla::ipc::IProtocol*
-JavaScriptParent::CloneProtocol(Channel* aChannel, ProtocolCloneContext* aCtx)
+void
+JavaScriptParent::afterProcessTask()
 {
-    ContentParent* contentParent = aCtx->GetContentParent();
-    nsAutoPtr<PJavaScriptParent> actor(contentParent->AllocPJavaScriptParent());
-    if (!actor || !contentParent->RecvPJavaScriptConstructor(actor)) {
-        return nullptr;
-    }
-    return actor.forget();
+    if (savedNextCPOWNumber_ == nextCPOWNumber_)
+        return;
+
+    savedNextCPOWNumber_ = nextCPOWNumber_;
+
+    MOZ_ASSERT(nextCPOWNumber_ > 0);
+    if (active())
+        Unused << SendDropTemporaryStrongReferences(nextCPOWNumber_ - 1);
 }
 
 PJavaScriptParent*
@@ -198,4 +203,13 @@ void
 mozilla::jsipc::ReleaseJavaScriptParent(PJavaScriptParent* parent)
 {
     static_cast<JavaScriptParent*>(parent)->decref();
+}
+
+void
+mozilla::jsipc::AfterProcessTask()
+{
+    for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
+        if (PJavaScriptParent* p = LoneManagedOrNullAsserts(cp->ManagedPJavaScriptParent()))
+            static_cast<JavaScriptParent*>(p)->afterProcessTask();
+    }
 }

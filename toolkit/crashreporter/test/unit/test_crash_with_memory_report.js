@@ -1,5 +1,4 @@
-function run_test()
-{
+function run_test() {
   if (!("@mozilla.org/toolkit/crash-reporter;1" in Components.classes)) {
     dump("INFO | test_crash_oom.js | Can't test crashreporter in a non-libxul build.\n");
     return;
@@ -21,13 +20,11 @@ function run_test()
                   .getService(Ci.nsIEnvironment);
       let profd = env.get("XPCSHELL_TEST_PROFILE_DIR");
       let file = Cc["@mozilla.org/file/local;1"]
-                   .createInstance(Ci.nsILocalFile);
+                   .createInstance(Ci.nsIFile);
       file.initWithPath(profd);
 
-      let dirSvc = Cc["@mozilla.org/file/directory_service;1"]
-                     .getService(Ci.nsIProperties);
       let provider = {
-        getFile: function(prop, persistent) {
+        getFile(prop, persistent) {
           persistent.value = true;
               if (prop == "ProfD" || prop == "ProfLD" || prop == "ProfDS" ||
               prop == "ProfLDS" || prop == "TmpD") {
@@ -35,7 +32,7 @@ function run_test()
           }
           throw Components.results.NS_ERROR_FAILURE;
         },
-        QueryInterface: function(iid) {
+        QueryInterface(iid) {
           if (iid.equals(Ci.nsIDirectoryServiceProvider) ||
               iid.equals(Ci.nsISupports)) {
             return this;
@@ -43,13 +40,13 @@ function run_test()
           throw Components.results.NS_ERROR_NO_INTERFACE;
         }
       };
-      dirSvc.QueryInterface(Ci.nsIDirectoryService)
-            .registerProvider(provider);
+      Services.dirsvc.QueryInterface(Ci.nsIDirectoryService)
+                     .registerProvider(provider);
 
       crashReporter.saveMemoryReport();
     },
     function(mdump, extra) {
-      do_check_eq(extra.ContainsMemoryReport, "1");
+      Assert.equal(extra.ContainsMemoryReport, "1");
     },
     true);
 }

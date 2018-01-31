@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +10,6 @@
 #include <stdint.h>                     // for uint32_t
 #include "mozilla/Attributes.h"         // for override
 #include "mozilla/ipc/ProtocolUtils.h"
-#include "mozilla/layers/AsyncTransactionTracker.h" // for AsyncTransactionTracker
 #include "mozilla/layers/PLayerTransactionChild.h"
 #include "mozilla/RefPtr.h"
 
@@ -49,6 +47,10 @@ public:
 
   uint64_t GetId() const { return mId; }
 
+  void MarkDestroyed() {
+    mDestroyed = true;
+  }
+
 protected:
   explicit LayerTransactionChild(const uint64_t& aId)
     : mForwarder(nullptr)
@@ -58,13 +60,7 @@ protected:
   {}
   ~LayerTransactionChild() { }
 
-  virtual PLayerChild* AllocPLayerChild() override;
-  virtual bool DeallocPLayerChild(PLayerChild* actor) override;
-
-  virtual PCompositableChild* AllocPCompositableChild(const TextureInfo& aInfo) override;
-  virtual bool DeallocPCompositableChild(PCompositableChild* actor) override;
-
-  virtual void ActorDestroy(ActorDestroyReason why) override;
+  void ActorDestroy(ActorDestroyReason why) override;
 
   void AddIPDLReference() {
     MOZ_ASSERT(mIPCOpen == false);

@@ -8,7 +8,7 @@
  */
 
 var { DebuggerServer } = require("devtools/server/main");
-var { DebuggerClient } = require("devtools/shared/client/main");
+var { DebuggerClient } = require("devtools/shared/client/debugger-client");
 
 const TAB_URL_1 = "data:text/html;charset=utf-8,foo";
 const TAB_URL_2 = "data:text/html;charset=utf-8,bar";
@@ -20,27 +20,22 @@ var gTabActor1, gTabActor2;
 function test() {
   waitForExplicitFinish();
 
-  if (!DebuggerServer.initialized) {
-    DebuggerServer.init();
-    DebuggerServer.addBrowserActors();
-  }
+  DebuggerServer.init();
+  DebuggerServer.registerAllActors();
 
   openTabs();
 }
 
 function openTabs() {
   // Open two tabs, select the second
-  gTab1 = gBrowser.addTab(TAB_URL_1);
-  gTab1.linkedBrowser.addEventListener("load", function onLoad1(evt) {
-    gTab1.linkedBrowser.removeEventListener("load", onLoad1);
-
-    gTab2 = gBrowser.selectedTab = gBrowser.addTab(TAB_URL_2);
-    gTab2.linkedBrowser.addEventListener("load", function onLoad2(evt) {
-      gTab2.linkedBrowser.removeEventListener("load", onLoad2);
+  addTab(TAB_URL_1).then(tab1 => {
+    gTab1 = tab1;
+    addTab(TAB_URL_2).then(tab2 => {
+      gTab2 = tab2;
 
       connect();
-    }, true);
-  }, true);
+    });
+  });
 }
 
 function connect() {
@@ -123,11 +118,9 @@ function checkSelectedTabActor() {
 function closeSecondTab() {
   // Close the second tab, currently selected
   let container = gBrowser.tabContainer;
-  container.addEventListener("TabClose", function onTabClose() {
-    container.removeEventListener("TabClose", onTabClose);
-
+  container.addEventListener("TabClose", function () {
     checkFirstTabActor();
-  });
+  }, {once: true});
   gBrowser.removeTab(gTab2);
 }
 
@@ -143,10 +136,8 @@ function checkFirstTabActor() {
 
 function cleanup() {
   let container = gBrowser.tabContainer;
-  container.addEventListener("TabClose", function onTabClose() {
-    container.removeEventListener("TabClose", onTabClose);
-
+  container.addEventListener("TabClose", function () {
     gClient.close().then(finish);
-  });
+  }, {once: true});
   gBrowser.removeTab(gTab1);
 }

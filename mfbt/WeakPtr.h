@@ -70,11 +70,19 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TypeTraits.h"
 
 #include <string.h>
+
+#if defined(MOZILLA_INTERNAL_API)
+// For thread safety checking.
+#include "nsISupportsImpl.h"
+#endif
+
+#if defined(MOZILLA_INTERNAL_API) && defined(MOZ_THREAD_SAFETY_OWNERSHIP_CHECKS_SUPPORTED)
 
 // Weak referencing is not implemeted as thread safe.  When a WeakPtr
 // is created or dereferenced on thread A but the real object is just
@@ -88,21 +96,25 @@
 // its dereference, and destruction of the real object must all happen
 // on a single thread.  The following macros implement assertions for
 // checking these conditions.
+//
+// We re-use XPCOM's nsAutoOwningThread checks when they are available. This has
+// the advantage that it works with cooperative thread pools.
 
-#if defined(DEBUG) || (defined(NIGHTLY_BUILD) && !defined(MOZ_PROFILING))
-
-#include <thread>
 #define MOZ_WEAKPTR_DECLARE_THREAD_SAFETY_CHECK \
-  std::thread::id _owningThread; \
-  bool _empty; // If it was initialized as a placeholder with mPtr = nullptr.
+  /* Will be none if mPtr = nullptr. */ \
+  Maybe<nsAutoOwningThread> _owningThread;
 #define MOZ_WEAKPTR_INIT_THREAD_SAFETY_CHECK() \
   do { \
-    _owningThread = std::this_thread::get_id(); \
-    _empty = !p; \
+    if (p) { \
+      _owningThread.emplace(); \
+    } \
   } while (false)
 #define MOZ_WEAKPTR_ASSERT_THREAD_SAFETY() \
-  MOZ_DIAGNOSTIC_ASSERT(_empty || _owningThread == std::this_thread::get_id(), \
-                        "WeakPtr used on multiple threads")
+  do { \
+    if (_owningThread.isSome() && !_owningThread.ref().IsCurrentThread()) { \
+      WeakPtrTraits<T>::AssertSafeToAccessFromNonOwningThread(); \
+    } \
+  } while (false)
 #define MOZ_WEAKPTR_ASSERT_THREAD_SAFETY_DELEGATED(that) \
   (that)->AssertThreadSafety();
 
@@ -128,6 +140,15 @@ template <typename T> class SupportsWeakPtr;
 #else
 #define MOZ_DECLARE_WEAKREFERENCE_TYPENAME(T)
 #endif
+
+template<class T>
+struct WeakPtrTraits
+{
+  static void AssertSafeToAccessFromNonOwningThread()
+  {
+    MOZ_DIAGNOSTIC_ASSERT(false, "WeakPtr accessed from multiple threads");
+  }
+};
 
 namespace detail {
 

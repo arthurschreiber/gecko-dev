@@ -9,18 +9,12 @@ var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 // successfully blocked.
 // Uses test_gfxBlacklist.xml
 
-Cu.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://testing-common/httpd.js");
 
 var gTestserver = new HttpServer();
 gTestserver.start(-1);
 gPort = gTestserver.identity.primaryPort;
 mapFile("/data/test_gfxBlacklist.xml", gTestserver);
-
-function get_platform() {
-  var xulRuntime = Cc["@mozilla.org/xre/app-info;1"]
-                             .getService(Ci.nsIXULRuntime);
-  return xulRuntime.OS;
-}
 
 function load_blocklist(file) {
   Services.prefs.setCharPref("extensions.blocklist.url", "http://localhost:" +
@@ -46,7 +40,7 @@ function run_test() {
   gfxInfo.spoofDeviceID("0x6666");
 
   // Spoof the OS version so it matches the test file.
-  switch (get_platform()) {
+  switch (Services.appinfo.OS) {
     case "WINNT":
       // Windows 7
       gfxInfo.spoofOSVersion(0x60001);
@@ -65,16 +59,15 @@ function run_test() {
 
   do_test_pending();
 
-  function checkBlacklist()
-  {
+  function checkBlacklist() {
     var driverVersion = gfxInfo.adapterDriverVersion;
     if (driverVersion) {
       var status = gfxInfo.getFeatureStatus(Ci.nsIGfxInfo.FEATURE_DIRECT2D);
-      do_check_eq(status, Ci.nsIGfxInfo.FEATURE_BLOCKED_DEVICE);
+      Assert.equal(status, Ci.nsIGfxInfo.FEATURE_BLOCKED_DEVICE);
 
       // Make sure unrelated features aren't affected
       status = gfxInfo.getFeatureStatus(Ci.nsIGfxInfo.FEATURE_DIRECT3D_9_LAYERS);
-      do_check_eq(status, Ci.nsIGfxInfo.FEATURE_STATUS_OK);
+      Assert.equal(status, Ci.nsIGfxInfo.FEATURE_STATUS_OK);
     }
     gTestserver.stop(do_test_finished);
   }
@@ -82,8 +75,8 @@ function run_test() {
   Services.obs.addObserver(function(aSubject, aTopic, aData) {
     // If we wait until after we go through the event loop, gfxInfo is sure to
     // have processed the gfxItems event.
-    do_execute_soon(checkBlacklist);
-  }, "blocklist-data-gfxItems", false);
+    executeSoon(checkBlacklist);
+  }, "blocklist-data-gfxItems");
 
   load_blocklist("test_gfxBlacklist.xml");
 }

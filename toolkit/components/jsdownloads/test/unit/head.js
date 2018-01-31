@@ -9,46 +9,44 @@
 
 "use strict";
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 var Cc = Components.classes;
 var Ci = Components.interfaces;
 var Cu = Components.utils;
 var Cr = Components.results;
 
-Cu.import("resource://gre/modules/Integration.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Integration.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "DownloadPaths",
-                                  "resource://gre/modules/DownloadPaths.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Downloads",
-                                  "resource://gre/modules/Downloads.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
-                                  "resource://gre/modules/FileUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "HttpServer",
-                                  "resource://testing-common/httpd.js");
-XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
-                                  "resource://gre/modules/NetUtil.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesTestUtils",
-                                  "resource://testing-common/PlacesTestUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
-                                  "resource://gre/modules/PlacesUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-                                  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                  "resource://gre/modules/Services.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "OS",
-                                  "resource://gre/modules/osfile.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "MockRegistrar",
-                                  "resource://testing-common/MockRegistrar.jsm");
+ChromeUtils.defineModuleGetter(this, "DownloadPaths",
+                               "resource://gre/modules/DownloadPaths.jsm");
+ChromeUtils.defineModuleGetter(this, "Downloads",
+                               "resource://gre/modules/Downloads.jsm");
+ChromeUtils.defineModuleGetter(this, "FileUtils",
+                               "resource://gre/modules/FileUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "HttpServer",
+                               "resource://testing-common/httpd.js");
+ChromeUtils.defineModuleGetter(this, "NetUtil",
+                               "resource://gre/modules/NetUtil.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesUtils",
+                               "resource://gre/modules/PlacesUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "Promise",
+                               "resource://gre/modules/Promise.jsm");
+ChromeUtils.defineModuleGetter(this, "Services",
+                               "resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "OS",
+                               "resource://gre/modules/osfile.jsm");
+ChromeUtils.defineModuleGetter(this, "FileTestUtils",
+                               "resource://testing-common/FileTestUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "MockRegistrar",
+                               "resource://testing-common/MockRegistrar.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(this, "gExternalHelperAppService",
            "@mozilla.org/uriloader/external-helper-app-service;1",
            Ci.nsIExternalHelperAppService);
 
+/* global DownloadIntegration */
 Integration.downloads.defineModuleGetter(this, "DownloadIntegration",
             "resource://gre/modules/DownloadIntegration.jsm");
 
@@ -59,7 +57,7 @@ const ServerSocket = Components.Constructor(
 const BinaryOutputStream = Components.Constructor(
                                       "@mozilla.org/binaryoutputstream;1",
                                       "nsIBinaryOutputStream",
-                                      "setOutputStream")
+                                      "setOutputStream");
 
 XPCOMUtils.defineLazyServiceGetter(this, "gMIMEService",
                                    "@mozilla.org/mime;1",
@@ -68,7 +66,9 @@ XPCOMUtils.defineLazyServiceGetter(this, "gMIMEService",
 const TEST_TARGET_FILE_NAME = "test-download.txt";
 const TEST_STORE_FILE_NAME = "test-downloads.json";
 
-const TEST_REFERRER_URL = "http://www.example.com/referrer.html";
+// We are testing an HTTPS referrer with HTTP downloads in order to verify that
+// the default policy will not prevent the referrer from being passed around.
+const TEST_REFERRER_URL = "https://www.example.com/referrer.html";
 
 const TEST_DATA_SHORT = "This test string is downloaded.";
 // Generate using gzipCompressString in TelemetryController.jsm.
@@ -84,14 +84,12 @@ const TEST_DATA_SHORT_GZIP_ENCODED =
 /**
  * All the tests are implemented with add_task, this starts them automatically.
  */
-function run_test()
-{
+function run_test() {
   do_get_profile();
   run_next_test();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//// Support functions
+// Support functions
 
 /**
  * HttpServer object initialized before tests start.
@@ -103,59 +101,16 @@ var gHttpServer;
  * on the currently running instance of the test HTTP server.
  */
 function httpUrl(aFileName) {
-  return "http://localhost:" + gHttpServer.identity.primaryPort + "/" +
+  return "http://www.example.com:" + gHttpServer.identity.primaryPort + "/" +
          aFileName;
 }
 
-// While the previous test file should have deleted all the temporary files it
-// used, on Windows these might still be pending deletion on the physical file
-// system.  Thus, start from a new base number every time, to make a collision
-// with a file that is still pending deletion highly unlikely.
-var gFileCounter = Math.floor(Math.random() * 1000000);
-
 /**
- * Returns a reference to a temporary file, that is guaranteed not to exist, and
- * to have never been created before.
- *
- * @param aLeafName
- *        Suggested leaf name for the file to be created.
- *
- * @return nsIFile pointing to a non-existent file in a temporary directory.
- *
- * @note It is not enough to delete the file if it exists, or to delete the file
- *       after calling nsIFile.createUnique, because on Windows the delete
- *       operation in the file system may still be pending, preventing a new
- *       file with the same name to be created.
+ * Returns a reference to a temporary file that is guaranteed not to exist and
+ * is cleaned up later. See FileTestUtils.getTempFile for details.
  */
-function getTempFile(aLeafName)
-{
-  // Prepend a serial number to the extension in the suggested leaf name.
-  let [base, ext] = DownloadPaths.splitBaseNameAndExtension(aLeafName);
-  let leafName = base + "-" + gFileCounter + ext;
-  gFileCounter++;
-
-  // Get a file reference under the temporary directory for this test file.
-  let file = FileUtils.getFile("TmpD", [leafName]);
-  do_check_false(file.exists());
-
-  do_register_cleanup(function () {
-    try {
-      file.remove(false)
-    } catch (e) {
-      if (!(e instanceof Components.Exception &&
-            (e.result == Cr.NS_ERROR_FILE_ACCESS_DENIED ||
-             e.result == Cr.NS_ERROR_FILE_TARGET_DOES_NOT_EXIST ||
-             e.result == Cr.NS_ERROR_FILE_NOT_FOUND))) {
-        throw e;
-      }
-      // On Windows, we may get an access denied error if the file existed before,
-      // and was recently deleted.
-      // Don't bother checking file.exists() as that may also cause an access
-      // denied error.
-    }
-  });
-
-  return file;
+function getTempFile(leafName) {
+  return FileTestUtils.getTempFile(leafName);
 }
 
 /**
@@ -165,11 +120,10 @@ function getTempFile(aLeafName)
  * @resolves When pending events have been processed.
  * @rejects Never.
  */
-function promiseExecuteSoon()
-{
-  let deferred = Promise.defer();
-  do_execute_soon(deferred.resolve);
-  return deferred.promise;
+function promiseExecuteSoon() {
+  return new Promise(resolve => {
+    executeSoon(resolve);
+  });
 }
 
 /**
@@ -179,11 +133,10 @@ function promiseExecuteSoon()
  * @resolves When pending events have been processed.
  * @rejects Never.
  */
-function promiseTimeout(aTime)
-{
-  let deferred = Promise.defer();
-  do_timeout(aTime, deferred.resolve);
-  return deferred.promise;
+function promiseTimeout(aTime) {
+  return new Promise(resolve => {
+    do_timeout(aTime, resolve);
+  });
 }
 
 /**
@@ -196,52 +149,35 @@ function promiseTimeout(aTime)
  * @resolves Array [aTime, aTransitionType] from nsINavHistoryObserver.onVisit.
  * @rejects Never.
  */
-function promiseWaitForVisit(aUrl)
-{
-  let deferred = Promise.defer();
+function promiseWaitForVisit(aUrl) {
+  return new Promise(resolve => {
 
-  let uri = NetUtil.newURI(aUrl);
+    let uri = NetUtil.newURI(aUrl);
 
-  PlacesUtils.history.addObserver({
-    QueryInterface: XPCOMUtils.generateQI([Ci.nsINavHistoryObserver]),
-    onBeginUpdateBatch: function () {},
-    onEndUpdateBatch: function () {},
-    onVisit: function (aURI, aVisitID, aTime, aSessionID, aReferringID,
-                       aTransitionType, aGUID, aHidden) {
-      if (aURI.equals(uri)) {
-        PlacesUtils.history.removeObserver(this);
-        deferred.resolve([aTime, aTransitionType]);
-      }
-    },
-    onTitleChanged: function () {},
-    onDeleteURI: function () {},
-    onClearHistory: function () {},
-    onPageChanged: function () {},
-    onDeleteVisits: function () {},
-  }, false);
-
-  return deferred.promise;
-}
-
-/**
- * Check browsing history to see whether the given URI has been visited.
- *
- * @param aUrl
- *        String containing the URI that will be visited.
- *
- * @return {Promise}
- * @resolves Boolean indicating whether the URI has been visited.
- * @rejects JavaScript exception.
- */
-function promiseIsURIVisited(aUrl) {
-  let deferred = Promise.defer();
-
-  PlacesUtils.asyncHistory.isURIVisited(NetUtil.newURI(aUrl),
-    function (aURI, aIsVisited) {
-      deferred.resolve(aIsVisited);
+    PlacesUtils.history.addObserver({
+      QueryInterface: XPCOMUtils.generateQI([Ci.nsINavHistoryObserver]),
+      onBeginUpdateBatch() {},
+      onEndUpdateBatch() {},
+      onVisits(aVisits) {
+        Assert.equal(aVisits.length, 1);
+        let {
+          uri: visitUri,
+          time,
+          transitionType,
+        } = aVisits[0];
+        if (visitUri.equals(uri)) {
+          PlacesUtils.history.removeObserver(this);
+          resolve([time, transitionType]);
+        }
+      },
+      onTitleChanged() {},
+      onDeleteURI() {},
+      onClearHistory() {},
+      onPageChanged() {},
+      onDeleteVisits() {},
     });
 
-  return deferred.promise;
+  });
 }
 
 /**
@@ -275,6 +211,7 @@ function promiseNewDownload(aSourceUrl) {
  *        {
  *          isPrivate: Boolean indicating whether the download originated from a
  *                     private window.
+ *          referrer: String containing the referrer for the download source.
  *          targetFile: nsIFile for the target, or null to use a temporary file.
  *          outPersist: Receives a reference to the created nsIWebBrowserPersist
  *                      instance.
@@ -301,7 +238,7 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
   }
 
   let fileExtension = null, mimeInfo = null;
-  let match = sourceURI.path.match(/\.([^.\/]+)$/);
+  let match = sourceURI.pathQueryRef.match(/\.([^.\/]+)$/);
   if (match) {
     fileExtension = match[1];
   }
@@ -314,7 +251,7 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
   }
 
   if (aOptions && aOptions.launcherPath) {
-    do_check_true(mimeInfo != null);
+    Assert.ok(mimeInfo != null);
 
     let localHandlerApp = Cc["@mozilla.org/uriloader/local-handler-app;1"]
                             .createInstance(Ci.nsILocalHandlerApp);
@@ -325,7 +262,7 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
   }
 
   if (aOptions && aOptions.launchWhenSucceeded) {
-    do_check_true(mimeInfo != null);
+    Assert.ok(mimeInfo != null);
 
     mimeInfo.preferredAction = Ci.nsIMIMEInfo.useHelperApp;
   }
@@ -337,39 +274,41 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
 
   let transfer = Cc["@mozilla.org/transfer;1"].createInstance(Ci.nsITransfer);
 
-  let deferred = Promise.defer();
+  return new Promise(resolve => {
 
-  Downloads.getList(Downloads.ALL).then(function (aList) {
-    // Temporarily register a view that will get notified when the download we
-    // are controlling becomes visible in the list of downloads.
-    aList.addView({
-      onDownloadAdded: function (aDownload) {
-        aList.removeView(this).then(null, do_report_unexpected_exception);
+    Downloads.getList(Downloads.ALL).then(function(aList) {
+      // Temporarily register a view that will get notified when the download we
+      // are controlling becomes visible in the list of downloads.
+      aList.addView({
+        onDownloadAdded(aDownload) {
+          aList.removeView(this).catch(do_report_unexpected_exception);
 
-        // Remove the download to keep the list empty for the next test.  This
-        // also allows the caller to register the "onchange" event directly.
-        let promise = aList.remove(aDownload);
+          // Remove the download to keep the list empty for the next test.  This
+          // also allows the caller to register the "onchange" event directly.
+          let promise = aList.remove(aDownload);
 
-        // When the download object is ready, make it available to the caller.
-        promise.then(() => deferred.resolve(aDownload),
-                     do_report_unexpected_exception);
-      },
-    }).then(null, do_report_unexpected_exception);
+          // When the download object is ready, make it available to the caller.
+          promise.then(() => resolve(aDownload),
+                       do_report_unexpected_exception);
+        },
+      }).catch(do_report_unexpected_exception);
 
-    let isPrivate = aOptions && aOptions.isPrivate;
+      let isPrivate = aOptions && aOptions.isPrivate;
+      let referrer = aOptions && aOptions.referrer ?
+        NetUtil.newURI(aOptions.referrer) : null;
+      // Initialize the components so they reference each other.  This will cause
+      // the Download object to be created and added to the public downloads.
+      transfer.init(sourceURI, NetUtil.newURI(targetFile), null, mimeInfo, null,
+                    null, persist, isPrivate);
+      persist.progressListener = transfer;
 
-    // Initialize the components so they reference each other.  This will cause
-    // the Download object to be created and added to the public downloads.
-    transfer.init(sourceURI, NetUtil.newURI(targetFile), null, mimeInfo, null,
-                  null, persist, isPrivate);
-    persist.progressListener = transfer;
+      // Start the actual download process.
+      persist.savePrivacyAwareURI(
+        sourceURI, null, referrer, Ci.nsIHttpChannel.REFERRER_POLICY_UNSAFE_URL,
+        null, null, targetFile, isPrivate);
+    }).catch(do_report_unexpected_exception);
 
-    // Start the actual download process.
-    persist.savePrivacyAwareURI(sourceURI, null, null, 0, null, null, targetFile,
-                                isPrivate);
-  }.bind(this)).then(null, do_report_unexpected_exception);
-
-  return deferred.promise;
+  });
 }
 
 /**
@@ -390,57 +329,54 @@ function promiseStartExternalHelperAppServiceDownload(aSourceUrl) {
   let sourceURI = NetUtil.newURI(aSourceUrl ||
                                  httpUrl("interruptible_resumable.txt"));
 
-  let deferred = Promise.defer();
+  return new Promise(resolve => {
 
-  Downloads.getList(Downloads.PUBLIC).then(function (aList) {
-    // Temporarily register a view that will get notified when the download we
-    // are controlling becomes visible in the list of downloads.
-    aList.addView({
-      onDownloadAdded: function (aDownload) {
-        aList.removeView(this).then(null, do_report_unexpected_exception);
+    Downloads.getList(Downloads.PUBLIC).then(function(aList) {
+      // Temporarily register a view that will get notified when the download we
+      // are controlling becomes visible in the list of downloads.
+      aList.addView({
+        onDownloadAdded(aDownload) {
+          aList.removeView(this).catch(do_report_unexpected_exception);
 
-        // Remove the download to keep the list empty for the next test.  This
-        // also allows the caller to register the "onchange" event directly.
-        let promise = aList.remove(aDownload);
+          // Remove the download to keep the list empty for the next test.  This
+          // also allows the caller to register the "onchange" event directly.
+          let promise = aList.remove(aDownload);
 
-        // When the download object is ready, make it available to the caller.
-        promise.then(() => deferred.resolve(aDownload),
-                     do_report_unexpected_exception);
-      },
-    }).then(null, do_report_unexpected_exception);
+          // When the download object is ready, make it available to the caller.
+          promise.then(() => resolve(aDownload),
+                       do_report_unexpected_exception);
+        },
+      }).catch(do_report_unexpected_exception);
 
-    let channel = NetUtil.newChannel({
-      uri: sourceURI,
-      loadUsingSystemPrincipal: true
-    });
+      let channel = NetUtil.newChannel({
+        uri: sourceURI,
+        loadUsingSystemPrincipal: true
+      });
 
-    // Start the actual download process.
-    channel.asyncOpen2({
-      contentListener: null,
+      // Start the actual download process.
+      channel.asyncOpen2({
+        contentListener: null,
 
-      onStartRequest: function (aRequest, aContext)
-      {
-        let channel = aRequest.QueryInterface(Ci.nsIChannel);
-        this.contentListener = gExternalHelperAppService.doContent(
-                                     channel.contentType, aRequest, null, true);
-        this.contentListener.onStartRequest(aRequest, aContext);
-      },
+        onStartRequest(aRequest, aContext) {
+          let requestChannel = aRequest.QueryInterface(Ci.nsIChannel);
+          this.contentListener = gExternalHelperAppService.doContent(
+                                       requestChannel.contentType, aRequest, null, true);
+          this.contentListener.onStartRequest(aRequest, aContext);
+        },
 
-      onStopRequest: function (aRequest, aContext, aStatusCode)
-      {
-        this.contentListener.onStopRequest(aRequest, aContext, aStatusCode);
-      },
+        onStopRequest(aRequest, aContext, aStatusCode) {
+          this.contentListener.onStopRequest(aRequest, aContext, aStatusCode);
+        },
 
-      onDataAvailable: function (aRequest, aContext, aInputStream, aOffset,
-                                 aCount)
-      {
-        this.contentListener.onDataAvailable(aRequest, aContext, aInputStream,
-                                             aOffset, aCount);
-      },
-    });
-  }.bind(this)).then(null, do_report_unexpected_exception);
+        onDataAvailable(aRequest, aContext, aInputStream, aOffset,
+                                  aCount) {
+          this.contentListener.onDataAvailable(aRequest, aContext, aInputStream,
+                                               aOffset, aCount);
+        },
+      });
+    }).catch(do_report_unexpected_exception);
 
-  return deferred.promise;
+  });
 }
 
 /**
@@ -455,22 +391,22 @@ function promiseStartExternalHelperAppServiceDownload(aSourceUrl) {
  * @rejects Never.
  */
 function promiseDownloadMidway(aDownload) {
-  let deferred = Promise.defer();
+  return new Promise(resolve => {
 
-  // Wait for the download to reach half of its progress.
-  let onchange = function () {
-    if (!aDownload.stopped && !aDownload.canceled && aDownload.progress == 50) {
-      aDownload.onchange = null;
-      deferred.resolve();
-    }
-  };
+    // Wait for the download to reach half of its progress.
+    let onchange = function() {
+      if (!aDownload.stopped && !aDownload.canceled && aDownload.progress == 50) {
+        aDownload.onchange = null;
+        resolve();
+      }
+    };
 
-  // Register for the notification, but also call the function directly in
-  // case the download already reached the expected progress.
-  aDownload.onchange = onchange;
-  onchange();
+    // Register for the notification, but also call the function directly in
+    // case the download already reached the expected progress.
+    aDownload.onchange = onchange;
+    onchange();
 
-  return deferred.promise;
+  });
 }
 
 /**
@@ -508,8 +444,7 @@ function promiseDownloadStopped(aDownload) {
  * @resolves The newly created DownloadList object.
  * @rejects JavaScript exception.
  */
-function promiseNewList(aIsPrivate)
-{
+function promiseNewList(aIsPrivate) {
   // We need to clear all the internal state for the list and summary objects,
   // since all the objects are interdependent internally.
   Downloads._promiseListsInitialized = null;
@@ -532,40 +467,39 @@ function promiseNewList(aIsPrivate)
  * @resolves When the operation completes.
  * @rejects Never.
  */
-function promiseVerifyContents(aPath, aExpectedContents)
-{
-  return Task.spawn(function* () {
+function promiseVerifyContents(aPath, aExpectedContents) {
+  return (async function() {
     let file = new FileUtils.File(aPath);
 
-    if (!(yield OS.File.exists(aPath))) {
+    if (!(await OS.File.exists(aPath))) {
       do_throw("File does not exist: " + aPath);
     }
 
-    if ((yield OS.File.stat(aPath)).size == 0) {
+    if ((await OS.File.stat(aPath)).size == 0) {
       do_throw("File is empty: " + aPath);
     }
 
-    let deferred = Promise.defer();
-    NetUtil.asyncFetch(
-      { uri: NetUtil.newURI(file), loadUsingSystemPrincipal: true },
-      function(aInputStream, aStatus) {
-        do_check_true(Components.isSuccessCode(aStatus));
-        let contents = NetUtil.readInputStreamToString(aInputStream,
-                                                       aInputStream.available());
-        if (contents.length > TEST_DATA_SHORT.length * 2 ||
-            /[^\x20-\x7E]/.test(contents)) {
-          // Do not print the entire content string to the test log.
-          do_check_eq(contents.length, aExpectedContents.length);
-          do_check_true(contents == aExpectedContents);
-        } else {
-          // Print the string if it is short and made of printable characters.
-          do_check_eq(contents, aExpectedContents);
-        }
-        deferred.resolve();
-      });
+    await new Promise(resolve => {
+      NetUtil.asyncFetch(
+        { uri: NetUtil.newURI(file), loadUsingSystemPrincipal: true },
+        function(aInputStream, aStatus) {
+          Assert.ok(Components.isSuccessCode(aStatus));
+          let contents = NetUtil.readInputStreamToString(aInputStream,
+                                                         aInputStream.available());
+          if (contents.length > TEST_DATA_SHORT.length * 2 ||
+              /[^\x20-\x7E]/.test(contents)) {
+            // Do not print the entire content string to the test log.
+            Assert.equal(contents.length, aExpectedContents.length);
+            Assert.ok(contents == aExpectedContents);
+          } else {
+            // Print the string if it is short and made of printable characters.
+            Assert.equal(contents, aExpectedContents);
+          }
+          resolve();
+        });
 
-    yield deferred.promise;
-  });
+    });
+  })();
 }
 
 /**
@@ -574,14 +508,13 @@ function promiseVerifyContents(aPath, aExpectedContents)
  * @returns nsIServerSocket that listens for connections.  Call its "close"
  *          method to stop listening and free the server port.
  */
-function startFakeServer()
-{
+function startFakeServer() {
   let serverSocket = new ServerSocket(-1, true, -1);
   serverSocket.asyncListen({
-    onSocketAccepted: function (aServ, aTransport) {
+    onSocketAccepted(aServ, aTransport) {
       aTransport.close(Cr.NS_BINDING_ABORTED);
     },
-    onStopListening: function () { },
+    onStopListening() { },
   });
   return serverSocket;
 }
@@ -609,24 +542,22 @@ var _gDeferResponses = Promise.defer();
  * If an interruptible request is started before the function is called, it may
  * or may not be blocked depending on the actual sequence of events.
  */
-function mustInterruptResponses()
-{
+function mustInterruptResponses() {
   // If there are pending blocked requests, allow them to complete.  This is
   // done to prevent requests from being blocked forever, but should not affect
   // the test logic, since previously started requests should not be monitored
   // on the client side anymore.
   _gDeferResponses.resolve();
 
-  do_print("Interruptible responses will be blocked midway.");
+  info("Interruptible responses will be blocked midway.");
   _gDeferResponses = Promise.defer();
 }
 
 /**
  * Allows all the current and future interruptible requests to complete.
  */
-function continueResponses()
-{
-  do_print("Interruptible responses are now allowed to continue.");
+function continueResponses() {
+  info("Interruptible responses are now allowed to continue.");
   _gDeferResponses.resolve();
 }
 
@@ -642,10 +573,9 @@ function continueResponses()
  *        This function is called with the aRequest and aResponse arguments of
  *        the server, when the continueResponses function is called.
  */
-function registerInterruptibleHandler(aPath, aFirstPartFn, aSecondPartFn)
-{
-  gHttpServer.registerPathHandler(aPath, function (aRequest, aResponse) {
-    do_print("Interruptible request started.");
+function registerInterruptibleHandler(aPath, aFirstPartFn, aSecondPartFn) {
+  gHttpServer.registerPathHandler(aPath, function(aRequest, aResponse) {
+    info("Interruptible request started.");
 
     // Process the first part of the response.
     aResponse.processAsync();
@@ -655,8 +585,8 @@ function registerInterruptibleHandler(aPath, aFirstPartFn, aSecondPartFn)
     _gDeferResponses.promise.then(function RIH_onSuccess() {
       aSecondPartFn(aRequest, aResponse);
       aResponse.finish();
-      do_print("Interruptible request finished.");
-    }).then(null, Cu.reportError);
+      info("Interruptible request finished.");
+    }).catch(Cu.reportError);
   });
 }
 
@@ -676,16 +606,14 @@ function isValidDate(aDate) {
  */
 var gMostRecentFirstBytePos;
 
-////////////////////////////////////////////////////////////////////////////////
-//// Initialization functions common to all tests
+// Initialization functions common to all tests
 
-add_task(function test_common_initialize()
-{
+add_task(function test_common_initialize() {
   // Start the HTTP server.
   gHttpServer = new HttpServer();
   gHttpServer.registerDirectory("/", do_get_file("../data"));
   gHttpServer.start(-1);
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     return new Promise(resolve => {
       // Ensure all the pending HTTP requests have a chance to finish.
       continueResponses();
@@ -694,11 +622,19 @@ add_task(function test_common_initialize()
     });
   });
 
+  // Serve the downloads from a domain located in the Internet zone on Windows.
+  gHttpServer.identity.setPrimary("http", "www.example.com",
+                                  gHttpServer.identity.primaryPort);
+  Services.prefs.setCharPref("network.dns.localDomains", "www.example.com");
+  registerCleanupFunction(function() {
+    Services.prefs.clearUserPref("network.dns.localDomains");
+  });
+
   // Cache locks might prevent concurrent requests to the same resource, and
   // this may block tests that use the interruptible handlers.
   Services.prefs.setBoolPref("browser.cache.disk.enable", false);
   Services.prefs.setBoolPref("browser.cache.memory.enable", false);
-  do_register_cleanup(function () {
+  registerCleanupFunction(function() {
     Services.prefs.clearUserPref("browser.cache.disk.enable");
     Services.prefs.clearUserPref("browser.cache.memory.enable");
   });
@@ -772,7 +708,7 @@ add_task(function test_common_initialize()
     });
 
   gHttpServer.registerPathHandler("/shorter-than-content-length-http-1-1.txt",
-    function (aRequest, aResponse) {
+    function(aRequest, aResponse) {
       aResponse.processAsync();
       aResponse.setStatusLine("1.1", 200, "OK");
       aResponse.setHeader("Content-Type", "text/plain", false);
@@ -784,7 +720,7 @@ add_task(function test_common_initialize()
 
   // This URL will emulate being blocked by Windows Parental controls
   gHttpServer.registerPathHandler("/parentalblocked.zip",
-    function (aRequest, aResponse) {
+    function(aRequest, aResponse) {
       aResponse.setStatusLine(aRequest.httpVersion, 450,
                               "Blocked by Windows Parental Controls");
     });
@@ -823,11 +759,6 @@ add_task(function test_common_initialize()
     },
   }));
 
-  // Get a reference to nsIComponentRegistrar, and ensure that is is freed
-  // before the XPCOM shutdown.
-  let registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
-  do_register_cleanup(() => registrar = null);
-
   // Make sure that downloads started using nsIExternalHelperAppService are
   // saved to disk without asking for a destination interactively.
   let mock = {
@@ -845,7 +776,7 @@ add_task(function test_common_initialize()
   };
 
   let cid = MockRegistrar.register("@mozilla.org/helperapplauncherdialog;1", mock);
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     MockRegistrar.unregister(cid);
   });
 });

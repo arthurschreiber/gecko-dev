@@ -8,23 +8,23 @@ var gExpectedFile = null;
 var gCacheFlushCount = 0;
 
 var CacheFlushObserver = {
-  observe: function(aSubject, aTopic, aData) {
+  observe(aSubject, aTopic, aData) {
     if (aTopic != "flush-cache-entry")
       return;
     // Ignore flushes triggered by the fake cert DB
     if (aData == "cert-override")
       return;
 
-    do_check_true(gExpectedFile != null);
-    do_check_true(aSubject instanceof AM_Ci.nsIFile);
-    do_check_eq(aSubject.path, gExpectedFile.path);
+    Assert.ok(gExpectedFile != null);
+    Assert.ok(aSubject instanceof AM_Ci.nsIFile);
+    Assert.equal(aSubject.path, gExpectedFile.path);
     gCacheFlushCount++;
   }
 };
 
 function run_test() {
   do_test_pending();
-  Services.obs.addObserver(CacheFlushObserver, "flush-cache-entry", false);
+  Services.obs.addObserver(CacheFlushObserver, "flush-cache-entry");
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "2");
 
   startupManager();
@@ -43,7 +43,7 @@ function run_test_1() {
       gExpectedFile.append("addon1@tests.mozilla.org.xpi");
       aInstall.cancel();
 
-      do_check_eq(gCacheFlushCount, 1);
+      Assert.equal(gCacheFlushCount, 1);
       gExpectedFile = null;
       gCacheFlushCount = 0;
 
@@ -61,25 +61,25 @@ function run_test_2() {
     gExpectedFile.append("staged");
     gExpectedFile.append("addon1@tests.mozilla.org.xpi");
     restartManager();
-    do_check_eq(gCacheFlushCount, 1);
+    Assert.equal(gCacheFlushCount, 1);
     gExpectedFile = null;
     gCacheFlushCount = 0;
 
     AddonManager.getAddonByID("addon1@tests.mozilla.org", function(a1) {
       // We should flush the installed XPI when uninstalling
-      do_check_true(a1 != null);
+      Assert.ok(a1 != null);
       a1.uninstall();
-      do_check_eq(gCacheFlushCount, 0);
+      Assert.equal(gCacheFlushCount, 0);
 
       gExpectedFile = gProfD.clone();
       gExpectedFile.append("extensions");
       gExpectedFile.append("addon1@tests.mozilla.org.xpi");
       restartManager();
-      do_check_eq(gCacheFlushCount, 1);
+      Assert.equal(gCacheFlushCount, 1);
       gExpectedFile = null;
       gCacheFlushCount = 0;
 
-      do_execute_soon(run_test_3);
+      executeSoon(run_test_3);
     });
   });
 }
@@ -88,7 +88,7 @@ function run_test_2() {
 function run_test_3() {
   AddonManager.getInstallForFile(do_get_addon("test_cacheflush2"), function(aInstall) {
     aInstall.addListener({
-      onInstallStarted: function(aInstall) {
+      onInstallStarted() {
         // We should flush the staged XPI when completing the install
         gExpectedFile = gProfD.clone();
         gExpectedFile.append("extensions");
@@ -96,12 +96,12 @@ function run_test_3() {
         gExpectedFile.append("addon2@tests.mozilla.org.xpi");
       },
 
-      onInstallEnded: function(aInstall) {
-        do_check_eq(gCacheFlushCount, 1);
+      onInstallEnded() {
+        Assert.equal(gCacheFlushCount, 1);
         gExpectedFile = null;
         gCacheFlushCount = 0;
 
-        do_execute_soon(run_test_4);
+        executeSoon(run_test_4);
       }
     });
 
@@ -118,10 +118,10 @@ function run_test_4() {
     gExpectedFile.append("addon2@tests.mozilla.org.xpi");
 
     a2.uninstall();
-    do_check_eq(gCacheFlushCount, 2);
+    Assert.equal(gCacheFlushCount, 2);
     gExpectedFile = null;
     gCacheFlushCount = 0;
 
-    do_execute_soon(do_test_finished);
+    executeSoon(do_test_finished);
   });
 }

@@ -1,18 +1,18 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "InputBlockState.h"
 #include "AsyncPanZoomController.h"         // for AsyncPanZoomController
-#include "AsyncScrollBase.h"                // for kScrollSeriesTimeoutMs
+#include "ScrollAnimationPhysics.h"         // for kScrollSeriesTimeoutMs
 #include "gfxPrefs.h"                       // for gfxPrefs
 #include "mozilla/MouseEvents.h"
-#include "mozilla/SizePrintfMacros.h"       // for PRIuSIZE
 #include "mozilla/Telemetry.h"              // for Telemetry
 #include "mozilla/layers/APZCTreeManager.h" // for AllowedTouchBehavior
 #include "OverscrollHandoffState.h"
+#include "QueuedInput.h"
 
 #define TBS_LOG(...)
 // #define TBS_LOG(...) printf_stderr("TBS: " __VA_ARGS__)
@@ -37,7 +37,8 @@ InputBlockState::InputBlockState(const RefPtr<AsyncPanZoomController>& aTargetAp
 
 bool
 InputBlockState::SetConfirmedTargetApzc(const RefPtr<AsyncPanZoomController>& aTargetApzc,
-                                        TargetConfirmationState aState)
+                                        TargetConfirmationState aState,
+                                        InputData* aFirstInput)
 {
   MOZ_ASSERT(aState == TargetConfirmationState::eConfirmed
           || aState == TargetConfirmationState::eTimedOut);
@@ -151,6 +152,12 @@ InputBlockState::IsDownchainOfScrolledApzc(AsyncPanZoomController* aApzc) const
   return IsDownchainOf(mScrolledApzc, aApzc);
 }
 
+void
+InputBlockState::DispatchEvent(const InputData& aEvent) const
+{
+  GetTargetApzc()->HandleInputEvent(aEvent, mTransformToApzc);
+}
+
 CancelableBlockState::CancelableBlockState(const RefPtr<AsyncPanZoomController>& aTargetApzc,
                                            bool aTargetConfirmed)
   : InputBlockState(aTargetApzc, aTargetConfirmed)
@@ -224,20 +231,6 @@ CancelableBlockState::IsReadyForHandling() const
 }
 
 void
-CancelableBlockState::DispatchImmediate(const InputData& aEvent) const
-{
-  MOZ_ASSERT(!HasEvents());
-  MOZ_ASSERT(GetTargetApzc());
-  DispatchEvent(aEvent);
-}
-
-void
-CancelableBlockState::DispatchEvent(const InputData& aEvent) const
-{
-  GetTargetApzc()->HandleInputEvent(aEvent, mTransformToApzc);
-}
-
-void
 CancelableBlockState::RecordContentResponseTime()
 {
   if (!mContentResponseTimer) {
@@ -278,6 +271,12 @@ DragBlockState::MarkMouseUpReceived()
 }
 
 void
+DragBlockState::SetInitialThumbPos(CSSCoord aThumbPos)
+{
+  mInitialThumbPos = aThumbPos;
+}
+
+void
 DragBlockState::SetDragMetrics(const AsyncDragMetrics& aDragMetrics)
 {
   mDragMetrics = aDragMetrics;
@@ -291,37 +290,7 @@ DragBlockState::DispatchEvent(const InputData& aEvent) const
     return;
   }
 
-  GetTargetApzc()->HandleDragEvent(mouseInput, mDragMetrics);
-}
-
-void
-DragBlockState::AddEvent(const MouseInput& aEvent)
-{
-  mEvents.AppendElement(aEvent);
-}
-
-bool
-DragBlockState::HasEvents() const
-{
-  return !mEvents.IsEmpty();
-}
-
-void
-DragBlockState::DropEvents()
-{
-  TBS_LOG("%p dropping %" PRIuSIZE " events\n", this, mEvents.Length());
-  mEvents.Clear();
-}
-
-void
-DragBlockState::HandleEvents()
-{
-  while (HasEvents()) {
-    TBS_LOG("%p returning first of %" PRIuSIZE " events\n", this, mEvents.Length());
-    MouseInput event = mEvents[0];
-    mEvents.RemoveElementAt(0);
-    DispatchEvent(event);
-  }
+  GetTargetApzc()->HandleDragEvent(mouseInput, mDragMetrics, mInitialThumbPos);
 }
 
 bool
@@ -353,7 +322,8 @@ WheelBlockState::WheelBlockState(const RefPtr<AsyncPanZoomController>& aTargetAp
     // content should have found a scrollable apzc, so we don't need to handle
     // that case.
     RefPtr<AsyncPanZoomController> apzc =
-      mOverscrollHandoffChain->FindFirstScrollable(aInitialEvent);
+      mOverscrollHandoffChain->FindFirstScrollable(
+          aInitialEvent, &mAllowedScrollDirections);
 
     // If nothing is scrollable, we don't consider this block as starting a
     // transaction.
@@ -379,18 +349,19 @@ WheelBlockState::SetContentResponse(bool aPreventDefault)
 
 bool
 WheelBlockState::SetConfirmedTargetApzc(const RefPtr<AsyncPanZoomController>& aTargetApzc,
-                                        TargetConfirmationState aState)
+                                        TargetConfirmationState aState,
+                                        InputData* aFirstInput)
 {
   // The APZC that we find via APZCCallbackHelpers may not be the same APZC
   // ESM or OverscrollHandoff would have computed. Make sure we get the right
   // one by looking for the first apzc the next pending event can scroll.
   RefPtr<AsyncPanZoomController> apzc = aTargetApzc;
-  if (apzc && mEvents.Length() > 0) {
-    const ScrollWheelInput& event = mEvents.ElementAt(0);
-    apzc = apzc->BuildOverscrollHandoffChain()->FindFirstScrollable(event);
+  if (apzc && aFirstInput) {
+    apzc = apzc->BuildOverscrollHandoffChain()->FindFirstScrollable(
+        *aFirstInput, &mAllowedScrollDirections);
   }
 
-  InputBlockState::SetConfirmedTargetApzc(apzc, aState);
+  InputBlockState::SetConfirmedTargetApzc(apzc, aState, aFirstInput);
   return true;
 }
 
@@ -431,36 +402,6 @@ WheelBlockState::Update(ScrollWheelInput& aEvent)
   // timeout and the mouse-move-in-frame timeout.
   mLastEventTime = aEvent.mTimeStamp;
   mLastMouseMove = TimeStamp();
-}
-
-void
-WheelBlockState::AddEvent(const ScrollWheelInput& aEvent)
-{
-  mEvents.AppendElement(aEvent);
-}
-
-bool
-WheelBlockState::HasEvents() const
-{
-  return !mEvents.IsEmpty();
-}
-
-void
-WheelBlockState::DropEvents()
-{
-  TBS_LOG("%p dropping %" PRIuSIZE " events\n", this, mEvents.Length());
-  mEvents.Clear();
-}
-
-void
-WheelBlockState::HandleEvents()
-{
-  while (HasEvents()) {
-    TBS_LOG("%p returning first of %" PRIuSIZE " events\n", this, mEvents.Length());
-    ScrollWheelInput event = mEvents[0];
-    mEvents.RemoveElementAt(0);
-    DispatchEvent(event);
-  }
 }
 
 bool
@@ -614,7 +555,8 @@ PanGestureBlockState::PanGestureBlockState(const RefPtr<AsyncPanZoomController>&
     // content should have found a scrollable apzc, so we don't need to handle
     // that case.
     RefPtr<AsyncPanZoomController> apzc =
-      mOverscrollHandoffChain->FindFirstScrollable(aInitialEvent);
+      mOverscrollHandoffChain->FindFirstScrollable(
+          aInitialEvent, &mAllowedScrollDirections);
 
     if (apzc && apzc != GetTargetApzc()) {
       UpdateTargetApzc(apzc);
@@ -624,53 +566,24 @@ PanGestureBlockState::PanGestureBlockState(const RefPtr<AsyncPanZoomController>&
 
 bool
 PanGestureBlockState::SetConfirmedTargetApzc(const RefPtr<AsyncPanZoomController>& aTargetApzc,
-                                             TargetConfirmationState aState)
+                                             TargetConfirmationState aState,
+                                             InputData* aFirstInput)
 {
   // The APZC that we find via APZCCallbackHelpers may not be the same APZC
   // ESM or OverscrollHandoff would have computed. Make sure we get the right
   // one by looking for the first apzc the next pending event can scroll.
   RefPtr<AsyncPanZoomController> apzc = aTargetApzc;
-  if (apzc && mEvents.Length() > 0) {
-    const PanGestureInput& event = mEvents.ElementAt(0);
+  if (apzc && aFirstInput) {
     RefPtr<AsyncPanZoomController> scrollableApzc =
-      apzc->BuildOverscrollHandoffChain()->FindFirstScrollable(event);
+      apzc->BuildOverscrollHandoffChain()->FindFirstScrollable(
+          *aFirstInput, &mAllowedScrollDirections);
     if (scrollableApzc) {
       apzc = scrollableApzc;
     }
   }
 
-  InputBlockState::SetConfirmedTargetApzc(apzc, aState);
+  InputBlockState::SetConfirmedTargetApzc(apzc, aState, aFirstInput);
   return true;
-}
-
-void
-PanGestureBlockState::AddEvent(const PanGestureInput& aEvent)
-{
-  mEvents.AppendElement(aEvent);
-}
-
-bool
-PanGestureBlockState::HasEvents() const
-{
-  return !mEvents.IsEmpty();
-}
-
-void
-PanGestureBlockState::DropEvents()
-{
-  TBS_LOG("%p dropping %" PRIuSIZE " events\n", this, mEvents.Length());
-  mEvents.Clear();
-}
-
-void
-PanGestureBlockState::HandleEvents()
-{
-  while (HasEvents()) {
-    TBS_LOG("%p returning first of %" PRIuSIZE " events\n", this, mEvents.Length());
-    PanGestureInput event = mEvents[0];
-    mEvents.RemoveElementAt(0);
-    DispatchEvent(event);
-  }
 }
 
 bool
@@ -750,7 +663,7 @@ TouchBlockState::SetAllowedTouchBehaviors(const nsTArray<TouchBehaviorFlags>& aB
   if (mAllowedTouchBehaviorSet) {
     return false;
   }
-  TBS_LOG("%p got allowed touch behaviours for %" PRIuSIZE " points\n", this, aBehaviors.Length());
+  TBS_LOG("%p got allowed touch behaviours for %zu points\n", this, aBehaviors.Length());
   mAllowedTouchBehaviors.AppendElements(aBehaviors);
   mAllowedTouchBehaviorSet = true;
   return true;
@@ -832,19 +745,6 @@ TouchBlockState::SingleTapOccurred() const
 }
 
 bool
-TouchBlockState::HasEvents() const
-{
-  return !mEvents.IsEmpty();
-}
-
-void
-TouchBlockState::AddEvent(const MultiTouchInput& aEvent)
-{
-  TBS_LOG("%p adding event of type %d\n", this, aEvent.mType);
-  mEvents.AppendElement(aEvent);
-}
-
-bool
 TouchBlockState::MustStayActive()
 {
   return true;
@@ -854,24 +754,6 @@ const char*
 TouchBlockState::Type()
 {
   return "touch";
-}
-
-void
-TouchBlockState::DropEvents()
-{
-  TBS_LOG("%p dropping %" PRIuSIZE " events\n", this, mEvents.Length());
-  mEvents.Clear();
-}
-
-void
-TouchBlockState::HandleEvents()
-{
-  while (HasEvents()) {
-    TBS_LOG("%p returning first of %" PRIuSIZE " events\n", this, mEvents.Length());
-    MultiTouchInput event = mEvents[0];
-    mEvents.RemoveElementAt(0);
-    DispatchEvent(event);
-  }
 }
 
 void
@@ -989,6 +871,11 @@ uint32_t
 TouchBlockState::GetActiveTouchCount() const
 {
   return mTouchCounter.GetActiveTouchCount();
+}
+
+KeyboardBlockState::KeyboardBlockState(const RefPtr<AsyncPanZoomController>& aTargetApzc)
+  : InputBlockState(aTargetApzc, true)
+{
 }
 
 } // namespace layers

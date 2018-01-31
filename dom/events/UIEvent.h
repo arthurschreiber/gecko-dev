@@ -54,7 +54,7 @@ public:
   void InitUIEvent(const nsAString& typeArg,
                    bool canBubbleArg,
                    bool cancelableArg,
-                   nsGlobalWindow* viewArg,
+                   nsGlobalWindowInner* viewArg,
                    int32_t detailArg);
 
   nsPIDOMWindowOuter* GetView() const
@@ -92,13 +92,6 @@ public:
   already_AddRefed<nsINode> GetRangeParent();
 
   int32_t RangeOffset() const;
-
-  bool CancelBubble() const
-  {
-    return mEvent->PropagationStopped();
-  }
-
-  bool IsChar() const;
 
 protected:
   ~UIEvent() {}

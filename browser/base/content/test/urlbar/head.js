@@ -1,117 +1,15 @@
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+/* eslint-env mozilla/frame-script */
 
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-  "resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+
+ChromeUtils.defineModuleGetter(this, "PlacesUtils",
   "resource://gre/modules/PlacesUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesTestUtils",
+ChromeUtils.defineModuleGetter(this, "PlacesTestUtils",
   "resource://testing-common/PlacesTestUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "TabCrashHandler",
-  "resource:///modules/ContentCrashHandlers.jsm");
-
-function waitForCondition(condition, nextTest, errorMsg, retryTimes) {
-  retryTimes = typeof retryTimes !== 'undefined' ?  retryTimes : 30;
-  var tries = 0;
-  var interval = setInterval(function() {
-    if (tries >= retryTimes) {
-      ok(false, errorMsg);
-      moveOn();
-    }
-    var conditionPassed;
-    try {
-      conditionPassed = condition();
-    } catch (e) {
-      ok(false, e + "\n" + e.stack);
-      conditionPassed = false;
-    }
-    if (conditionPassed) {
-      moveOn();
-    }
-    tries++;
-  }, 100);
-  var moveOn = function() { clearInterval(interval); nextTest(); };
-}
-
-function promiseWaitForCondition(aConditionFn) {
-  let deferred = Promise.defer();
-  waitForCondition(aConditionFn, deferred.resolve, "Condition didn't pass.");
-  return deferred.promise;
-}
-
-function promiseWaitForEvent(object, eventName, capturing = false, chrome = false) {
-  return new Promise((resolve) => {
-    function listener(event) {
-      info("Saw " + eventName);
-      object.removeEventListener(eventName, listener, capturing, chrome);
-      resolve(event);
-    }
-
-    info("Waiting for " + eventName);
-    object.addEventListener(eventName, listener, capturing, chrome);
-  });
-}
-
-function promiseWindowWillBeClosed(win) {
-  return new Promise((resolve, reject) => {
-    Services.obs.addObserver(function observe(subject, topic) {
-      if (subject == win) {
-        Services.obs.removeObserver(observe, topic);
-        resolve();
-      }
-    }, "domwindowclosed", false);
-  });
-}
-
-function promiseWindowClosed(win) {
-  let promise = promiseWindowWillBeClosed(win);
-  win.close();
-  return promise;
-}
-
-function promiseOpenAndLoadWindow(aOptions, aWaitForDelayedStartup=false) {
-  let deferred = Promise.defer();
-  let win = OpenBrowserWindow(aOptions);
-  if (aWaitForDelayedStartup) {
-    Services.obs.addObserver(function onDS(aSubject, aTopic, aData) {
-      if (aSubject != win) {
-        return;
-      }
-      Services.obs.removeObserver(onDS, "browser-delayed-startup-finished");
-      deferred.resolve(win);
-    }, "browser-delayed-startup-finished", false);
-
-  } else {
-    win.addEventListener("load", function onLoad() {
-      win.removeEventListener("load", onLoad);
-      deferred.resolve(win);
-    });
-  }
-  return deferred.promise;
-}
-
-function whenNewTabLoaded(aWindow, aCallback) {
-  aWindow.BrowserOpenTab();
-
-  let browser = aWindow.gBrowser.selectedBrowser;
-  if (browser.contentDocument.readyState === "complete") {
-    aCallback();
-    return;
-  }
-
-  whenTabLoaded(aWindow.gBrowser.selectedTab, aCallback);
-}
-
-function whenTabLoaded(aTab, aCallback) {
-  promiseTabLoadEvent(aTab).then(aCallback);
-}
-
-function promiseTabLoaded(aTab) {
-  let deferred = Promise.defer();
-  whenTabLoaded(aTab, deferred.resolve);
-  return deferred.promise;
-}
+ChromeUtils.defineModuleGetter(this, "Preferences",
+  "resource://gre/modules/Preferences.jsm");
+ChromeUtils.defineModuleGetter(this, "HttpServer",
+  "resource://testing-common/httpd.js");
 
 /**
  * Waits for the next top-level document load in the current browser.  The URI
@@ -129,10 +27,10 @@ function promiseTabLoaded(aTab) {
  *        progress listener callback.
  * @return promise
  */
-function waitForDocLoadAndStopIt(aExpectedURL, aBrowser=gBrowser.selectedBrowser, aStopFromProgressListener=true) {
-  function content_script(aStopFromProgressListener) {
+function waitForDocLoadAndStopIt(aExpectedURL, aBrowser = gBrowser.selectedBrowser, aStopFromProgressListener = true) {
+  function content_script(contentStopFromProgressListener) {
     let { interfaces: Ci, utils: Cu } = Components;
-    Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+    ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
     let wp = docShell.QueryInterface(Ci.nsIWebProgress);
 
     function stopContent(now, uri) {
@@ -148,7 +46,7 @@ function waitForDocLoadAndStopIt(aExpectedURL, aBrowser=gBrowser.selectedBrowser
     }
 
     let progressListener = {
-      onStateChange: function (webProgress, req, flags, status) {
+      onStateChange(webProgress, req, flags, status) {
         dump("waitForDocLoadAndStopIt: onStateChange " + flags.toString(16) + ": " + req.name + "\n");
 
         if (webProgress.isTopLevel &&
@@ -158,7 +56,7 @@ function waitForDocLoadAndStopIt(aExpectedURL, aBrowser=gBrowser.selectedBrowser
           let chan = req.QueryInterface(Ci.nsIChannel);
           dump(`waitForDocLoadAndStopIt: Document start: ${chan.URI.spec}\n`);
 
-          stopContent(aStopFromProgressListener, chan.originalURI.spec);
+          stopContent(contentStopFromProgressListener, chan.originalURI.spec);
         }
       },
       QueryInterface: XPCOMUtils.generateQI(["nsISupportsWeakReference"])
@@ -170,7 +68,7 @@ function waitForDocLoadAndStopIt(aExpectedURL, aBrowser=gBrowser.selectedBrowser
      * event handler is the easiest way to ensure the weakly referenced
      * progress listener is kept alive as long as necessary.
      */
-    addEventListener("unload", function () {
+    addEventListener("unload", function() {
       try {
         wp.removeProgressListener(progressListener);
       } catch (e) { /* Will most likely fail. */ }
@@ -189,64 +87,6 @@ function waitForDocLoadAndStopIt(aExpectedURL, aBrowser=gBrowser.selectedBrowser
     mm.addMessageListener("Test:WaitForDocLoadAndStopIt", complete);
     info("waitForDocLoadAndStopIt: Waiting for URL: " + aExpectedURL);
   });
-}
-
-/**
- * Waits for a load (or custom) event to finish in a given tab. If provided
- * load an uri into the tab.
- *
- * @param tab
- *        The tab to load into.
- * @param [optional] url
- *        The url to load, or the current url.
- * @return {Promise} resolved when the event is handled.
- * @resolves to the received event
- * @rejects if a valid load event is not received within a meaningful interval
- */
-function promiseTabLoadEvent(tab, url)
-{
-  let deferred = Promise.defer();
-  info("Wait tab event: load");
-
-  function handle(loadedUrl) {
-    if (loadedUrl === "about:blank" || (url && loadedUrl !== url)) {
-      info(`Skipping spurious load event for ${loadedUrl}`);
-      return false;
-    }
-
-    info("Tab event received: load");
-    return true;
-  }
-
-  // Create two promises: one resolved from the content process when the page
-  // loads and one that is rejected if we take too long to load the url.
-  let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, handle);
-
-  let timeout = setTimeout(() => {
-    deferred.reject(new Error("Timed out while waiting for a 'load' event"));
-  }, 30000);
-
-  loaded.then(() => {
-    clearTimeout(timeout);
-    deferred.resolve()
-  });
-
-  if (url)
-    BrowserTestUtils.loadURI(tab.linkedBrowser, url);
-
-  // Promise.all rejects if either promise rejects (i.e. if we time out) and
-  // if our loaded promise resolves before the timeout, then we resolve the
-  // timeout promise as well, causing the all promise to resolve.
-  return Promise.all([deferred.promise, loaded]);
-}
-
-function makeActionURI(action, params) {
-  let encodedParams = {};
-  for (let key in params) {
-    encodedParams[key] = encodeURIComponent(params[key]);
-  }
-  let url = "moz-action:" + action + "," + JSON.stringify(encodedParams);
-  return NetUtil.newURI(url);
 }
 
 function is_hidden(element) {
@@ -291,6 +131,19 @@ function is_element_hidden(element, msg) {
   ok(is_hidden(element), msg || "Element should be hidden");
 }
 
+function runHttpServer(scheme, host, port = -1) {
+  let httpserver = new HttpServer();
+  try {
+    httpserver.start(port);
+    port = httpserver.identity.primaryPort;
+    httpserver.identity.setPrimary(scheme, host, port);
+  } catch (ex) {
+    info("We can't launch our http server successfully.");
+  }
+  is(httpserver.identity.has(scheme, host, port), true, `${scheme}://${host}:${port} is listening.`);
+  return httpserver;
+}
+
 function promisePopupEvent(popup, eventSuffix) {
   let endState = {shown: "open", hidden: "closed"}[eventSuffix];
 
@@ -298,13 +151,12 @@ function promisePopupEvent(popup, eventSuffix) {
     return Promise.resolve();
 
   let eventType = "popup" + eventSuffix;
-  let deferred = Promise.defer();
-  popup.addEventListener(eventType, function onPopupShown(event) {
-    popup.removeEventListener(eventType, onPopupShown);
-    deferred.resolve();
-  });
+  return new Promise(resolve => {
+    popup.addEventListener(eventType, function(event) {
+      resolve();
+    }, {once: true});
 
-  return deferred.promise;
+  });
 }
 
 function promisePopupShown(popup) {
@@ -315,22 +167,30 @@ function promisePopupHidden(popup) {
   return promisePopupEvent(popup, "hidden");
 }
 
-function promiseSearchComplete(win = window) {
+function promiseSearchComplete(win = window, dontAnimate = false) {
   return promisePopupShown(win.gURLBar.popup).then(() => {
     function searchIsComplete() {
-      return win.gURLBar.controller.searchStatus >=
-        Ci.nsIAutoCompleteController.STATUS_COMPLETE_NO_MATCH;
+      let isComplete = win.gURLBar.controller.searchStatus >=
+                       Ci.nsIAutoCompleteController.STATUS_COMPLETE_NO_MATCH;
+      if (isComplete) {
+        info(`Restore popup dontAnimate value to ${dontAnimate}`);
+        win.gURLBar.popup.setAttribute("dontanimate", dontAnimate);
+      }
+      return isComplete;
     }
 
     // Wait until there are at least two matches.
-    return new Promise(resolve => waitForCondition(searchIsComplete, resolve));
+    return BrowserTestUtils.waitForCondition(searchIsComplete, "waiting urlbar search to complete");
   });
 }
 
 function promiseAutocompleteResultPopup(inputText,
                                         win = window,
                                         fireInputEvent = false) {
+  let dontAnimate = !!win.gURLBar.popup.getAttribute("dontanimate");
   waitForFocus(() => {
+    info(`Disable popup animation. Change dontAnimate value from ${dontAnimate} to true.`);
+    win.gURLBar.popup.setAttribute("dontanimate", "true");
     win.gURLBar.focus();
     win.gURLBar.value = inputText;
     if (fireInputEvent) {
@@ -342,7 +202,7 @@ function promiseAutocompleteResultPopup(inputText,
     win.gURLBar.controller.startSearch(inputText);
   }, win);
 
-  return promiseSearchComplete(win);
+  return promiseSearchComplete(win, dontAnimate);
 }
 
 function promiseNewSearchEngine(basename) {
@@ -350,12 +210,12 @@ function promiseNewSearchEngine(basename) {
     info("Waiting for engine to be added: " + basename);
     let url = getRootDirectory(gTestPath) + basename;
     Services.search.addEngine(url, null, "", false, {
-      onSuccess: function (engine) {
+      onSuccess(engine) {
         info("Search engine added: " + basename);
         registerCleanupFunction(() => Services.search.removeEngine(engine));
         resolve(engine);
       },
-      onError: function (errCode) {
+      onError(errCode) {
         Assert.ok(false, "addEngine failed with error code " + errCode);
         reject();
       },
@@ -363,3 +223,126 @@ function promiseNewSearchEngine(basename) {
   });
 }
 
+function promisePageActionPanelOpen() {
+  let dwu = window.QueryInterface(Ci.nsIInterfaceRequestor)
+                  .getInterface(Ci.nsIDOMWindowUtils);
+  return BrowserTestUtils.waitForCondition(() => {
+    // Wait for the main page action button to become visible.  It's hidden for
+    // some URIs, so depending on when this is called, it may not yet be quite
+    // visible.  It's up to the caller to make sure it will be visible.
+    info("Waiting for main page action button to have non-0 size");
+    let bounds = dwu.getBoundsWithoutFlushing(BrowserPageActions.mainButtonNode);
+    return bounds.width > 0 && bounds.height > 0;
+  }).then(() => {
+    // Wait for the panel to become open, by clicking the button if necessary.
+    info("Waiting for main page action panel to be open");
+    if (BrowserPageActions.panelNode.state == "open") {
+      return Promise.resolve();
+    }
+    let shownPromise = promisePageActionPanelShown();
+    EventUtils.synthesizeMouseAtCenter(BrowserPageActions.mainButtonNode, {});
+    return shownPromise;
+  }).then(() => {
+    // Wait for items in the panel to become visible.
+    return promisePageActionViewChildrenVisible(BrowserPageActions.mainViewNode);
+  });
+}
+
+function promisePageActionPanelShown() {
+  return promisePanelShown(BrowserPageActions.panelNode);
+}
+
+function promisePageActionPanelHidden() {
+  return promisePanelHidden(BrowserPageActions.panelNode);
+}
+
+function promisePanelShown(panelIDOrNode) {
+  return promisePanelEvent(panelIDOrNode, "popupshown");
+}
+
+function promisePanelHidden(panelIDOrNode) {
+  return promisePanelEvent(panelIDOrNode, "popuphidden");
+}
+
+function promisePanelEvent(panelIDOrNode, eventType) {
+  return new Promise(resolve => {
+    let panel = typeof(panelIDOrNode) != "string" ? panelIDOrNode :
+                document.getElementById(panelIDOrNode);
+    if (!panel ||
+        (eventType == "popupshown" && panel.state == "open") ||
+        (eventType == "popuphidden" && panel.state == "closed")) {
+      executeSoon(resolve);
+      return;
+    }
+    panel.addEventListener(eventType, () => {
+      executeSoon(resolve);
+    }, { once: true });
+  });
+}
+
+function promisePageActionViewShown() {
+  info("promisePageActionViewShown waiting for ViewShown");
+  return BrowserTestUtils.waitForEvent(BrowserPageActions.panelNode, "ViewShown").then(async event => {
+    let panelViewNode = event.originalTarget;
+    await promisePageActionViewChildrenVisible(panelViewNode);
+    return panelViewNode;
+  });
+}
+
+function promisePageActionViewChildrenVisible(panelViewNode) {
+  info("promisePageActionViewChildrenVisible waiting for a child node to be visible");
+  let dwu = window.QueryInterface(Ci.nsIInterfaceRequestor)
+                  .getInterface(Ci.nsIDOMWindowUtils);
+  return BrowserTestUtils.waitForCondition(() => {
+    let bodyNode = panelViewNode.firstChild;
+    for (let childNode of bodyNode.childNodes) {
+      let bounds = dwu.getBoundsWithoutFlushing(childNode);
+      if (bounds.width > 0 && bounds.height > 0) {
+        return true;
+      }
+    }
+    return false;
+  });
+}
+
+function promiseSpeculativeConnection(httpserver) {
+  return BrowserTestUtils.waitForCondition(() => {
+    if (httpserver) {
+      return httpserver.connectionNumber == 1;
+    }
+    return false;
+  }, "Waiting for connection setup");
+}
+
+async function waitForAutocompleteResultAt(index) {
+  let searchString = gURLBar.controller.searchString;
+  await BrowserTestUtils.waitForCondition(
+    () => gURLBar.popup.richlistbox.children.length > index &&
+          gURLBar.popup.richlistbox.children[index].getAttribute("ac-text") == searchString,
+    `Waiting for the autocomplete result for "${searchString}" at [${index}] to appear`);
+  // Ensure the addition is complete, for proper mouse events on the entries.
+  await new Promise(resolve => window.requestIdleCallback(resolve, {timeout: 1000}));
+  return gURLBar.popup.richlistbox.children[index];
+}
+
+function promiseSuggestionsPresent(msg = "") {
+  return TestUtils.waitForCondition(suggestionsPresent,
+                                    msg || "Waiting for suggestions");
+}
+
+function suggestionsPresent() {
+  let controller = gURLBar.popup.input.controller;
+  let matchCount = controller.matchCount;
+  for (let i = 0; i < matchCount; i++) {
+    let url = controller.getValueAt(i);
+    let mozActionMatch = url.match(/^moz-action:([^,]+),(.*)$/);
+    if (mozActionMatch) {
+      let [, type, paramStr] = mozActionMatch;
+      let params = JSON.parse(paramStr);
+      if (type == "searchengine" && "searchSuggestion" in params) {
+        return true;
+      }
+    }
+  }
+  return false;
+}

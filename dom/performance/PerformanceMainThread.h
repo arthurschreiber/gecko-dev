@@ -8,24 +8,27 @@
 #define mozilla_dom_PerformanceMainThread_h
 
 #include "Performance.h"
+#include "PerformanceStorage.h"
 
 namespace mozilla {
 namespace dom {
 
 class PerformanceMainThread final : public Performance
+                                  , public PerformanceStorage
 {
 public:
   PerformanceMainThread(nsPIDOMWindowInner* aWindow,
                         nsDOMNavigationTiming* aDOMTiming,
-                        nsITimedChannel* aChannel,
-                        Performance* aParentPerformance);
+                        nsITimedChannel* aChannel);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(PerformanceMainThread,
                                                          Performance)
 
-  // Performance WebIDL methods
-  DOMHighResTimeStamp Now() const override;
+  PerformanceStorage* AsPerformanceStorage() override
+  {
+    return this;
+  }
 
   virtual PerformanceTiming* Timing() override;
 
@@ -51,18 +54,17 @@ public:
     return mChannel;
   }
 
-  virtual Performance* GetParentPerformance() const override
-  {
-    return mParentPerformance;
-  }
+  // The GetEntries* methods need to be overriden in order to add the
+  // the document entry of type navigation.
+  virtual void GetEntries(nsTArray<RefPtr<PerformanceEntry>>& aRetval) override;
+  virtual void GetEntriesByType(const nsAString& aEntryType,
+                                nsTArray<RefPtr<PerformanceEntry>>& aRetval) override;
+  virtual void GetEntriesByName(const nsAString& aName,
+                                const Optional<nsAString>& aEntryType,
+                                nsTArray<RefPtr<PerformanceEntry>>& aRetval) override;
 
 protected:
   ~PerformanceMainThread();
-
-  nsISupports* GetAsISupports() override
-  {
-    return this;
-  }
 
   void InsertUserEntry(PerformanceEntry* aEntry) override;
 
@@ -72,12 +74,13 @@ protected:
   GetPerformanceTimingFromString(const nsAString& aTimingName) override;
 
   void DispatchBufferFullEvent() override;
+  void EnsureDocEntry();
 
+  RefPtr<PerformanceEntry> mDocEntry;
   RefPtr<nsDOMNavigationTiming> mDOMTiming;
   nsCOMPtr<nsITimedChannel> mChannel;
   RefPtr<PerformanceTiming> mTiming;
   RefPtr<PerformanceNavigation> mNavigation;
-  RefPtr<Performance> mParentPerformance;
   JS::Heap<JSObject*> mMozMemory;
 };
 

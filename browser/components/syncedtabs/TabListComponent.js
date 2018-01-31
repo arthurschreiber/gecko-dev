@@ -6,15 +6,17 @@
 
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-let log = Cu.import("resource://gre/modules/Log.jsm", {})
+let log = ChromeUtils.import("resource://gre/modules/Log.jsm", {})
             .Log.repository.getLogger("Sync.RemoteTabs");
 
-XPCOMUtils.defineLazyModuleGetter(this, "BrowserUITelemetry",
+ChromeUtils.defineModuleGetter(this, "BrowserUITelemetry",
   "resource:///modules/BrowserUITelemetry.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUIUtils",
+ChromeUtils.defineModuleGetter(this, "PlacesUIUtils",
   "resource:///modules/PlacesUIUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "Services",
+  "resource://gre/modules/Services.jsm");
 
 this.EXPORTED_SYMBOLS = [
   "TabListComponent"
@@ -29,11 +31,13 @@ this.EXPORTED_SYMBOLS = [
  * to state changes so it can rerender.
  */
 
-function TabListComponent({window, store, View, SyncedTabs, clipboardHelper}) {
+function TabListComponent({window, store, View, SyncedTabs, clipboardHelper,
+                           getChromeWindow}) {
   this._window = window;
   this._store = store;
   this._View = View;
   this._clipboardHelper = clipboardHelper;
+  this._getChromeWindow = getChromeWindow;
   // used to trigger Sync from context menu
   this._SyncedTabs = SyncedTabs;
 }
@@ -116,7 +120,7 @@ TabListComponent.prototype = {
     BrowserUITelemetry.countSyncedTabEvent("open", "sidebar");
   },
 
-  onOpenTabs(urls, where, params) {
+  onOpenTabs(urls, where) {
     if (!PlacesUIUtils.confirmOpenInTabs(urls.length, this._window)) {
       return;
     }
@@ -124,9 +128,12 @@ TabListComponent.prototype = {
       this._window.openDialog(this._window.getBrowserURL(), "_blank",
                               "chrome,dialog=no,all", urls.join("|"));
     } else {
-      for (let url of urls) {
-        this._window.openUILinkIn(url, where, params);
-      }
+      let loadInBackground = where == "tabshifted";
+      this._getChromeWindow(this._window).gBrowser.loadTabs(urls, {
+        inBackground: loadInBackground,
+        replace: false,
+        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      });
     }
     BrowserUITelemetry.countSyncedTabEvent("openmultiple", "sidebar");
   },

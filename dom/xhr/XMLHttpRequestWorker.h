@@ -9,6 +9,7 @@
 
 #include "WorkerHolder.h"
 #include "XMLHttpRequest.h"
+#include "XMLHttpRequestString.h"
 #include "mozilla/dom/TypedArray.h"
 
 namespace mozilla {
@@ -16,6 +17,7 @@ namespace dom {
 
 class Proxy;
 class SendRunnable;
+class DOMString;
 
 namespace workers {
 class WorkerPrivate;
@@ -27,20 +29,21 @@ class XMLHttpRequestWorker final : public XMLHttpRequest,
 public:
   struct StateData
   {
-    nsString mResponseText;
+    XMLHttpRequestStringSnapshot mResponseText;
     nsString mResponseURL;
     uint32_t mStatus;
     nsCString mStatusText;
     uint16_t mReadyState;
+    bool mFlagSend;
     JS::Heap<JS::Value> mResponse;
     nsresult mResponseTextResult;
     nsresult mStatusResult;
     nsresult mResponseResult;
 
     StateData()
-    : mStatus(0), mReadyState(0), mResponse(JS::UndefinedValue()),
-      mResponseTextResult(NS_OK), mStatusResult(NS_OK),
-      mResponseResult(NS_OK)
+    : mStatus(0), mReadyState(0), mFlagSend(false),
+      mResponse(JS::UndefinedValue()), mResponseTextResult(NS_OK),
+      mStatusResult(NS_OK), mResponseResult(NS_OK)
     { }
 
     void trace(JSTracer* trc);
@@ -96,8 +99,20 @@ public:
 
   virtual void
   Open(const nsACString& aMethod, const nsAString& aUrl, bool aAsync,
-       const Optional<nsAString>& aUser, const Optional<nsAString>& aPassword,
-       ErrorResult& aRv) override;
+       const nsAString& aUsername, const nsAString& aPassword,
+       ErrorResult& aRv) override
+  {
+    Optional<nsAString> username;
+    username = &aUsername;
+    Optional<nsAString> password;
+    password = &aPassword;
+    Open(aMethod, aUrl, aAsync, username, password, aRv);
+  }
+
+  void
+  Open(const nsACString& aMethod, const nsAString& aUrl,
+       bool aAsync, const Optional<nsAString>& aUser,
+       const Optional<nsAString>& aPassword, ErrorResult& aRv);
 
   virtual void
   SetRequestHeader(const nsACString& aHeader, const nsACString& aValue,
@@ -152,36 +167,14 @@ public:
   GetUpload(ErrorResult& aRv) override;
 
   virtual void
-  Send(JSContext* aCx, ErrorResult& aRv) override;
+  Send(JSContext* aCx,
+       const Nullable<DocumentOrBlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString>& aData,
+       ErrorResult& aRv) override;
 
   virtual void
-  Send(JSContext* aCx, const nsAString& aBody, ErrorResult& aRv) override;
-
-  virtual void
-  Send(JSContext* aCx, nsIInputStream* aStream, ErrorResult& aRv) override
+  SendInputStream(nsIInputStream* aInputStream, ErrorResult& aRv) override
   {
-    MOZ_CRASH("This method cannot be called on workers.");
-  }
-
-  virtual void
-  Send(JSContext* aCx, Blob& aBody, ErrorResult& aRv) override;
-
-  virtual void
-  Send(JSContext* aCx, FormData& aBody, ErrorResult& aRv) override;
-
-  virtual void
-  Send(JSContext* aCx, const ArrayBuffer& aBody, ErrorResult& aRv) override;
-
-  virtual void
-  Send(JSContext* aCx, const ArrayBufferView& aBody, ErrorResult& aRv) override;
-
-  virtual void
-  Send(JSContext* aCx, URLSearchParams& aBody, ErrorResult& aRv) override;
-
-  virtual void
-  Send(JSContext* aCx, nsIDocument& aDoc, ErrorResult& aRv) override
-  {
-    MOZ_CRASH("This method cannot be called on workers.");
+    MOZ_CRASH("nsIInputStream is not a valid argument for XHR in workers.");
   }
 
   virtual void
@@ -232,7 +225,7 @@ public:
               ErrorResult& aRv) override;
 
   virtual void
-  GetResponseText(nsAString& aResponseText, ErrorResult& aRv) override;
+  GetResponseText(DOMString& aResponseText, ErrorResult& aRv) override;
 
   virtual nsIDocument*
   GetResponseXML(ErrorResult& aRv) override
@@ -266,8 +259,13 @@ public:
   void
   NullResponseText()
   {
-    mStateData.mResponseText.SetIsVoid(true);
+    mStateData.mResponseText.SetVoid();
     mStateData.mResponse.setNull();
+  }
+
+  virtual uint16_t ErrorCode() const override
+  {
+    return 0; // eOK
   }
 
   virtual bool MozAnon() const override

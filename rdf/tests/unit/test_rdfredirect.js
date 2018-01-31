@@ -3,7 +3,7 @@ var Ci = Components.interfaces;
 var Cu = Components.utils;
 var Cr = Components.results;
 
-Cu.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://testing-common/httpd.js");
 
 function getRDFService()
 {
@@ -63,12 +63,12 @@ rdfLoadObserver.prototype =
     var arc = rdfs.GetResource("http://purl.org/dc/elements/1.1/title");
     var answer = this.ds.GetTarget(res, arc, true);
     if (answer !== null) {
-      do_check_true(this.shouldPass);
-      do_check_true(answer instanceof Ci.nsIRDFLiteral);
-      do_check_eq(answer.Value, "Sample");
+      Assert.ok(this.shouldPass);
+      Assert.ok(answer instanceof Ci.nsIRDFLiteral);
+      Assert.equal(answer.Value, "Sample");
     }
     else {
-      do_check_false(this.shouldPass);
+      Assert.ok(!this.shouldPass);
     }
 
     gPending -= 1;

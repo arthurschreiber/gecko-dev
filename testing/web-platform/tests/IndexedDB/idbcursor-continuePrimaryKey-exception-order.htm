@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <meta charset="utf-8">
+<meta name="timeout" content="long">
 <title>IDBCursor.continuePrimaryKey() - Exception Orders </title>
 <link rel="author" title="Mozilla" href="https://www.mozilla.org">
 <link rel="help" href="http://w3c.github.io/IndexedDB/#dom-idbcursor-continueprimarykey">
@@ -44,12 +45,12 @@ indexeddb_test(
 
             store.deleteIndex("idx");
         });
-        txn.oncomplete = function() {
+        txn.oncomplete = t.step_func(function() {
             assert_throws("TransactionInactiveError", function() {
                 cursor.continuePrimaryKey("A", 4);
             }, "transaction-state check should precede deletion check");
             t.done();
-        };
+        });
     },
     null,
     "TransactionInactiveError v.s. InvalidStateError(deleted index)"
@@ -377,5 +378,3 @@ indexeddb_test(
     "DataError(keys are larger then current one) in 'prev' direction"
 );
 </script>
-
-<div id="log"></div>

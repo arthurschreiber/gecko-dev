@@ -19,10 +19,6 @@
 #undef MP_ASSEMBLY_SQUARE
 #endif
 
-#if defined(_MSC_VER) && _MSC_VER < 1900
-#define inline __inline
-#endif
-
 #if MP_LOGTAB
 /*
   A table of the logs of 2 for various bases (the 0 and 1 entries of
@@ -39,6 +35,10 @@
   which are the output bases supported.
  */
 #include "logtab.h"
+#endif
+
+#ifdef CT_VERIF
+#include <valgrind/memcheck.h>
 #endif
 
 /* {{{ Constant strings */
@@ -85,6 +85,26 @@ mp_set_prec(mp_size prec)
 } /* end mp_set_prec() */
 
 /* }}} */
+
+#ifdef CT_VERIF
+void
+mp_taint(mp_int *mp)
+{
+    size_t i;
+    for (i = 0; i < mp->used; ++i) {
+        VALGRIND_MAKE_MEM_UNDEFINED(&(mp->dp[i]), sizeof(mp_digit));
+    }
+}
+
+void
+mp_untaint(mp_int *mp)
+{
+    size_t i;
+    for (i = 0; i < mp->used; ++i) {
+        VALGRIND_MAKE_MEM_DEFINED(&(mp->dp[i]), sizeof(mp_digit));
+    }
+}
+#endif
 
 /*------------------------------------------------------------------------*/
 /* {{{ mp_init(mp) */
@@ -1297,88 +1317,6 @@ mp_mod_d(const mp_int *a, mp_digit d, mp_digit *c)
 
 /* }}} */
 
-/* {{{ mp_sqrt(a, b) */
-
-/*
-  mp_sqrt(a, b)
-
-  Compute the integer square root of a, and store the result in b.
-  Uses an integer-arithmetic version of Newton's iterative linear
-  approximation technique to determine this value; the result has the
-  following two properties:
-
-     b^2 <= a
-     (b+1)^2 >= a
-
-  It is a range error to pass a negative value.
- */
-mp_err
-mp_sqrt(const mp_int *a, mp_int *b)
-{
-    mp_int x, t;
-    mp_err res;
-    mp_size used;
-
-    ARGCHK(a != NULL && b != NULL, MP_BADARG);
-
-    /* Cannot take square root of a negative value */
-    if (SIGN(a) == NEG)
-        return MP_RANGE;
-
-    /* Special cases for zero and one, trivial     */
-    if (mp_cmp_d(a, 1) <= 0)
-        return mp_copy(a, b);
-
-    /* Initialize the temporaries we'll use below  */
-    if ((res = mp_init_size(&t, USED(a))) != MP_OKAY)
-        return res;
-
-    /* Compute an initial guess for the iteration as a itself */
-    if ((res = mp_init_copy(&x, a)) != MP_OKAY)
-        goto X;
-
-    used = MP_USED(&x);
-    if (used > 1) {
-        s_mp_rshd(&x, used / 2);
-    }
-
-    for (;;) {
-        /* t = (x * x) - a */
-        if ((res = mp_copy(&x, &t)) != MP_OKAY ||
-            (res = mp_sqr(&t, &t)) != MP_OKAY ||
-            (res = mp_sub(&t, a, &t)) != MP_OKAY)
-            goto CLEANUP;
-
-        /* t = t / 2x       */
-        s_mp_mul_2(&x);
-        if ((res = mp_div(&t, &x, &t, NULL)) != MP_OKAY)
-            goto CLEANUP;
-        s_mp_div_2(&x);
-
-        /* Terminate the loop, if the quotient is zero */
-        if (mp_cmp_z(&t) == MP_EQ)
-            break;
-
-        /* x = x - t       */
-        if ((res = mp_sub(&x, &t, &x)) != MP_OKAY)
-            goto CLEANUP;
-    }
-
-    /* Copy result to output parameter */
-    MP_CHECKOK(mp_sub_d(&x, 1, &x));
-    s_mp_exch(&x, b);
-
-CLEANUP:
-    mp_clear(&x);
-X:
-    mp_clear(&t);
-
-    return res;
-
-} /* end mp_sqrt() */
-
-/* }}} */
-
 /* }}} */
 
 /*------------------------------------------------------------------------*/
@@ -1757,7 +1695,6 @@ mp_iseven(const mp_int *a)
 /*------------------------------------------------------------------------*/
 /* {{{ Number theoretic functions */
 
-#if MP_NUMTH
 /* {{{ mp_gcd(a, b, c) */
 
 /*
@@ -2438,7 +2375,6 @@ mp_invmod(const mp_int *a, const mp_int *m, mp_int *c)
 } /* end mp_invmod() */
 
 /* }}} */
-#endif /* if MP_NUMTH */
 
 /* }}} */
 
@@ -2843,18 +2779,10 @@ s_mp_pad(mp_int *mp, mp_size min)
 /* {{{ s_mp_setz(dp, count) */
 
 /* Set 'count' digits pointed to by dp to be zeroes                       */
-inline void
+void
 s_mp_setz(mp_digit *dp, mp_size count)
 {
-#if MP_MEMSET == 0
-    int ix;
-
-    for (ix = 0; ix < count; ix++)
-        dp[ix] = 0;
-#else
     memset(dp, 0, count * sizeof(mp_digit));
-#endif
-
 } /* end s_mp_setz() */
 
 /* }}} */
@@ -2862,17 +2790,10 @@ s_mp_setz(mp_digit *dp, mp_size count)
 /* {{{ s_mp_copy(sp, dp, count) */
 
 /* Copy 'count' digits from sp to dp                                      */
-inline void
+void
 s_mp_copy(const mp_digit *sp, mp_digit *dp, mp_size count)
 {
-#if MP_MEMCPY == 0
-    int ix;
-
-    for (ix = 0; ix < count; ix++)
-        dp[ix] = sp[ix];
-#else
     memcpy(dp, sp, count * sizeof(mp_digit));
-#endif
 } /* end s_mp_copy() */
 
 /* }}} */
@@ -2880,7 +2801,7 @@ s_mp_copy(const mp_digit *sp, mp_digit *dp, mp_size count)
 /* {{{ s_mp_alloc(nb, ni) */
 
 /* Allocate ni records of nb bytes each, and return a pointer to that     */
-inline void *
+void *
 s_mp_alloc(size_t nb, size_t ni)
 {
     return calloc(nb, ni);
@@ -2892,7 +2813,7 @@ s_mp_alloc(size_t nb, size_t ni)
 /* {{{ s_mp_free(ptr) */
 
 /* Free the memory pointed to by ptr                                      */
-inline void
+void
 s_mp_free(void *ptr)
 {
     if (ptr) {
@@ -2905,7 +2826,7 @@ s_mp_free(void *ptr)
 /* {{{ s_mp_clamp(mp) */
 
 /* Remove leading zeroes from the given value                             */
-inline void
+void
 s_mp_clamp(mp_int *mp)
 {
     mp_size used = MP_USED(mp);
@@ -2923,6 +2844,9 @@ void
 s_mp_exch(mp_int *a, mp_int *b)
 {
     mp_int tmp;
+    if (!a || !b) {
+        return;
+    }
 
     tmp = *a;
     *a = *b;
@@ -4150,7 +4074,7 @@ s_mpv_sqr_add_prop(const mp_digit *pa, mp_size a_len, mp_digit *ps)
 }
 #endif
 
-#if (defined(MP_NO_MP_WORD) || defined(MP_NO_DIV_WORD)) && !defined(MP_ASSEMBLY_DIV_2DX1D)
+#if !defined(MP_ASSEMBLY_DIV_2DX1D)
 /*
 ** Divide 64-bit (Nhi,Nlo) by 32-bit divisor, which must be normalized
 ** so its high bit is 1.   This code is from NSPR.
@@ -4228,11 +4152,7 @@ mp_err s_mp_div(mp_int *rem,  /* i: dividend, o: remainder */
                 mp_int *quot) /* i: 0;        o: quotient  */
 {
     mp_int part, t;
-#if !defined(MP_NO_MP_WORD) && !defined(MP_NO_DIV_WORD)
-    mp_word q_msd;
-#else
     mp_digit q_msd;
-#endif
     mp_err res;
     mp_digit d;
     mp_digit div_msd;
@@ -4277,7 +4197,7 @@ mp_err s_mp_div(mp_int *rem,  /* i: dividend, o: remainder */
         MP_USED(&part) = MP_USED(div);
 
         /* We have now truncated the part of the remainder to the same length as
-     * the divisor. If part is smaller than div, extend part by one digit. */
+         * the divisor. If part is smaller than div, extend part by one digit. */
         if (s_mp_cmp(&part, div) < 0) {
             --unusedRem;
 #if MP_ARGCHK == 2
@@ -4294,18 +4214,12 @@ mp_err s_mp_div(mp_int *rem,  /* i: dividend, o: remainder */
         div_msd = MP_DIGIT(div, MP_USED(div) - 1);
         if (!partExtended) {
             /* In this case, q_msd /= div_msd is always 1. First, since div_msd is
-       * normalized to have the high bit set, 2*div_msd > MP_DIGIT_MAX. Since
-       * we didn't extend part, q_msd >= div_msd. Therefore we know that
-       * div_msd <= q_msd <= MP_DIGIT_MAX < 2*div_msd. Dividing by div_msd we
-       * get 1 <= q_msd/div_msd < 2. So q_msd /= div_msd must be 1. */
+             * normalized to have the high bit set, 2*div_msd > MP_DIGIT_MAX. Since
+             * we didn't extend part, q_msd >= div_msd. Therefore we know that
+             * div_msd <= q_msd <= MP_DIGIT_MAX < 2*div_msd. Dividing by div_msd we
+             * get 1 <= q_msd/div_msd < 2. So q_msd /= div_msd must be 1. */
             q_msd = 1;
         } else {
-#if !defined(MP_NO_MP_WORD) && !defined(MP_NO_DIV_WORD)
-            q_msd = (q_msd << MP_DIGIT_BIT) | MP_DIGIT(&part, MP_USED(&part) - 2);
-            q_msd /= div_msd;
-            if (q_msd == RADIX)
-                --q_msd;
-#else
             if (q_msd == div_msd) {
                 q_msd = MP_DIGIT_MAX;
             } else {
@@ -4313,7 +4227,6 @@ mp_err s_mp_div(mp_int *rem,  /* i: dividend, o: remainder */
                 MP_CHECKOK(s_mpv_div_2dx1d(q_msd, MP_DIGIT(&part, MP_USED(&part) - 2),
                                            div_msd, &q_msd, &r));
             }
-#endif
         }
 #if MP_ARGCHK == 2
         assert(q_msd > 0); /* This case should never occur any more. */
@@ -4323,15 +4236,15 @@ mp_err s_mp_div(mp_int *rem,  /* i: dividend, o: remainder */
 
         /* See what that multiplies out to                   */
         mp_copy(div, &t);
-        MP_CHECKOK(s_mp_mul_d(&t, (mp_digit)q_msd));
+        MP_CHECKOK(s_mp_mul_d(&t, q_msd));
 
         /*
-       If it's too big, back it off.  We should not have to do this
-       more than once, or, in rare cases, twice.  Knuth describes a
-       method by which this could be reduced to a maximum of once, but
-       I didn't implement that here.
-     * When using s_mpv_div_2dx1d, we may have to do this 3 times.
-     */
+           If it's too big, back it off.  We should not have to do this
+           more than once, or, in rare cases, twice.  Knuth describes a
+           method by which this could be reduced to a maximum of once, but
+           I didn't implement that here.
+           When using s_mpv_div_2dx1d, we may have to do this 3 times.
+         */
         for (i = 4; s_mp_cmp(&t, &part) > 0 && i > 0; --i) {
             --q_msd;
             MP_CHECKOK(s_mp_sub(&t, div)); /* t -= div */
@@ -4346,11 +4259,11 @@ mp_err s_mp_div(mp_int *rem,  /* i: dividend, o: remainder */
         s_mp_clamp(rem);
 
         /*
-      Include the digit in the quotient.  We allocated enough memory
-      for any quotient we could ever possibly get, so we should not
-      have to check for failures here
-     */
-        MP_DIGIT(quot, unusedRem) = (mp_digit)q_msd;
+          Include the digit in the quotient.  We allocated enough memory
+          for any quotient we could ever possibly get, so we should not
+          have to check for failures here
+         */
+        MP_DIGIT(quot, unusedRem) = q_msd;
     }
 
     /* Denormalize remainder                */

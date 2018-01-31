@@ -22,8 +22,8 @@
  * limitations under the License.
  */
 
-#ifndef mozilla_pkix_test_pkixtestutils_h
-#define mozilla_pkix_test_pkixtestutils_h
+#ifndef mozilla_pkix_test_pkixtestutil_h
+#define mozilla_pkix_test_pkixtestutil_h
 
 #include <ctime>
 #include <stdint.h> // Some Mozilla-supported compilers lack <cstdint>
@@ -364,7 +364,7 @@ ByteString CreateEncodedSerialNumber(long value);
 enum class Critical { No = 0, Yes = 1 };
 
 ByteString CreateEncodedBasicConstraints(bool isCA,
-                                         /*optional*/ long* pathLenConstraint,
+                                         /*optional in*/ const long* pathLenConstraint,
                                          Critical critical);
 
 // Creates a DER-encoded extKeyUsage extension with one EKU OID.
@@ -445,4 +445,4 @@ ByteString CreateEncodedOCSPResponse(OCSPResponseContext& context);
 
 } } } // namespace mozilla::pkix::test
 
-#endif // mozilla_pkix_test_pkixtestutils_h
+#endif // mozilla_pkix_test_pkixtestutil_h

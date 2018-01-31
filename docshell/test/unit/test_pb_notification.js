@@ -13,11 +13,11 @@ function destroy_transient_docshell() {
 function run_test() {
   var obs = {
     observe: function(aSubject, aTopic, aData) {
-      do_check_eq(aTopic, "last-pb-context-exited");
+      Assert.equal(aTopic, "last-pb-context-exited");
       do_test_finished();
     }
   };
   var os = Cc["@mozilla.org/observer-service;1"].getService(Ci.nsIObserverService);
-  os.addObserver(obs, "last-pb-context-exited", false);
+  os.addObserver(obs, "last-pb-context-exited");
   destroy_transient_docshell();
 }

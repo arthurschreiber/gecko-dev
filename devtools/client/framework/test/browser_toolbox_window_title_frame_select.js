@@ -16,6 +16,8 @@
 var {Toolbox} = require("devtools/client/framework/toolbox");
 const URL = URL_ROOT + "browser_toolbox_window_title_frame_select_page.html";
 const IFRAME_URL = URL_ROOT + "browser_toolbox_window_title_changes_page.html";
+const {LocalizationHelper} = require("devtools/shared/l10n");
+const L10N = new LocalizationHelper("devtools/client/locales/toolbox.properties");
 
 add_task(function* () {
   Services.prefs.setBoolPref("devtools.command-button-frames.enabled", true);
@@ -25,8 +27,14 @@ add_task(function* () {
   let toolbox = yield gDevTools.showToolbox(target, null,
     Toolbox.HostType.BOTTOM);
 
+  let onTitleChanged = waitForTitleChange(toolbox);
   yield toolbox.selectTool("inspector");
+  yield onTitleChanged;
+
   yield toolbox.switchHost(Toolbox.HostType.WINDOW);
+  // Wait for title change event *after* switch host, in order to listen
+  // for the event on the WINDOW host window, which only exists after switchHost
+  yield waitForTitleChange(toolbox);
 
   is(getTitle(), `Developer Tools - Page title - ${URL}`,
     "Devtools title correct after switching to detached window host");
@@ -35,14 +43,17 @@ add_task(function* () {
   // blocks the frame popup menu opened below. See also bug 1276873
   yield waitForTick();
 
+  let btn = toolbox.doc.getElementById("command-button-frames");
+
+  yield testShortcutToOpenFrames(btn, toolbox);
+
   // Open frame menu and wait till it's available on the screen.
   // Also check 'open' attribute on the command button.
-  let btn = toolbox.doc.getElementById("command-button-frames");
-  ok(!btn.getAttribute("open"), "The open attribute must not be present");
-  let menu = toolbox.showFramesMenu({target: btn});
+  ok(!btn.classList.contains("checked"), "The checked class must not be present");
+  let menu = yield toolbox.showFramesMenu({target: btn});
   yield once(menu, "open");
 
-  is(btn.getAttribute("open"), "true", "The open attribute must be set");
+  ok(btn.classList.contains("checked"), "The checked class must be set");
 
   // Verify that the frame list menu is populated
   let frames = menu.items;
@@ -56,6 +67,8 @@ add_task(function* () {
   // Listen to will-navigate to check if the view is empty
   let willNavigate = toolbox.target.once("will-navigate");
 
+  onTitleChanged = waitForTitleChange(toolbox);
+
   // Only select the iframe after we are able to select an element from the top
   // level document.
   let newRoot = toolbox.getPanel("inspector").once("new-root");
@@ -64,6 +77,7 @@ add_task(function* () {
 
   yield willNavigate;
   yield newRoot;
+  yield onTitleChanged;
 
   info("Navigation to the iframe is done, the inspector should be back up");
   is(getTitle(), `Developer Tools - Page title - ${URL}`,
@@ -82,4 +96,26 @@ add_task(function* () {
 
 function getTitle() {
   return Services.wm.getMostRecentWindow("devtools:toolbox").document.title;
+}
+
+function* testShortcutToOpenFrames(btn, toolbox) {
+  info("Tests if shortcut Alt+Down opens the frames");
+  // focus the button so that keyPress can be performed
+  btn.focus();
+  // perform keyPress - Alt+Down
+  let shortcut = L10N.getStr("toolbox.showFrames.key");
+  synthesizeKeyShortcut(shortcut, toolbox.win);
+
+  // wait for 200 ms for UI to render
+  yield wait(200);
+
+  // btn should now have the checked class set
+  ok(btn.classList.contains("checked"), "The checked class must be set");
+
+  // pressing Esc should hide the menu again
+  synthesizeKeyShortcut("Esc", toolbox.win);
+  yield wait(200);
+
+  // btn shouldn't have the checked class set
+  ok(!btn.classList.contains("checked"), "The checked class must not be set");
 }

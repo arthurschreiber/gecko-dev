@@ -19,29 +19,35 @@
     _(GC)                                             \
     _(GCAllocation)                                   \
     _(GCSweeping)                                     \
-    _(Internal)                                       \
     _(Interpreter)                                    \
     _(InlinedScripts)                                 \
     _(IonAnalysis)                                    \
     _(IonCompilation)                                 \
-    _(IonCompilationPaused)                           \
     _(IonLinking)                                     \
     _(IonMonkey)                                      \
     _(IrregexpCompile)                                \
     _(IrregexpExecute)                                \
     _(MinorGC)                                        \
-    _(ParserCompileFunction)                          \
-    _(ParserCompileLazy)                              \
-    _(ParserCompileScript)                            \
-    _(ParserCompileModule)                            \
+    _(Frontend)                                       \
+    _(ParsingFull)                                    \
+    _(ParsingSyntax)                                  \
+    _(BytecodeEmission)                               \
+    _(BytecodeFoldConstants)                          \
+    _(BytecodeNameFunctions)                          \
+    _(DecodeScript)                                   \
+    _(DecodeFunction)                                 \
+    _(EncodeScript)                                   \
+    _(EncodeFunction)                                 \
     _(Scripts)                                        \
     _(VM)                                             \
     _(CompressSource)                                 \
     _(WasmCompilation)                                \
+    _(Call)                                           \
                                                       \
     /* Specific passes during ion compilation */      \
     _(PruneUnusedBranches)                            \
     _(FoldTests)                                      \
+    _(FoldEmptyBlocks)                                \
     _(SplitCriticalEdges)                             \
     _(RenumberBlocks)                                 \
     _(ScalarReplacement)                              \
@@ -58,6 +64,7 @@
     _(LoopUnrolling)                                  \
     _(Sink)                                           \
     _(RemoveUnnecessaryBitops)                        \
+    _(FoldLinearArithConstants)                       \
     _(EffectiveAddressAnalysis)                       \
     _(AlignmentMaskAnalysis)                          \
     _(EliminateDeadCode)                              \
@@ -83,6 +90,7 @@
 // without using TraceLogCreateTextId, because there are already created.
 enum TraceLoggerTextId {
     TraceLogger_Error = 0,
+    TraceLogger_Internal,
 #define DEFINE_TEXT_ID(textId) TraceLogger_ ## textId,
     TRACELOGGER_TREE_ITEMS(DEFINE_TEXT_ID)
     TraceLogger_LastTreeItem,
@@ -97,6 +105,8 @@ TLTextIdString(TraceLoggerTextId id)
     switch (id) {
       case TraceLogger_Error:
         return "TraceLogger failed to process text";
+      case TraceLogger_Internal:
+        return "TraceLogger overhead";
 #define NAME(textId) case TraceLogger_ ## textId: return #textId;
         TRACELOGGER_TREE_ITEMS(NAME)
         TRACELOGGER_LOG_ITEMS(NAME)
@@ -249,6 +259,10 @@ class ContinuousSpace {
 
     void clear() {
         size_ = 0;
+    }
+
+    size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
+        return mallocSizeOf(data_);
     }
 };
 

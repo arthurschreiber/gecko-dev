@@ -39,7 +39,7 @@ class DrawTarget;
 } // namespace gfx
 
 namespace layers {
-class ClientIPCAllocator;
+class LayersIPCChannel;
 class SharedSurfaceTextureClient;
 enum class TextureFlags : uint32_t;
 class SurfaceDescriptor;
@@ -60,16 +60,13 @@ public:
 
     const SharedSurfaceType mType;
     const AttachmentType mAttachType;
-    GLContext* const mGL;
+    const WeakPtr<GLContext> mGL;
     const gfx::IntSize mSize;
     const bool mHasAlpha;
     const bool mCanRecycle;
 protected:
     bool mIsLocked;
     bool mIsProducerAcquired;
-#ifdef DEBUG
-    nsIThread* const mOwningThread;
-#endif
 
     SharedSurface(SharedSurfaceType type,
                   AttachmentType attachType,
@@ -79,8 +76,7 @@ protected:
                   bool canRecycle);
 
 public:
-    virtual ~SharedSurface() {
-    }
+    virtual ~SharedSurface();
 
     // Specifies to the TextureClient any flags which
     // are required by the SharedSurface backend.
@@ -95,6 +91,10 @@ public:
 
     // Unlocking is harmless if we're already unlocked.
     void UnlockProd();
+
+    // This surface has been moved to the front buffer and will not be locked again
+    // until it is recycled. Do any finalization steps here.
+    virtual void Commit(){}
 
 protected:
     virtual void LockProdImpl() = 0;
@@ -267,7 +267,7 @@ public:
     const SharedSurfaceType mType;
     GLContext* const mGL;
     const SurfaceCaps mCaps;
-    const RefPtr<layers::ClientIPCAllocator> mAllocator;
+    const RefPtr<layers::LayersIPCChannel> mAllocator;
     const layers::TextureFlags mFlags;
     const GLFormats mFormats;
     Mutex mMutex;
@@ -278,7 +278,7 @@ protected:
     RefSet<layers::SharedSurfaceTextureClient> mRecycleTotalPool;
 
     SurfaceFactory(SharedSurfaceType type, GLContext* gl, const SurfaceCaps& caps,
-                   const RefPtr<layers::ClientIPCAllocator>& allocator,
+                   const RefPtr<layers::LayersIPCChannel>& allocator,
                    const layers::TextureFlags& flags);
 
 public:

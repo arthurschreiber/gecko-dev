@@ -76,6 +76,10 @@ class TPSTestRunner(object):
         'toolkit.startup.max_resumed_crashes': -1,
         # hrm - not sure what the release/beta channels will do?
         'xpinstall.signatures.required': False,
+        'services.sync.testing.tps': True,
+        'engine.bookmarks.repair.enabled': False,
+        'extensions.allow-non-mpc-extensions': True,
+        'extensions.legacy.enabled': True,
     }
 
     debug_preferences = {
@@ -83,25 +87,8 @@ class TPSTestRunner(object):
         'services.sync.log.appender.dump': 'Trace',
         'services.sync.log.appender.file.level': 'Trace',
         'services.sync.log.appender.file.logOnSuccess': True,
-        'services.sync.log.rootLogger': 'Trace',
-        'services.sync.log.logger.addonutils': 'Trace',
-        'services.sync.log.logger.declined': 'Trace',
-        'services.sync.log.logger.service.main': 'Trace',
-        'services.sync.log.logger.status': 'Trace',
-        'services.sync.log.logger.authenticator': 'Trace',
-        'services.sync.log.logger.network.resources': 'Trace',
-        'services.sync.log.logger.service.jpakeclient': 'Trace',
-        'services.sync.log.logger.engine.bookmarks': 'Trace',
-        'services.sync.log.logger.engine.clients': 'Trace',
-        'services.sync.log.logger.engine.forms': 'Trace',
-        'services.sync.log.logger.engine.history': 'Trace',
-        'services.sync.log.logger.engine.passwords': 'Trace',
-        'services.sync.log.logger.engine.prefs': 'Trace',
-        'services.sync.log.logger.engine.tabs': 'Trace',
-        'services.sync.log.logger.engine.addons': 'Trace',
-        'services.sync.log.logger.engine.apps': 'Trace',
-        'services.sync.log.logger.identity': 'Trace',
-        'services.sync.log.logger.userapi': 'Trace',
+        'services.sync.log.logger': 'Trace',
+        'services.sync.log.logger.engine': 'Trace',
     }
 
     syncVerRe = re.compile(
@@ -238,12 +225,7 @@ class TPSTestRunner(object):
         except:
             test = json.loads(testcontent[testcontent.find('{'):testcontent.find('}') + 1])
 
-        testcontent += 'var config = %s;\n' % json.dumps(self.config, indent=2)
-        testcontent += 'var seconds_since_epoch = %d;\n' % int(time.time())
-
-        tmpfile = TempFile(prefix='tps_test_')
-        tmpfile.write(testcontent)
-        tmpfile.close()
+        self.preferences['tps.seconds_since_epoch'] = int(time.time())
 
         # generate the profiles defined in the test, and a list of test phases
         profiles = {}
@@ -261,7 +243,7 @@ class TPSTestRunner(object):
                 phase,
                 profiles[profilename],
                 testname,
-                tmpfile.filename,
+                testpath,
                 self.logfile,
                 self.env,
                 self.firefoxRunner,
@@ -283,7 +265,7 @@ class TPSTestRunner(object):
             cleanup_phase = TPSTestPhase(
                 'cleanup-' + profilename,
                 profiles[profilename], testname,
-                tmpfile.filename,
+                testpath,
                 self.logfile,
                 self.env,
                 self.firefoxRunner,
@@ -374,6 +356,8 @@ class TPSTestRunner(object):
         if 'preferences' in self.config:
             self.preferences.update(self.config['preferences'])
 
+        self.preferences['tps.config'] = json.dumps(self.config)
+
     def run_tests(self):
         # delete the logfile if it already exists
         if os.access(self.logfile, os.F_OK):
@@ -445,7 +429,6 @@ class TPSTestRunner(object):
         # build our tps.xpi extension
         self.extensions = []
         self.extensions.append(os.path.join(self.extensionDir, 'tps'))
-        self.extensions.append(os.path.join(self.extensionDir, "mozmill"))
 
         # build the test list
         try:

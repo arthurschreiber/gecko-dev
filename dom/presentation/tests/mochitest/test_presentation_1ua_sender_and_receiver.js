@@ -15,6 +15,10 @@ var request;
 var connection;
 var receiverIframe;
 var presentationId;
+const DATA_ARRAY = [0, 255, 254, 0, 1, 2, 3, 0, 255, 255, 254, 0];
+const DATA_ARRAY_BUFFER = new ArrayBuffer(DATA_ARRAY.length);
+const TYPED_DATA_ARRAY = new Uint8Array(DATA_ARRAY_BUFFER);
+TYPED_DATA_ARRAY.set(DATA_ARRAY);
 
 function postMessageToIframe(aType) {
   receiverIframe.src = receiverUrl + "#" +
@@ -63,7 +67,7 @@ function setup() {
         receiverIframe.removeEventListener("mozbrowsershowmodalprompt",
                                             receiverListener);
       }
-    }, false);
+    });
 
     var promise = new Promise(function(aResolve, aReject) {
       document.body.appendChild(receiverIframe);
@@ -72,7 +76,7 @@ function setup() {
 
     var obs = SpecialPowers.Cc["@mozilla.org/observer-service;1"]
                            .getService(SpecialPowers.Ci.nsIObserverService);
-    obs.notifyObservers(promise, 'setup-request-promise', null);
+    obs.notifyObservers(promise, 'setup-request-promise');
   });
 
   gScript.addMessageListener('promise-setup-ready', function promiseSetupReadyHandler() {
@@ -124,6 +128,13 @@ function testStartConnection() {
       teardown();
       aReject();
     });
+
+    let request2 = new PresentationRequest("/");
+    request2.start().then(() => {
+      ok(false, "Sender: session start should fail while there is an unsettled promise.");
+    }).catch((aError) => {
+      is(aError.name, "OperationError", "Expect to get OperationError.");
+    });
   });
 }
 
@@ -148,14 +159,50 @@ function testSendMessage() {
 function testIncomingMessage() {
   return new Promise(function(aResolve, aReject) {
     info('Sender: --- testIncomingMessage ---');
-    connection.addEventListener('message', function messageHandler(evt) {
-      connection.removeEventListener('message', messageHandler);
+    connection.addEventListener('message', function(evt) {
       let msg = evt.data;
       is(msg, "msg-receiver-to-sender", "Sender: Sender should receive message from Receiver");
       postMessageToIframe('message-from-receiver-received');
       aResolve();
-    });
+    }, {once: true});
     postMessageToIframe('trigger-message-from-receiver');
+  });
+}
+
+function testSendBlobMessage() {
+  return new Promise(function(aResolve, aReject) {
+    info('Sender: --- testSendBlobMessage ---');
+    connection.addEventListener('message', function(evt) {
+      let msg = evt.data;
+      is(msg, "testIncomingBlobMessage", "Sender: Sender should receive message from Receiver");
+      let blob = new Blob(["Hello World"], {type : 'text/plain'});
+      connection.send(blob);
+      aResolve();
+    }, {once: true});
+  });
+}
+
+function testSendArrayBuffer() {
+  return new Promise(function(aResolve, aReject) {
+    info('Sender: --- testSendArrayBuffer ---');
+    connection.addEventListener('message', function(evt) {
+      let msg = evt.data;
+      is(msg, "testIncomingArrayBuffer", "Sender: Sender should receive message from Receiver");
+      connection.send(DATA_ARRAY_BUFFER);
+      aResolve();
+    }, {once: true});
+  });
+}
+
+function testSendArrayBufferView() {
+  return new Promise(function(aResolve, aReject) {
+    info('Sender: --- testSendArrayBufferView ---');
+    connection.addEventListener('message', function(evt) {
+      let msg = evt.data;
+      is(msg, "testIncomingArrayBufferView", "Sender: Sender should receive message from Receiver");
+      connection.send(TYPED_DATA_ARRAY);
+      aResolve();
+    }, {once: true});
   });
 }
 
@@ -185,6 +232,24 @@ function testCloseConnection() {
                                       controlChannelEstablishedHandler);
         aResolve();
       };
+    }),
+    new Promise(function(aResolve, aReject) {
+      let timeout = setTimeout(function() {
+        gScript.removeMessageListener('device-disconnected',
+                                      deviceDisconnectedHandler);
+        ok(true, "terminate after close should not trigger device.disconnect");
+        aResolve();
+      }, 3000);
+
+      function deviceDisconnectedHandler() {
+        gScript.removeMessageListener('device-disconnected',
+                                      deviceDisconnectedHandler);
+        ok(false, "terminate after close should not trigger device.disconnect");
+        clearTimeout(timeout);
+        aResolve();
+      }
+
+      gScript.addMessageListener('device-disconnected', deviceDisconnectedHandler);
     }),
     new Promise(function(aResolve, aReject) {
       gScript.addMessageListener('receiver-closed', function onReceiverClosed() {
@@ -250,6 +315,8 @@ function testReconnect() {
         aReject();
       });
     });
+
+    postMessageToIframe('prepare-for-reconnect');
   });
 }
 
@@ -269,8 +336,11 @@ function runTests() {
          .then(testStartConnection)
          .then(testSendMessage)
          .then(testIncomingMessage)
+         .then(testSendBlobMessage)
          .then(testCloseConnection)
          .then(testReconnect)
+         .then(testSendArrayBuffer)
+         .then(testSendArrayBufferView)
          .then(testCloseConnection)
          .then(testTerminateAfterClose)
          .then(teardown);
@@ -284,11 +354,13 @@ SpecialPowers.pushPermissions([
 ], () => {
   SpecialPowers.pushPrefEnv({ 'set': [["dom.presentation.enabled", true],
                                       /* Mocked TCP session transport builder in the test */
-                                      ["dom.presentation.session_transport.data_channel.enable", false],
+                                      ["dom.presentation.session_transport.data_channel.enable", true],
                                       ["dom.presentation.controller.enabled", true],
                                       ["dom.presentation.receiver.enabled", true],
                                       ["dom.presentation.test.enabled", true],
                                       ["dom.presentation.test.stage", 0],
-                                      ["dom.mozBrowserFramesEnabled", true]]},
+                                      ["dom.mozBrowserFramesEnabled", true],
+                                      ["network.disable.ipc.security", true],
+                                      ["media.navigator.permission.disabled", true]]},
                             runTests);
 });

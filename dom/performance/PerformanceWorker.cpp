@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformanceWorker.h"
+#include "mozilla/dom/DOMPrefs.h"
 #include "WorkerPrivate.h"
 
 namespace mozilla {
@@ -23,41 +24,10 @@ PerformanceWorker::~PerformanceWorker()
   mWorkerPrivate->AssertIsOnWorkerThread();
 }
 
-DOMHighResTimeStamp
-PerformanceWorker::Now() const
-{
-  TimeDuration duration =
-    TimeStamp::Now() - mWorkerPrivate->NowBaseTimeStamp();
-  return RoundTime(duration.ToMilliseconds());
-}
-
-// To be removed once bug 1124165 lands
-bool
-PerformanceWorker::IsPerformanceTimingAttribute(const nsAString& aName)
-{
-  // In workers we just support navigationStart.
-  return aName.EqualsASCII("navigationStart");
-}
-
-DOMHighResTimeStamp
-PerformanceWorker::GetPerformanceTimingFromString(const nsAString& aProperty)
-{
-  if (!IsPerformanceTimingAttribute(aProperty)) {
-    return 0;
-  }
-
-  if (aProperty.EqualsLiteral("navigationStart")) {
-    return mWorkerPrivate->NowBaseTime();
-  }
-
-  MOZ_CRASH("IsPerformanceTimingAttribute and GetPerformanceTimingFromString are out of sync");
-  return 0;
-}
-
 void
 PerformanceWorker::InsertUserEntry(PerformanceEntry* aEntry)
 {
-  if (mWorkerPrivate->PerformanceLoggingEnabled()) {
+  if (DOMPrefs::PerformanceLoggingEnabled()) {
     nsAutoCString uri;
     nsCOMPtr<nsIURI> scriptURI = mWorkerPrivate->GetResolvedScriptURI();
     if (!scriptURI || NS_FAILED(scriptURI->GetHost(uri))) {
@@ -72,13 +42,13 @@ PerformanceWorker::InsertUserEntry(PerformanceEntry* aEntry)
 TimeStamp
 PerformanceWorker::CreationTimeStamp() const
 {
-  return mWorkerPrivate->NowBaseTimeStamp();
+  return mWorkerPrivate->CreationTimeStamp();
 }
 
 DOMHighResTimeStamp
 PerformanceWorker::CreationTime() const
 {
-  return mWorkerPrivate->NowBaseTime();
+  return mWorkerPrivate->CreationTime();
 }
 
 } // dom namespace

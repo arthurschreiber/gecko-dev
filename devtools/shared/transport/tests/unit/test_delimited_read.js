@@ -1,5 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+"use strict";
 
 const StreamUtils = require("devtools/shared/transport/stream-utils");
 
@@ -22,5 +23,5 @@ function run_test() {
 function test_delimited_read(input, expected) {
   input = new StringInputStream(input, input.length);
   let result = StreamUtils.delimitedRead(input, ":", 10);
-  do_check_eq(result, expected);
+  Assert.equal(result, expected);
 }

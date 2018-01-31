@@ -5,6 +5,7 @@
 
 #include "mozilla/EditorUtils.h"
 
+#include "mozilla/EditorDOMPoint.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/dom/Selection.h"
 #include "nsComponentManagerUtils.h"
@@ -79,8 +80,8 @@ DOMIterator::DOMIterator(nsINode& aNode MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
 {
   MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   mIter = NS_NewContentIterator();
-  DebugOnly<nsresult> res = mIter->Init(&aNode);
-  MOZ_ASSERT(NS_SUCCEEDED(res));
+  DebugOnly<nsresult> rv = mIter->Init(&aNode);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
 }
 
 nsresult
@@ -135,19 +136,23 @@ DOMSubtreeIterator::~DOMSubtreeIterator()
  *****************************************************************************/
 
 bool
-EditorUtils::IsDescendantOf(nsINode* aNode,
-                            nsINode* aParent,
-                            int32_t* aOffset)
+EditorUtils::IsDescendantOf(const nsINode& aNode,
+                            const nsINode& aParent,
+                            EditorRawDOMPoint* aOutPoint /* = nullptr */)
 {
-  MOZ_ASSERT(aNode && aParent);
-  if (aNode == aParent) {
+  if (aOutPoint) {
+    aOutPoint->Clear();
+  }
+
+  if (&aNode == &aParent) {
     return false;
   }
 
-  for (nsCOMPtr<nsINode> node = aNode; node; node = node->GetParentNode()) {
-    if (node->GetParentNode() == aParent) {
-      if (aOffset) {
-        *aOffset = aParent->IndexOf(node);
+  for (const nsINode* node = &aNode; node; node = node->GetParentNode()) {
+    if (node->GetParentNode() == &aParent) {
+      if (aOutPoint) {
+        MOZ_ASSERT(node->IsContent());
+        aOutPoint->Set(node->AsContent());
       }
       return true;
     }
@@ -157,23 +162,25 @@ EditorUtils::IsDescendantOf(nsINode* aNode,
 }
 
 bool
-EditorUtils::IsDescendantOf(nsIDOMNode* aNode,
-                            nsIDOMNode* aParent,
-                            int32_t* aOffset)
+EditorUtils::IsDescendantOf(const nsINode& aNode,
+                            const nsINode& aParent,
+                            EditorDOMPoint* aOutPoint)
 {
-  nsCOMPtr<nsINode> node = do_QueryInterface(aNode);
-  nsCOMPtr<nsINode> parent = do_QueryInterface(aParent);
-  NS_ENSURE_TRUE(node && parent, false);
-  return IsDescendantOf(node, parent, aOffset);
-}
+  MOZ_ASSERT(aOutPoint);
+  aOutPoint->Clear();
+  if (&aNode == &aParent) {
+    return false;
+  }
 
-bool
-EditorUtils::IsLeafNode(nsIDOMNode* aNode)
-{
-  bool hasChildren = false;
-  if (aNode)
-    aNode->HasChildNodes(&hasChildren);
-  return !hasChildren;
+  for (const nsINode* node = &aNode; node; node = node->GetParentNode()) {
+    if (node->GetParentNode() == &aParent) {
+      MOZ_ASSERT(node->IsContent());
+      aOutPoint->Set(node->AsContent());
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /******************************************************************************
@@ -204,20 +211,18 @@ EditorHookUtils::DoInsertionHook(nsIDOMDocument* aDoc,
   NS_ENSURE_TRUE(enumerator, true);
 
   bool hasMoreHooks = false;
-  while (NS_SUCCEEDED(enumerator->HasMoreElements(&hasMoreHooks)) && hasMoreHooks)
-  {
+  while (NS_SUCCEEDED(enumerator->HasMoreElements(&hasMoreHooks)) &&
+         hasMoreHooks) {
     nsCOMPtr<nsISupports> isupp;
-    if (NS_FAILED(enumerator->GetNext(getter_AddRefs(isupp))))
+    if (NS_FAILED(enumerator->GetNext(getter_AddRefs(isupp)))) {
       break;
+    }
 
     nsCOMPtr<nsIClipboardDragDropHooks> override = do_QueryInterface(isupp);
-    if (override)
-    {
+    if (override) {
       bool doInsert = true;
-#ifdef DEBUG
-      nsresult hookResult =
-#endif
-      override->OnPasteOrDrop(aDropEvent, aTrans, &doInsert);
+      DebugOnly<nsresult> hookResult =
+        override->OnPasteOrDrop(aDropEvent, aTrans, &doInsert);
       NS_ASSERTION(NS_SUCCEEDED(hookResult), "hook failure in OnPasteOrDrop");
       NS_ENSURE_TRUE(doInsert, false);
     }

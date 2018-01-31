@@ -5,8 +5,8 @@ var Ci = Components.interfaces;
 var Cu = Components.utils;
 var Cr = Components.results;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 function readTestData(testFile) {
   var testcase = {};
@@ -22,20 +22,20 @@ function readTestData(testFile) {
       var line = {};
       hasmore = istream.readLine(line);
 
-      if (line.value.indexOf('Description:') > -1) {
-        testcase.desc = line.value.substring(line.value.indexOf(':')+1).trim();
+      if (line.value.indexOf("Description:") > -1) {
+        testcase.desc = line.value.substring(line.value.indexOf(":") + 1).trim();
       }
 
-      if (line.value.indexOf('Expect:') > -1) {
-        testcase.expect = line.value.substring(line.value.indexOf(':')+1).trim();
+      if (line.value.indexOf("Expect:") > -1) {
+        testcase.expect = line.value.substring(line.value.indexOf(":") + 1).trim();
       }
 
-      if (line.value.indexOf('Base:') > -1) {
-        testcase.base = NetUtil.newURI(line.value.substring(line.value.indexOf(':')+1).trim());
+      if (line.value.indexOf("Base:") > -1) {
+        testcase.base = NetUtil.newURI(line.value.substring(line.value.indexOf(":") + 1).trim());
       }
 
       if (testcase.expect && testcase.desc) {
-        testcase.path = 'xml/' + testFile.parent.leafName + '/' + testFile.leafName;
+        testcase.path = "xml/" + testFile.parent.leafName + "/" + testFile.leafName;
         testcase.file = testFile;
         break;
       }
@@ -43,7 +43,7 @@ function readTestData(testFile) {
     } while (hasmore);
 
   } catch (e) {
-    Assert.ok(false, "FAILED! Error reading testFile case in file " + testFile.leafName  + " ---- " + e);
+    Assert.ok(false, "FAILED! Error reading testFile case in file " + testFile.leafName + " ---- " + e);
   } finally {
     istream.close();
   }
@@ -52,13 +52,13 @@ function readTestData(testFile) {
 }
 
 function iterateDir(dir, recurse, callback) {
-  do_print("Iterate " + dir.leafName);
+  info("Iterate " + dir.leafName);
   let entries = dir.directoryEntries;
 
   // Loop over everything in this dir. If its a dir
   while (entries.hasMoreElements()) {
     let entry = entries.getNext();
-    entry.QueryInterface(Ci.nsILocalFile);
+    entry.QueryInterface(Ci.nsIFile);
 
     if (entry.isDirectory()) {
       if (recurse) {

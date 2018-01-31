@@ -13,6 +13,7 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
+#include "PLDHashTable.h"
 
 class nsIDocument;
 class nsIURI;
@@ -33,16 +34,16 @@ class ImageURL;
 class ImageCacheKey final
 {
 public:
-  ImageCacheKey(nsIURI* aURI, const PrincipalOriginAttributes& aAttrs,
-                nsIDocument* aDocument);
-  ImageCacheKey(ImageURL* aURI, const PrincipalOriginAttributes& aAttrs,
+  ImageCacheKey(nsIURI* aURI, const OriginAttributes& aAttrs,
+                nsIDocument* aDocument, nsresult& aRv);
+  ImageCacheKey(ImageURL* aURI, const OriginAttributes& aAttrs,
                 nsIDocument* aDocument);
 
   ImageCacheKey(const ImageCacheKey& aOther);
   ImageCacheKey(ImageCacheKey&& aOther);
 
   bool operator==(const ImageCacheKey& aOther) const;
-  uint32_t Hash() const { return mHash; }
+  PLDHashNumber Hash() const { return mHash; }
 
   /// A weak pointer to the URI spec for this cache entry. For logging only.
   const char* Spec() const;
@@ -55,18 +56,23 @@ public:
   void* ControlledDocument() const { return mControlledDocument; }
 
 private:
-  static uint32_t ComputeHash(ImageURL* aURI,
-                              const Maybe<uint64_t>& aBlobSerial,
-                              const PrincipalOriginAttributes& aAttrs,
-                              void* aControlledDocument);
+  static PLDHashNumber ComputeHash(ImageURL* aURI,
+                                   const Maybe<uint64_t>& aBlobSerial,
+                                   const OriginAttributes& aAttrs,
+                                   void* aControlledDocument,
+                                   bool aIsStyloEnabled);
   static void* GetControlledDocumentToken(nsIDocument* aDocument);
 
   RefPtr<ImageURL> mURI;
   Maybe<uint64_t> mBlobSerial;
-  PrincipalOriginAttributes mOriginAttributes;
+  OriginAttributes mOriginAttributes;
   void* mControlledDocument;
-  uint32_t mHash;
+  PLDHashNumber mHash;
   bool mIsChrome;
+  // To prevent the reftests of styloVsGecko taking the same image cache after
+  // refreshing, we need to store different caches of stylo and gecko. So, we
+  // also consider the info of StyloEnabled() in ImageCacheKey.
+  bool mIsStyloEnabled;
 };
 
 } // namespace image

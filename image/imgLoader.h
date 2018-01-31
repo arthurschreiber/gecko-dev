@@ -41,6 +41,8 @@ class ImageURL;
 class imgCacheEntry
 {
 public:
+  static uint32_t SecondsFromPRTime(PRTime prTime);
+
   imgCacheEntry(imgLoader* loader, imgRequest* request,
                 bool aForcePrincipalCheck);
   ~imgCacheEntry();
@@ -48,8 +50,7 @@ public:
   nsrefcnt AddRef()
   {
     NS_PRECONDITION(int32_t(mRefCnt) >= 0, "illegal refcnt");
-    MOZ_ASSERT(_mOwningThread.GetThread() == PR_GetCurrentThread(),
-      "imgCacheEntry addref isn't thread-safe!");
+    NS_ASSERT_OWNINGTHREAD(imgCacheEntry);
     ++mRefCnt;
     NS_LOG_ADDREF(this, mRefCnt, "imgCacheEntry", sizeof(*this));
     return mRefCnt;
@@ -58,8 +59,7 @@ public:
   nsrefcnt Release()
   {
     NS_PRECONDITION(0 != mRefCnt, "dup release");
-    MOZ_ASSERT(_mOwningThread.GetThread() == PR_GetCurrentThread(),
-      "imgCacheEntry release isn't thread-safe!");
+    NS_ASSERT_OWNINGTHREAD(imgCacheEntry);
     --mRefCnt;
     NS_LOG_RELEASE(this, mRefCnt, "imgCacheEntry");
     if (mRefCnt == 0) {
@@ -203,7 +203,8 @@ public:
   uint32_t GetSize() const;
   void UpdateSize(int32_t diff);
   uint32_t GetNumElements() const;
-  typedef std::vector<RefPtr<imgCacheEntry> > queueContainer;
+  bool Contains(imgCacheEntry* aEntry) const;
+  typedef nsTArray<RefPtr<imgCacheEntry> > queueContainer;
   typedef queueContainer::iterator iterator;
   typedef queueContainer::const_iterator const_iterator;
 
@@ -255,9 +256,6 @@ public:
   /**
    * Get the Private Browsing image loader instance that is used by gecko code,
    * creating it if necessary.
-   *
-   * The nsIChannel objects that this instance creates are created with the
-   * nsILoadInfo::SEC_FORCE_PRIVATE_BROWSING flag.
    */
   static imgLoader* PrivateBrowsingLoader();
 
@@ -290,26 +288,29 @@ public:
   imgLoader();
   nsresult Init();
 
-  nsresult LoadImage(nsIURI* aURI,
-                     nsIURI* aInitialDocumentURI,
-                     nsIURI* aReferrerURI,
-                     ReferrerPolicy aReferrerPolicy,
-                     nsIPrincipal* aLoadingPrincipal,
-                     nsILoadGroup* aLoadGroup,
-                     imgINotificationObserver* aObserver,
-                     nsINode* aContext,
-                     nsIDocument* aLoadingDocument,
-                     nsLoadFlags aLoadFlags,
-                     nsISupports* aCacheKey,
-                     nsContentPolicyType aContentPolicyType,
-                     const nsAString& initiatorType,
-                     imgRequestProxy** _retval);
+  MOZ_MUST_USE nsresult LoadImage(nsIURI* aURI,
+                                  nsIURI* aInitialDocumentURI,
+                                  nsIURI* aReferrerURI,
+                                  ReferrerPolicy aReferrerPolicy,
+                                  nsIPrincipal* aLoadingPrincipal,
+                                  uint64_t aRequestContextID,
+                                  nsILoadGroup* aLoadGroup,
+                                  imgINotificationObserver* aObserver,
+                                  nsINode* aContext,
+                                  nsIDocument* aLoadingDocument,
+                                  nsLoadFlags aLoadFlags,
+                                  nsISupports* aCacheKey,
+                                  nsContentPolicyType aContentPolicyType,
+                                  const nsAString& initiatorType,
+                                  bool aUseUrgentStartForChannel,
+                                  imgRequestProxy** _retval);
 
-  nsresult LoadImageWithChannel(nsIChannel* channel,
-                                imgINotificationObserver* aObserver,
-                                nsISupports* aCX,
-                                nsIStreamListener** listener,
-                                imgRequestProxy** _retval);
+  MOZ_MUST_USE nsresult
+  LoadImageWithChannel(nsIChannel* channel,
+                       imgINotificationObserver* aObserver,
+                       nsISupports* aCX,
+                       nsIStreamListener** listener,
+                       imgRequestProxy** _retval);
 
   static nsresult GetMimeTypeFromContent(const char* aContents,
                                          uint32_t aLength,
@@ -334,6 +335,7 @@ public:
 
   static void GlobalInit(); // for use by the factory
   static void Shutdown(); // for use by the factory
+  static void ShutdownMemoryReporter();
 
   nsresult ClearChromeImageCache();
   nsresult ClearImageCache();
@@ -342,7 +344,16 @@ public:
   nsresult InitCache();
 
   bool RemoveFromCache(const ImageCacheKey& aKey);
-  bool RemoveFromCache(imgCacheEntry* entry);
+
+  // Enumeration describing if a given entry is in the cache queue or not.
+  // There are some cases we know the entry is definitely not in the queue.
+  enum class QueueState {
+    MaybeExists,
+    AlreadyRemoved
+  };
+
+  bool RemoveFromCache(imgCacheEntry* entry,
+                       QueueState aQueueState = QueueState::MaybeExists);
 
   bool PutIntoCache(const ImageCacheKey& aKey, imgCacheEntry* aEntry);
 
@@ -400,6 +411,7 @@ private: // methods
                      ReferrerPolicy aReferrerPolicy,
                      nsILoadGroup* aLoadGroup,
                      imgINotificationObserver* aObserver, nsISupports* aCX,
+                     nsIDocument* aLoadingDocument,
                      nsLoadFlags aLoadFlags,
                      nsContentPolicyType aContentPolicyType,
                      bool aCanMakeNewChannel,
@@ -413,7 +425,9 @@ private: // methods
                                      ReferrerPolicy aReferrerPolicy,
                                      nsILoadGroup* aLoadGroup,
                                      imgINotificationObserver* aObserver,
-                                     nsISupports* aCX, nsLoadFlags aLoadFlags,
+                                     nsISupports* aCX,
+                                     nsIDocument* aLoadingDocument,
+                                     nsLoadFlags aLoadFlags,
                                      nsContentPolicyType aContentPolicyType,
                                      imgRequestProxy** aProxyRequest,
                                      nsIPrincipal* aLoadingPrincipal,
@@ -421,6 +435,7 @@ private: // methods
 
   nsresult CreateNewProxyForRequest(imgRequest* aRequest,
                                     nsILoadGroup* aLoadGroup,
+                                    nsIDocument* aLoadingDocument,
                                     imgINotificationObserver* aObserver,
                                     nsLoadFlags aLoadFlags,
                                     imgRequestProxy** _retval);
@@ -542,8 +557,9 @@ public:
                     bool forcePrincipalCheckForCacheEntry);
 
   void AddProxy(imgRequestProxy* aProxy);
+  void RemoveProxy(imgRequestProxy* aProxy);
 
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSITHREADRETARGETABLESTREAMLISTENER
   NS_DECL_NSISTREAMLISTENER
   NS_DECL_NSIREQUESTOBSERVER

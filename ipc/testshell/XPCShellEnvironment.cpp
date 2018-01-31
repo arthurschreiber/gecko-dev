@@ -137,7 +137,7 @@ Load(JSContext *cx,
         return false;
 
     if (!JS_IsGlobalObject(obj)) {
-        JS_ReportError(cx, "Trying to load() into a non-global object");
+        JS_ReportErrorASCII(cx, "Trying to load() into a non-global object");
         return false;
     }
 
@@ -150,7 +150,10 @@ Load(JSContext *cx,
             return false;
         FILE *file = fopen(filename.ptr(), "r");
         if (!file) {
-            JS_ReportError(cx, "cannot open file '%s' for reading", filename.ptr());
+            filename.clear();
+            if (!filename.encodeUtf8(cx, str))
+                return false;
+            JS_ReportErrorUTF8(cx, "cannot open file '%s' for reading", filename.ptr());
             return false;
         }
         JS::CompileOptions options(cx);
@@ -167,19 +170,6 @@ Load(JSContext *cx,
         }
     }
     args.rval().setUndefined();
-    return true;
-}
-
-static bool
-Version(JSContext *cx,
-        unsigned argc,
-        JS::Value *vp)
-{
-    JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
-    args.rval().setInt32(JS_GetVersion(cx));
-    if (args.get(0).isInt32())
-        JS_SetVersionForCompartment(js::GetContextCompartment(cx),
-                                    JSVersion(args[0].toInt32()));
     return true;
 }
 
@@ -245,15 +235,14 @@ GCZeal(JSContext *cx, unsigned argc, JS::Value *vp)
 
 const JSFunctionSpec gGlobalFunctions[] =
 {
-    JS_FS("print",           Print,          0,0),
-    JS_FS("load",            Load,           1,0),
-    JS_FS("quit",            Quit,           0,0),
-    JS_FS("version",         Version,        1,0),
-    JS_FS("dumpXPC",         DumpXPC,        1,0),
-    JS_FS("dump",            Dump,           1,0),
-    JS_FS("gc",              GC,             0,0),
+    JS_FN("print",           Print,          0,0),
+    JS_FN("load",            Load,           1,0),
+    JS_FN("quit",            Quit,           0,0),
+    JS_FN("dumpXPC",         DumpXPC,        1,0),
+    JS_FN("dump",            Dump,           1,0),
+    JS_FN("gc",              GC,             0,0),
  #ifdef JS_GC_ZEAL
-    JS_FS("gczeal",          GCZeal,         1,0),
+    JS_FN("gczeal",          GCZeal,         1,0),
  #endif
     JS_FS_END
 };
@@ -375,7 +364,7 @@ XPCShellEnvironment::ProcessFile(JSContext *cx,
 XPCShellEnvironment*
 XPCShellEnvironment::CreateEnvironment()
 {
-    XPCShellEnvironment* env = new XPCShellEnvironment();
+    auto* env = new XPCShellEnvironment();
     if (env && !env->Init()) {
         delete env;
         env = nullptr;
@@ -421,13 +410,6 @@ XPCShellEnvironment::Init()
 
     mGlobalHolder.init(cx);
 
-    nsCOMPtr<nsIXPConnect> xpc =
-      do_GetService(nsIXPConnect::GetCID());
-    if (!xpc) {
-        NS_ERROR("failed to get nsXPConnect service!");
-        return false;
-    }
-
     nsCOMPtr<nsIPrincipal> principal;
     nsCOMPtr<nsIScriptSecurityManager> securityManager =
         do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv);
@@ -448,23 +430,21 @@ XPCShellEnvironment::Init()
     }
 
     JS::CompartmentOptions options;
-    options.creationOptions().setZone(JS::SystemZone);
-    options.behaviors().setVersion(JSVERSION_LATEST);
+    options.creationOptions().setSystemZone();
     if (xpc::SharedMemoryEnabled())
         options.creationOptions().setSharedMemoryAndAtomicsEnabled(true);
 
-    nsCOMPtr<nsIXPConnectJSObjectHolder> holder;
-    rv = xpc->InitClassesWithNewWrappedGlobal(cx,
+    JS::Rooted<JSObject*> globalObj(cx);
+    rv = xpc::InitClassesWithNewWrappedGlobal(cx,
                                               static_cast<nsIGlobalObject *>(backstagePass),
                                               principal, 0,
                                               options,
-                                              getter_AddRefs(holder));
+                                              &globalObj);
     if (NS_FAILED(rv)) {
         NS_ERROR("InitClassesWithNewWrappedGlobal failed!");
         return false;
     }
 
-    JS::Rooted<JSObject*> globalObj(cx, holder->GetJSObject());
     if (!globalObj) {
         NS_ERROR("Failed to get global JSObject!");
         return false;
@@ -476,8 +456,7 @@ XPCShellEnvironment::Init()
     JS::Rooted<Value> privateVal(cx, PrivateValue(this));
     if (!JS_DefineProperty(cx, globalObj, "__XPCShellEnvironment",
                            privateVal,
-                           JSPROP_READONLY | JSPROP_PERMANENT,
-                           JS_STUBGETTER, JS_STUBSETTER) ||
+                           JSPROP_READONLY | JSPROP_PERMANENT) ||
         !JS_DefineFunctions(cx, globalObj, gGlobalFunctions) ||
         !JS_DefineProfilingFunctions(cx, globalObj))
     {

@@ -27,6 +27,22 @@ using namespace mozilla::jsipc;
 using mozilla::dom::AutoJSAPI;
 using mozilla::dom::AutoEntryScript;
 
+static void
+MaybeForceDebugGC()
+{
+    static bool sEnvVarInitialized = false;
+    static bool sDebugGCs = false;
+
+    if (!sEnvVarInitialized)
+        sDebugGCs = !!PR_GetEnv("MOZ_DEBUG_DEAD_CPOWS");
+
+    if (sDebugGCs) {
+        JSContext* cx = XPCJSContext::Get()->Context();
+        PrepareForFullGC(cx);
+        GCForReason(cx, GC_NORMAL, gcreason::COMPONENT_UTILS);
+    }
+}
+
 bool
 WrapperAnswer::fail(AutoJSAPI& jsapi, ReturnStatus* rs)
 {
@@ -45,11 +61,6 @@ WrapperAnswer::fail(AutoJSAPI& jsapi, ReturnStatus* rs)
 
     if (!jsapi.StealException(&exn))
         return true;
-
-    if (JS_IsStopIteration(exn)) {
-        *rs = ReturnStatus(ReturnStopIteration());
-        return true;
-    }
 
     // If this fails, we still don't want to exit. Just return an invalid
     // exception.
@@ -85,6 +96,8 @@ WrapperAnswer::deadCPOW(AutoJSAPI& jsapi, ReturnStatus* rs)
 bool
 WrapperAnswer::RecvPreventExtensions(const ObjectId& objId, ReturnStatus* rs)
 {
+    MaybeForceDebugGC();
+
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
@@ -116,6 +129,8 @@ bool
 WrapperAnswer::RecvGetPropertyDescriptor(const ObjectId& objId, const JSIDVariant& idVar,
                                          ReturnStatus* rs, PPropertyDescriptor* out)
 {
+    MaybeForceDebugGC();
+
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
@@ -146,6 +161,8 @@ bool
 WrapperAnswer::RecvGetOwnPropertyDescriptor(const ObjectId& objId, const JSIDVariant& idVar,
                                             ReturnStatus* rs, PPropertyDescriptor* out)
 {
+    MaybeForceDebugGC();
+
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
@@ -176,6 +193,8 @@ bool
 WrapperAnswer::RecvDefineProperty(const ObjectId& objId, const JSIDVariant& idVar,
                                   const PPropertyDescriptor& descriptor, ReturnStatus* rs)
 {
+    MaybeForceDebugGC();
+
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
@@ -204,6 +223,8 @@ WrapperAnswer::RecvDefineProperty(const ObjectId& objId, const JSIDVariant& idVa
 bool
 WrapperAnswer::RecvDelete(const ObjectId& objId, const JSIDVariant& idVar, ReturnStatus* rs)
 {
+    MaybeForceDebugGC();
+
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
@@ -229,6 +250,8 @@ bool
 WrapperAnswer::RecvHas(const ObjectId& objId, const JSIDVariant& idVar, ReturnStatus* rs,
                        bool* foundp)
 {
+    MaybeForceDebugGC();
+
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
@@ -254,6 +277,8 @@ bool
 WrapperAnswer::RecvHasOwn(const ObjectId& objId, const JSIDVariant& idVar, ReturnStatus* rs,
                           bool* foundp)
 {
+    MaybeForceDebugGC();
+
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
@@ -279,6 +304,8 @@ bool
 WrapperAnswer::RecvGet(const ObjectId& objId, const JSVariant& receiverVar,
                        const JSIDVariant& idVar, ReturnStatus* rs, JSVariant* result)
 {
+    MaybeForceDebugGC();
+
     // We may run scripted getters.
     AutoEntryScript aes(scopeForTargetObjects(),
                         "Cross-Process Object Wrapper 'get'");
@@ -316,6 +343,8 @@ bool
 WrapperAnswer::RecvSet(const ObjectId& objId, const JSIDVariant& idVar, const JSVariant& value,
                        const JSVariant& receiverVar, ReturnStatus* rs)
 {
+    MaybeForceDebugGC();
+
     // We may run scripted setters.
     AutoEntryScript aes(scopeForTargetObjects(),
                         "Cross-Process Object Wrapper 'set'");
@@ -349,6 +378,8 @@ WrapperAnswer::RecvSet(const ObjectId& objId, const JSIDVariant& idVar, const JS
 bool
 WrapperAnswer::RecvIsExtensible(const ObjectId& objId, ReturnStatus* rs, bool* result)
 {
+    MaybeForceDebugGC();
+
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
@@ -377,6 +408,8 @@ WrapperAnswer::RecvCallOrConstruct(const ObjectId& objId,
                                    JSVariant* result,
                                    nsTArray<JSParam>* outparams)
 {
+    MaybeForceDebugGC();
+
     AutoEntryScript aes(scopeForTargetObjects(),
                         "Cross-Process Object Wrapper call/construct");
     JSContext* cx = aes.cx();
@@ -475,6 +508,8 @@ WrapperAnswer::RecvCallOrConstruct(const ObjectId& objId,
 bool
 WrapperAnswer::RecvHasInstance(const ObjectId& objId, const JSVariant& vVar, ReturnStatus* rs, bool* bp)
 {
+    MaybeForceDebugGC();
+
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
@@ -500,6 +535,8 @@ bool
 WrapperAnswer::RecvGetBuiltinClass(const ObjectId& objId, ReturnStatus* rs,
                                    uint32_t* classValue)
 {
+    MaybeForceDebugGC();
+
     *classValue = uint32_t(js::ESClass::Other);
 
     AutoJSAPI jsapi;
@@ -525,6 +562,8 @@ bool
 WrapperAnswer::RecvIsArray(const ObjectId& objId, ReturnStatus* rs,
                            uint32_t* ans)
 {
+    MaybeForceDebugGC();
+
     *ans = uint32_t(IsArrayAnswer::NotArray);
 
     AutoJSAPI jsapi;
@@ -549,6 +588,8 @@ WrapperAnswer::RecvIsArray(const ObjectId& objId, ReturnStatus* rs,
 bool
 WrapperAnswer::RecvClassName(const ObjectId& objId, nsCString* name)
 {
+    MaybeForceDebugGC();
+
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
@@ -570,6 +611,8 @@ WrapperAnswer::RecvClassName(const ObjectId& objId, nsCString* name)
 bool
 WrapperAnswer::RecvGetPrototype(const ObjectId& objId, ReturnStatus* rs, ObjectOrNullVariant* result)
 {
+    MaybeForceDebugGC();
+
     *result = NullVariant();
 
     AutoJSAPI jsapi;
@@ -597,6 +640,8 @@ bool
 WrapperAnswer::RecvGetPrototypeIfOrdinary(const ObjectId& objId, ReturnStatus* rs, bool* isOrdinary,
                                           ObjectOrNullVariant* result)
 {
+    MaybeForceDebugGC();
+
     *result = NullVariant();
     *isOrdinary = false;
 
@@ -625,6 +670,8 @@ bool
 WrapperAnswer::RecvRegExpToShared(const ObjectId& objId, ReturnStatus* rs,
                                   nsString* source, uint32_t* flags)
 {
+    MaybeForceDebugGC();
+
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
@@ -651,6 +698,8 @@ bool
 WrapperAnswer::RecvGetPropertyKeys(const ObjectId& objId, const uint32_t& flags,
                                    ReturnStatus* rs, nsTArray<JSIDVariant>* ids)
 {
+    MaybeForceDebugGC();
+
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
@@ -681,6 +730,8 @@ bool
 WrapperAnswer::RecvInstanceOf(const ObjectId& objId, const JSIID& iid, ReturnStatus* rs,
                               bool* instanceof)
 {
+    MaybeForceDebugGC();
+
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
@@ -708,6 +759,8 @@ bool
 WrapperAnswer::RecvDOMInstanceOf(const ObjectId& objId, const int& prototypeID,
                                  const int& depth, ReturnStatus* rs, bool* instanceof)
 {
+    MaybeForceDebugGC();
+
     AutoJSAPI jsapi;
     if (NS_WARN_IF(!jsapi.Init(scopeForTargetObjects())))
         return false;
@@ -731,7 +784,7 @@ WrapperAnswer::RecvDOMInstanceOf(const ObjectId& objId, const int& prototypeID,
 bool
 WrapperAnswer::RecvDropObject(const ObjectId& objId)
 {
-    JSObject* obj = objects_.find(objId);
+    JSObject* obj = objects_.findPreserveColor(objId);
     if (obj) {
         objectIdMap(objId.hasXrayWaiver()).remove(obj);
         objects_.remove(objId);

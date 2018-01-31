@@ -6,23 +6,22 @@ def test(mod, path, entity = None):
   import re
   # ignore anything but Firefox
   if mod not in ("netwerk", "dom", "toolkit", "security/manager",
-                 "devtools/client", "devtools/shared",
+                 "devtools/client", "devtools/shared", "devtools/shim",
                  "browser",
-                 "extensions/reporter", "extensions/spellcheck",
+                 "browser/extensions/formautofill",
+                 "browser/extensions/onboarding",
+                 "browser/extensions/webcompat-reporter",
+                 "extensions/spellcheck",
                  "other-licenses/branding/firefox",
                  "browser/branding/official",
-                 "services/sync",
-                 "browser/extensions/pocket"):
+                 "services/sync"):
     return "ignore"
   if mod not in ("browser", "extensions/spellcheck"):
     # we only have exceptions for browser and extensions/spellcheck
     return "error"
-  if not entity:
-    # the only files to ignore are spell checkers and search
+  if entity is None:
+    # the only files to ignore are spell checkers
     if mod == "extensions/spellcheck":
-      return "ignore"
-    # browser
-    if (re.match(r"searchplugins\/.+\.xml", path)):
       return "ignore"
     return "error"
   if mod == "extensions/spellcheck":

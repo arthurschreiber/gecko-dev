@@ -30,10 +30,14 @@ var AnimationsPanel = {
       return;
     }
     if (this.initialized) {
-      yield this.initialized.promise;
+      yield this.initialized;
       return;
     }
-    this.initialized = promise.defer();
+
+    let resolver;
+    this.initialized = new Promise(resolve => {
+      resolver = resolve;
+    });
 
     this.playersEl = $("#players");
     this.errorMessageEl = $("#error-message");
@@ -56,7 +60,8 @@ var AnimationsPanel = {
     }
 
     // Binding functions that need to be called in scope.
-    for (let functionName of ["onKeyDown", "onPickerStarted",
+    for (let functionName of [
+      "onKeyDown", "onPickerStarted",
       "onPickerStopped", "refreshAnimationsUI", "onToggleAllClicked",
       "onTabNavigated", "onTimelineDataChanged", "onTimelinePlayClicked",
       "onTimelineRewindClicked", "onRateChanged"]) {
@@ -78,7 +83,7 @@ var AnimationsPanel = {
 
     yield this.refreshAnimationsUI();
 
-    this.initialized.resolve();
+    resolver();
     this.emit(this.PANEL_INITIALIZED);
   }),
 
@@ -88,10 +93,14 @@ var AnimationsPanel = {
     }
 
     if (this.destroyed) {
-      yield this.destroyed.promise;
+      yield this.destroyed;
       return;
     }
-    this.destroyed = promise.defer();
+
+    let resolver;
+    this.destroyed = new Promise(resolve => {
+      resolver = resolve;
+    });
 
     this.stopListeners();
 
@@ -108,7 +117,7 @@ var AnimationsPanel = {
     this.playTimelineButtonEl = this.rewindTimelineButtonEl = null;
     this.timelineCurrentTimeEl = this.rateSelectorEl = null;
 
-    this.destroyed.resolve();
+    resolver();
   }),
 
   startListeners: function () {
@@ -125,7 +134,7 @@ var AnimationsPanel = {
     this.rewindTimelineButtonEl.addEventListener(
       "click", this.onTimelineRewindClicked);
 
-    document.addEventListener("keydown", this.onKeyDown, false);
+    document.addEventListener("keydown", this.onKeyDown);
 
     gToolbox.target.on("navigate", this.onTabNavigated);
 
@@ -152,7 +161,7 @@ var AnimationsPanel = {
     this.rewindTimelineButtonEl.removeEventListener("click",
       this.onTimelineRewindClicked);
 
-    document.removeEventListener("keydown", this.onKeyDown, false);
+    document.removeEventListener("keydown", this.onKeyDown);
 
     gToolbox.target.off("navigate", this.onTabNavigated);
 
@@ -170,9 +179,9 @@ var AnimationsPanel = {
     // the page if the selected node does not have any animation on it.
     if (event.keyCode === KeyCodes.DOM_VK_SPACE) {
       if (AnimationsController.animationPlayers.length > 0) {
-        this.playPauseTimeline().catch(ex => console.error(ex));
+        this.playPauseTimeline().catch(console.error);
       } else {
-        this.toggleAll().catch(ex => console.error(ex));
+        this.toggleAll().catch(console.error);
       }
       event.preventDefault();
     }
@@ -191,15 +200,15 @@ var AnimationsPanel = {
   },
 
   onPickerStarted: function () {
-    this.pickerButtonEl.setAttribute("checked", "true");
+    this.pickerButtonEl.classList.add("checked");
   },
 
   onPickerStopped: function () {
-    this.pickerButtonEl.removeAttribute("checked");
+    this.pickerButtonEl.classList.remove("checked");
   },
 
   onToggleAllClicked: function () {
-    this.toggleAll().catch(ex => console.error(ex));
+    this.toggleAll().catch(console.error);
   },
 
   /**
@@ -212,7 +221,7 @@ var AnimationsPanel = {
   }),
 
   onTimelinePlayClicked: function () {
-    this.playPauseTimeline().catch(ex => console.error(ex));
+    this.playPauseTimeline().catch(console.error);
   },
 
   /**
@@ -232,7 +241,7 @@ var AnimationsPanel = {
   },
 
   onTimelineRewindClicked: function () {
-    this.rewindTimeline().catch(ex => console.error(ex));
+    this.rewindTimeline().catch(console.error);
   },
 
   /**
@@ -251,17 +260,17 @@ var AnimationsPanel = {
    * Set the playback rate of all current animations shown in the timeline to
    * the value of this.rateSelectorEl.
    */
-  onRateChanged: function (e, rate) {
+  onRateChanged: function (rate) {
     AnimationsController.setPlaybackRateAll(rate)
                         .then(() => this.refreshAnimationsStateAndUI())
-                        .catch(ex => console.error(ex));
+                        .catch(console.error);
   },
 
   onTabNavigated: function () {
     this.toggleAllButtonEl.classList.remove("paused");
   },
 
-  onTimelineDataChanged: function (e, data) {
+  onTimelineDataChanged: function (data) {
     this.timelineData = data;
     let {isMoving, isUserDrag, time} = data;
 
@@ -280,7 +289,7 @@ var AnimationsPanel = {
     if (isUserDrag && !this.setCurrentTimeAllPromise) {
       this.setCurrentTimeAllPromise =
         AnimationsController.setCurrentTimeAll(time, true)
-                            .catch(error => console.error(error))
+                            .catch(console.error)
                             .then(() => {
                               this.setCurrentTimeAllPromise = null;
                             });

@@ -7,9 +7,8 @@
 #ifndef mozilla_dom_PerformanceResourceTiming_h___
 #define mozilla_dom_PerformanceResourceTiming_h___
 
+#include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
-#include "nsIChannel.h"
-#include "nsITimedChannel.h"
 #include "Performance.h"
 #include "PerformanceEntry.h"
 #include "PerformanceTiming.h"
@@ -18,7 +17,7 @@ namespace mozilla {
 namespace dom {
 
 // http://www.w3.org/TR/resource-timing/#performanceresourcetiming
-class PerformanceResourceTiming final : public PerformanceEntry
+class PerformanceResourceTiming : public PerformanceEntry
 {
 public:
   typedef mozilla::TimeStamp TimeStamp;
@@ -28,7 +27,7 @@ public:
       PerformanceResourceTiming,
       PerformanceEntry)
 
-  PerformanceResourceTiming(PerformanceTiming* aPerformanceTiming,
+  PerformanceResourceTiming(UniquePtr<PerformanceTimingData>&& aPerformanceTimingData,
                             Performance* aPerformance,
                             const nsAString& aName);
 
@@ -54,83 +53,86 @@ public:
 
   void GetNextHopProtocol(nsAString& aNextHopProtocol) const
   {
-    aNextHopProtocol = mNextHopProtocol;
+    if (mTimingData) {
+      aNextHopProtocol = mTimingData->NextHopProtocol();
+    }
   }
 
-  void SetNextHopProtocol(const nsAString& aNextHopProtocol)
-  {
-    mNextHopProtocol = aNextHopProtocol;
+  DOMHighResTimeStamp WorkerStart() const {
+    return mTimingData
+        ? mTimingData->WorkerStartHighRes(mPerformance)
+        : 0;
   }
 
   DOMHighResTimeStamp FetchStart() const {
-    return mTiming
-        ? mTiming->FetchStartHighRes()
+    return mTimingData
+        ? mTimingData->FetchStartHighRes(mPerformance)
         : 0;
   }
 
   DOMHighResTimeStamp RedirectStart() const {
     // We have to check if all the redirect URIs had the same origin (since
     // there is no check in RedirectEndHighRes())
-    return mTiming && mTiming->ShouldReportCrossOriginRedirect()
-        ? mTiming->RedirectStartHighRes()
+    return mTimingData && mTimingData->ShouldReportCrossOriginRedirect()
+        ? mTimingData->RedirectStartHighRes(mPerformance)
         : 0;
   }
 
   DOMHighResTimeStamp RedirectEnd() const {
     // We have to check if all the redirect URIs had the same origin (since
     // there is no check in RedirectEndHighRes())
-    return mTiming && mTiming->ShouldReportCrossOriginRedirect()
-        ? mTiming->RedirectEndHighRes()
+    return mTimingData && mTimingData->ShouldReportCrossOriginRedirect()
+        ? mTimingData->RedirectEndHighRes(mPerformance)
         : 0;
   }
 
   DOMHighResTimeStamp DomainLookupStart() const {
-    return mTiming && mTiming->TimingAllowed()
-        ? mTiming->DomainLookupStartHighRes()
+    return mTimingData && mTimingData->TimingAllowed()
+        ? mTimingData->DomainLookupStartHighRes(mPerformance)
         : 0;
   }
 
   DOMHighResTimeStamp DomainLookupEnd() const {
-    return mTiming && mTiming->TimingAllowed()
-        ? mTiming->DomainLookupEndHighRes()
+    return mTimingData && mTimingData->TimingAllowed()
+        ? mTimingData->DomainLookupEndHighRes(mPerformance)
         : 0;
   }
 
   DOMHighResTimeStamp ConnectStart() const {
-    return mTiming && mTiming->TimingAllowed()
-        ? mTiming->ConnectStartHighRes()
+    return mTimingData && mTimingData->TimingAllowed()
+        ? mTimingData->ConnectStartHighRes(mPerformance)
         : 0;
   }
 
   DOMHighResTimeStamp ConnectEnd() const {
-    return mTiming && mTiming->TimingAllowed()
-        ? mTiming->ConnectEndHighRes()
+    return mTimingData && mTimingData->TimingAllowed()
+        ? mTimingData->ConnectEndHighRes(mPerformance)
         : 0;
   }
 
   DOMHighResTimeStamp RequestStart() const {
-    return mTiming && mTiming->TimingAllowed()
-        ? mTiming->RequestStartHighRes()
+    return mTimingData && mTimingData->TimingAllowed()
+        ? mTimingData->RequestStartHighRes(mPerformance)
         : 0;
   }
 
   DOMHighResTimeStamp ResponseStart() const {
-    return mTiming && mTiming->TimingAllowed()
-        ? mTiming->ResponseStartHighRes()
+    return mTimingData && mTimingData->TimingAllowed()
+        ? mTimingData->ResponseStartHighRes(mPerformance)
         : 0;
   }
 
   DOMHighResTimeStamp ResponseEnd() const {
-    return mTiming
-        ? mTiming->ResponseEndHighRes()
+    return mTimingData
+        ? mTimingData->ResponseEndHighRes(mPerformance)
         : 0;
   }
 
   DOMHighResTimeStamp SecureConnectionStart() const
   {
-    // This measurement is not available for Navigation Timing either.
-    // There is a different bug submitted for it.
-    return 0;
+    return mTimingData && mTimingData->TimingAllowed()
+        ?  mTimingData->SecureConnectionStartHighRes(mPerformance)
+        : 0;
   }
 
   virtual const PerformanceResourceTiming* ToResourceTiming() const override
@@ -140,43 +142,31 @@ public:
 
   uint64_t TransferSize() const
   {
-    return mTiming && mTiming->TimingAllowed() ? mTransferSize : 0;
+    return mTimingData ? mTimingData->TransferSize() : 0;
   }
 
   uint64_t EncodedBodySize() const
   {
-    return mTiming && mTiming->TimingAllowed() ? mEncodedBodySize : 0;
+    return mTimingData ? mTimingData->EncodedBodySize() : 0;
   }
 
   uint64_t DecodedBodySize() const
   {
-    return mTiming && mTiming->TimingAllowed() ? mDecodedBodySize : 0;
+    return mTimingData ? mTimingData->DecodedBodySize() : 0;
   }
 
-  void SetEncodedBodySize(uint64_t aEncodedBodySize)
-  {
-    mEncodedBodySize = aEncodedBodySize;
-  }
-
-  void SetTransferSize(uint64_t aTransferSize)
-  {
-    mTransferSize = aTransferSize;
-  }
-
-  void SetDecodedBodySize(uint64_t aDecodedBodySize)
-  {
-    mDecodedBodySize = aDecodedBodySize;
-  }
+  size_t
+  SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const override;
 
 protected:
   virtual ~PerformanceResourceTiming();
 
+  size_t
+  SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const override;
+
   nsString mInitiatorType;
-  nsString mNextHopProtocol;
-  RefPtr<PerformanceTiming> mTiming;
-  uint64_t mEncodedBodySize;
-  uint64_t mTransferSize;
-  uint64_t mDecodedBodySize;
+  UniquePtr<PerformanceTimingData> mTimingData;
+  RefPtr<Performance> mPerformance;
 };
 
 } // namespace dom

@@ -31,7 +31,7 @@ public:
     : ProcessingInstruction(aNodeInfoManager->GetNodeInfo(
                                        nsGkAtoms::processingInstructionTagName,
                                        nullptr, kNameSpaceID_None,
-                                       nsIDOMNode::PROCESSING_INSTRUCTION_NODE,
+                                       PROCESSING_INSTRUCTION_NODE,
                                        nsGkAtoms::xml_stylesheet), aData)
   {
   }
@@ -77,7 +77,7 @@ protected:
 
   nsCOMPtr<nsIURI> mOverriddenBaseURI;
 
-  already_AddRefed<nsIURI> GetStyleSheetURL(bool* aIsInline) override;
+  already_AddRefed<nsIURI> GetStyleSheetURL(bool* aIsInline, nsIPrincipal** aTriggeringPrincipal) override;
   void GetStyleSheetInfo(nsAString& aTitle,
                          nsAString& aType,
                          nsAString& aMedia,

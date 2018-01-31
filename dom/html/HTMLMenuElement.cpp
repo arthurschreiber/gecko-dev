@@ -25,19 +25,17 @@ namespace dom {
 enum MenuType : uint8_t
 {
   MENU_TYPE_CONTEXT = 1,
-  MENU_TYPE_TOOLBAR,
-  MENU_TYPE_LIST
+  MENU_TYPE_TOOLBAR
 };
 
 static const nsAttrValue::EnumTable kMenuTypeTable[] = {
   { "context", MENU_TYPE_CONTEXT },
   { "toolbar", MENU_TYPE_TOOLBAR },
-  { "list", MENU_TYPE_LIST },
   { nullptr, 0 }
 };
 
 static const nsAttrValue::EnumTable* kMenuDefaultType =
-  &kMenuTypeTable[2];
+  &kMenuTypeTable[1];
 
 enum SeparatorType
 {
@@ -49,7 +47,7 @@ enum SeparatorType
 
 
 HTMLMenuElement::HTMLMenuElement(already_AddRefed<mozilla::dom::NodeInfo>& aNodeInfo)
-  : nsGenericHTMLElement(aNodeInfo), mType(MENU_TYPE_LIST)
+  : nsGenericHTMLElement(aNodeInfo), mType(MENU_TYPE_TOOLBAR)
 {
 }
 
@@ -57,25 +55,17 @@ HTMLMenuElement::~HTMLMenuElement()
 {
 }
 
-NS_IMPL_ISUPPORTS_INHERITED(HTMLMenuElement, nsGenericHTMLElement,
-                            nsIDOMHTMLMenuElement, nsIHTMLMenu)
+NS_IMPL_ISUPPORTS_INHERITED0(HTMLMenuElement, nsGenericHTMLElement)
 
 NS_IMPL_ELEMENT_CLONE(HTMLMenuElement)
 
-NS_IMPL_BOOL_ATTR(HTMLMenuElement, Compact, compact)
-NS_IMPL_ENUM_ATTR_DEFAULT_VALUE(HTMLMenuElement, Type, type,
-                                kMenuDefaultType->tag)
-NS_IMPL_STRING_ATTR(HTMLMenuElement, Label, label)
 
-
-NS_IMETHODIMP
+void
 HTMLMenuElement::SendShowEvent()
 {
-  NS_ENSURE_TRUE(nsContentUtils::IsCallerChrome(), NS_ERROR_DOM_SECURITY_ERR);
-
   nsCOMPtr<nsIDocument> document = GetComposedDoc();
   if (!document) {
-    return NS_ERROR_FAILURE;
+    return;
   }
 
   WidgetEvent event(true, eShow);
@@ -84,25 +74,13 @@ HTMLMenuElement::SendShowEvent()
 
   nsCOMPtr<nsIPresShell> shell = document->GetShell();
   if (!shell) {
-    return NS_ERROR_FAILURE;
+    return;
   }
- 
+
   RefPtr<nsPresContext> presContext = shell->GetPresContext();
   nsEventStatus status = nsEventStatus_eIgnore;
   EventDispatcher::Dispatch(static_cast<nsIContent*>(this), presContext,
                             &event, nullptr, &status);
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HTMLMenuElement::CreateBuilder(nsIMenuBuilder** _retval)
-{
-  NS_ENSURE_TRUE(nsContentUtils::IsCallerChrome(), NS_ERROR_DOM_SECURITY_ERR);
-
-  nsCOMPtr<nsIMenuBuilder> builder = CreateBuilder();
-  builder.swap(*_retval);
-  return NS_OK;
 }
 
 already_AddRefed<nsIMenuBuilder>
@@ -117,41 +95,49 @@ HTMLMenuElement::CreateBuilder()
   return builder.forget();
 }
 
-NS_IMETHODIMP
+void
 HTMLMenuElement::Build(nsIMenuBuilder* aBuilder)
 {
-  NS_ENSURE_TRUE(nsContentUtils::IsCallerChrome(), NS_ERROR_DOM_SECURITY_ERR);
-
   if (!aBuilder) {
-    return NS_OK;
+    return;
   }
 
   BuildSubmenu(EmptyString(), this, aBuilder);
-
-  return NS_OK;
 }
 
-
-bool
-HTMLMenuElement::ParseAttribute(int32_t aNamespaceID,
-                                nsIAtom* aAttribute,
-                                const nsAString& aValue,
-                                nsAttrValue& aResult)
+nsresult
+HTMLMenuElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                              const nsAttrValue* aValue,
+                              const nsAttrValue* aOldValue,
+                              nsIPrincipal* aSubjectPrincipal,
+                              bool aNotify)
 {
-  if (aNamespaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::type) {
-    bool success = aResult.ParseEnumValue(aValue, kMenuTypeTable,
-                                            false);
-    if (success) {
-      mType = aResult.GetEnumValue();
+  if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::type) {
+    if (aValue) {
+      mType = aValue->GetEnumValue();
     } else {
       mType = kMenuDefaultType->value;
     }
+  }
 
-    return success;
+  return nsGenericHTMLElement::AfterSetAttr(aNameSpaceID, aName, aValue,
+                                            aOldValue, aSubjectPrincipal, aNotify);
+}
+
+bool
+HTMLMenuElement::ParseAttribute(int32_t aNamespaceID,
+                                nsAtom* aAttribute,
+                                const nsAString& aValue,
+                                nsIPrincipal* aMaybeScriptedPrincipal,
+                                nsAttrValue& aResult)
+{
+  if (aNamespaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::type) {
+    return aResult.ParseEnumValue(aValue, kMenuTypeTable, false,
+                                  kMenuDefaultType);
   }
 
   return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
-                                              aResult);
+                                              aMaybeScriptedPrincipal, aResult);
 }
 
 void
@@ -229,9 +215,9 @@ HTMLMenuElement::TraverseContent(nsIContent* aContent,
     } else if (child->IsHTMLElement(nsGkAtoms::hr)) {
       aBuilder->AddSeparator();
     } else if (child->IsHTMLElement(nsGkAtoms::menu) && !element->IsHidden()) {
-      if (child->HasAttr(kNameSpaceID_None, nsGkAtoms::label)) {
+      if (child->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::label)) {
         nsAutoString label;
-        child->GetAttr(kNameSpaceID_None, nsGkAtoms::label, label);
+        child->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::label, label);
 
         BuildSubmenu(label, child, aBuilder);
 
@@ -253,7 +239,7 @@ HTMLMenuElement::AddSeparator(nsIMenuBuilder* aBuilder, int8_t& aSeparator)
   if (aSeparator) {
     return;
   }
- 
+
   aBuilder->AddSeparator();
   aSeparator = ST_TRUE;
 }

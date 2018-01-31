@@ -7,12 +7,13 @@
 #ifndef mozilla_dom_cache_ReadStream_h
 #define mozilla_dom_cache_ReadStream_h
 
+#include "mozilla/ErrorResult.h"
 #include "mozilla/ipc/FileDescriptor.h"
+#include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsID.h"
 #include "nsIInputStream.h"
 #include "nsISupportsImpl.h"
-#include "mozilla/RefPtr.h"
 #include "nsTArrayForwardDeclare.h"
 
 namespace mozilla {
@@ -67,11 +68,7 @@ public:
     virtual bool
     HasEverBeenRead() const = 0;
 
-    NS_IMETHOD_(MozExternalRefCountType)
-    AddRef(void) = 0;
-
-    NS_IMETHOD_(MozExternalRefCountType)
-    Release(void) = 0;
+    NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
   };
 
   static already_AddRefed<ReadStream>

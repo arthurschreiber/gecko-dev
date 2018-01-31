@@ -47,7 +47,7 @@ EmulatePackedDepthStencil(gl::GLContext* gl)
 }
 
 WebGLRenderbuffer::WebGLRenderbuffer(WebGLContext* webgl)
-    : WebGLContextBoundObject(webgl)
+    : WebGLRefCountedObject(webgl)
     , mPrimaryRB( DoCreateRenderbuffer(webgl->gl) )
     , mEmulatePackedDepthStencil( EmulatePackedDepthStencil(webgl->gl) )
     , mSecondaryRB(0)
@@ -62,8 +62,6 @@ WebGLRenderbuffer::WebGLRenderbuffer(WebGLContext* webgl)
 void
 WebGLRenderbuffer::Delete()
 {
-    mContext->MakeContextCurrent();
-
     mContext->gl->fDeleteRenderbuffers(1, &mPrimaryRB);
     if (mSecondaryRB)
         mContext->gl->fDeleteRenderbuffers(1, &mSecondaryRB);
@@ -188,8 +186,8 @@ WebGLRenderbuffer::RenderbufferStorage(const char* funcName, uint32_t samples,
         return;
     }
 
-    if (width > mContext->mImplMaxRenderbufferSize ||
-        height > mContext->mImplMaxRenderbufferSize)
+    if (width > mContext->mGLMaxRenderbufferSize ||
+        height > mContext->mGLMaxRenderbufferSize)
     {
         mContext->ErrorInvalidValue("%s: Width or height exceeds maximum renderbuffer"
                                     " size.",
@@ -197,15 +195,13 @@ WebGLRenderbuffer::RenderbufferStorage(const char* funcName, uint32_t samples,
         return;
     }
 
-    mContext->MakeContextCurrent();
-
     if (!usage->maxSamplesKnown) {
         const_cast<webgl::FormatUsageInfo*>(usage)->ResolveMaxSamples(mContext->gl);
     }
     MOZ_ASSERT(usage->maxSamplesKnown);
 
     if (samples > usage->maxSamples) {
-        mContext->ErrorInvalidValue("%s: `samples` is out of the valid range.", funcName);
+        mContext->ErrorInvalidOperation("%s: `samples` is out of the valid range.", funcName);
         return;
     }
 
@@ -218,32 +214,32 @@ WebGLRenderbuffer::RenderbufferStorage(const char* funcName, uint32_t samples,
         return;
     }
 
+    mContext->OnDataAllocCall();
+
     mSamples = samples;
     mFormat = usage;
     mWidth = width;
     mHeight = height;
     mImageDataStatus = WebGLImageDataStatus::UninitializedImageData;
 
-    InvalidateStatusOfAttachedFBs();
+    InvalidateStatusOfAttachedFBs(funcName);
 }
 
 void
-WebGLRenderbuffer::DoFramebufferRenderbuffer(GLenum attachment) const
+WebGLRenderbuffer::DoFramebufferRenderbuffer(FBTarget target, GLenum attachment) const
 {
     gl::GLContext* gl = mContext->gl;
 
     if (attachment == LOCAL_GL_DEPTH_STENCIL_ATTACHMENT) {
         const GLuint stencilRB = (mSecondaryRB ? mSecondaryRB : mPrimaryRB);
-        gl->fFramebufferRenderbuffer(LOCAL_GL_FRAMEBUFFER,
-                                     LOCAL_GL_DEPTH_ATTACHMENT,
+        gl->fFramebufferRenderbuffer(target.get(), LOCAL_GL_DEPTH_ATTACHMENT,
                                      LOCAL_GL_RENDERBUFFER, mPrimaryRB);
-        gl->fFramebufferRenderbuffer(LOCAL_GL_FRAMEBUFFER,
-                                     LOCAL_GL_STENCIL_ATTACHMENT,
+        gl->fFramebufferRenderbuffer(target.get(), LOCAL_GL_STENCIL_ATTACHMENT,
                                      LOCAL_GL_RENDERBUFFER, stencilRB);
         return;
     }
 
-    gl->fFramebufferRenderbuffer(LOCAL_GL_FRAMEBUFFER, attachment,
+    gl->fFramebufferRenderbuffer(target.get(), attachment,
                                  LOCAL_GL_RENDERBUFFER, mPrimaryRB);
 }
 
@@ -280,7 +276,7 @@ WebGLRenderbuffer::GetRenderbufferParameter(RBTarget target,
 
     case LOCAL_GL_RENDERBUFFER_INTERNAL_FORMAT:
         {
-            GLenum ret = 0;
+            GLenum ret = LOCAL_GL_RGBA4;
             if (mFormat) {
                 ret = mFormat->format->sizedFormat;
 

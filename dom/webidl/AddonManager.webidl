@@ -48,6 +48,10 @@ interface AddonInstall : EventTarget {
 
 dictionary addonInstallOptions {
   required DOMString url;
+  // If a non-empty string is passed for "hash", it is used to verify the
+  // checksum of the downloaded XPI before installing.  If is omitted or if
+  // it is null or empty string, no checksum verification is performed.
+  DOMString? hash = null;
 };
 
 [HeaderFile="mozilla/AddonManagerWebAPI.h",
@@ -73,9 +77,18 @@ interface AddonManager : EventTarget {
    */
   Promise<AddonInstall> createInstall(optional addonInstallOptions options);
 
+  // Indicator to content whether permissions prompts are enabled
+  readonly attribute boolean permissionPromptsEnabled;
+
   /* Hooks for managing event listeners */
   [ChromeOnly]
   void eventListenerWasAdded(DOMString type);
   [ChromeOnly]
   void eventListenerWasRemoved(DOMString type);
 };
+
+[ChromeOnly,Exposed=System,HeaderFile="mozilla/AddonManagerWebAPI.h"]
+interface AddonManagerPermissions {
+  static boolean isHostPermitted(DOMString host);
+};
+

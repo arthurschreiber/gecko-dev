@@ -9,30 +9,30 @@ const { localizeMarkup, LocalizationHelper } = require("devtools/shared/l10n");
 
 add_task(function* () {
   info("Check that the strings used for this test are still valid");
-  let STARTUP_L10N = new LocalizationHelper("devtools/locale/startup.properties");
-  let TOOLBOX_L10N = new LocalizationHelper("devtools/locale/toolbox.properties");
+  let STARTUP_L10N = new LocalizationHelper("devtools/client/locales/startup.properties");
+  let TOOLBOX_L10N = new LocalizationHelper("devtools/client/locales/toolbox.properties");
   let str1 = STARTUP_L10N.getStr("inspector.label");
-  let str2 = STARTUP_L10N.getStr("inspector.commandkey");
+  let str2 = STARTUP_L10N.getStr("inspector.accesskey");
   let str3 = TOOLBOX_L10N.getStr("toolbox.defaultTitle");
   ok(str1 && str2 && str3, "If this failed, strings should be updated in the test");
 
   info("Create the test markup");
   let div = document.createElement("div");
-  div.innerHTML =
-  `<div data-localization-bundle="devtools/locale/startup.properties">
+  div.unsafeSetInnerHTML(
+  `<div data-localization-bundle="devtools/client/locales/startup.properties">
      <div id="d0" data-localization="content=inspector.someInvalidKey"></div>
      <div id="d1" data-localization="content=inspector.label">Text will disappear</div>
-     <div id="d2" data-localization="content=inspector.label;title=inspector.commandkey">
+     <div id="d2" data-localization="content=inspector.label;title=inspector.accesskey">
      </div>
      <!-- keep the following data-localization on two separate lines -->
      <div id="d3" data-localization="content=inspector.label;
-                                     title=inspector.commandkey"></div>
+                                     title=inspector.accesskey"></div>
      <div id="d4" data-localization="aria-label=inspector.label">Some content</div>
-     <div data-localization-bundle="devtools/locale/toolbox.properties">
+     <div data-localization-bundle="devtools/client/locales/toolbox.properties">
        <div id="d5" data-localization="content=toolbox.defaultTitle"></div>
      </div>
    </div>
-  `;
+  `);
 
   info("Use localization helper to localize the test markup");
   localizeMarkup(div);

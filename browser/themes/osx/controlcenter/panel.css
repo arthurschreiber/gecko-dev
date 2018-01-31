@@ -5,29 +5,9 @@
 %include ../shared.inc
 %include ../../shared/controlcenter/panel.inc.css
 
-#identity-popup {
-  margin-top: 1px;
-}
-
-.identity-popup-expander:-moz-focusring {
-  padding: 2px;
-}
-
-.identity-popup-expander:-moz-focusring > .button-box {
-  @hudButtonFocused@
-}
-
+.identity-popup-expander:-moz-focusring,
 .identity-popup-permission-remove-button:-moz-focusring {
-  box-shadow: @focusRingShadow@;
-}
-
-#identity-popup-multiView > .panel-viewcontainer > .panel-viewstack > .panel-subviews {
-  border-bottom-right-radius: 3.5px;
-}
-
-#identity-popup-multiView > .panel-viewcontainer > .panel-viewstack > .panel-subviews:-moz-locale-dir(rtl) {
-  border-bottom-right-radius: 0;
-  border-bottom-left-radius: 3.5px;
+  box-shadow: var(--focus-ring-box-shadow);
 }
 
 #tracking-action-block,
@@ -49,6 +29,5 @@
 #tracking-action-unblock:-moz-focusring,
 #tracking-action-unblock-private:-moz-focusring,
 #identity-popup-securityView-body > button:-moz-focusring {
-  @hudButtonFocused@
+  box-shadow: var(--focus-ring-box-shadow);
 }
-

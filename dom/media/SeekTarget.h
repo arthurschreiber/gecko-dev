@@ -11,7 +11,8 @@
 
 namespace mozilla {
 
-enum class MediaDecoderEventVisibility : int8_t {
+enum class MediaDecoderEventVisibility : int8_t
+{
   Observable,
   Suppressed
 };
@@ -19,85 +20,62 @@ enum class MediaDecoderEventVisibility : int8_t {
 // Stores the seek target; the time to seek to, and whether an Accurate,
 // "Fast" (nearest keyframe), or "Video Only" (no audio seek) seek was
 // requested.
-struct SeekTarget {
-  enum Type {
+struct SeekTarget
+{
+  enum Type
+  {
     Invalid,
     PrevSyncPoint,
     Accurate,
     NextFrame,
   };
   SeekTarget()
-    : mEventVisibility(MediaDecoderEventVisibility::Observable)
-    , mTime(media::TimeUnit::Invalid())
+    : mTime(media::TimeUnit::Invalid())
     , mType(SeekTarget::Invalid)
     , mVideoOnly(false)
   {
   }
-  SeekTarget(int64_t aTimeUsecs,
-             Type aType,
-             MediaDecoderEventVisibility aEventVisibility =
-               MediaDecoderEventVisibility::Observable,
-             bool aVideoOnly = false)
-    : mEventVisibility(aEventVisibility)
-    , mTime(media::TimeUnit::FromMicroseconds(aTimeUsecs))
+  SeekTarget(int64_t aTimeUsecs, Type aType, bool aVideoOnly = false)
+    : mTime(media::TimeUnit::FromMicroseconds(aTimeUsecs))
     , mType(aType)
     , mVideoOnly(aVideoOnly)
   {
   }
-  SeekTarget(const media::TimeUnit& aTime,
-             Type aType,
-             MediaDecoderEventVisibility aEventVisibility =
-               MediaDecoderEventVisibility::Observable,
-             bool aVideoOnly = false)
-    : mEventVisibility(aEventVisibility)
-    , mTime(aTime)
+  SeekTarget(const media::TimeUnit& aTime, Type aType, bool aVideoOnly = false)
+    : mTime(aTime)
     , mType(aType)
     , mVideoOnly(aVideoOnly)
   {
   }
   SeekTarget(const SeekTarget& aOther)
-    : mEventVisibility(aOther.mEventVisibility)
-    , mTime(aOther.mTime)
+    : mTime(aOther.mTime)
     , mType(aOther.mType)
     , mVideoOnly(aOther.mVideoOnly)
   {
   }
-  bool IsValid() const {
-    return mType != SeekTarget::Invalid;
-  }
-  void Reset() {
+  bool IsValid() const { return mType != SeekTarget::Invalid; }
+  void Reset()
+  {
     mTime = media::TimeUnit::Invalid();
     mType = SeekTarget::Invalid;
     mVideoOnly = false;
   }
-  media::TimeUnit GetTime() const {
+  media::TimeUnit GetTime() const
+  {
     NS_ASSERTION(mTime.IsValid(), "Invalid SeekTarget");
     return mTime;
   }
-  void SetTime(const media::TimeUnit& aTime) {
+  void SetTime(const media::TimeUnit& aTime)
+  {
     NS_ASSERTION(aTime.IsValid(), "Invalid SeekTarget destination");
     mTime = aTime;
   }
-  void SetType(Type aType) {
-    mType = aType;
-  }
-  void SetVideoOnly(bool aVideoOnly) {
-    mVideoOnly = aVideoOnly;
-  }
-  bool IsFast() const {
-    return mType == SeekTarget::Type::PrevSyncPoint;
-  }
-  bool IsAccurate() const {
-    return mType == SeekTarget::Type::Accurate;
-  }
-  bool IsNextFrame() const {
-    return mType == SeekTarget::Type::NextFrame;
-  }
-  bool IsVideoOnly() const {
-    return mVideoOnly;
-  }
-
-  MediaDecoderEventVisibility mEventVisibility;
+  void SetType(Type aType) { mType = aType; }
+  void SetVideoOnly(bool aVideoOnly) { mVideoOnly = aVideoOnly; }
+  bool IsFast() const { return mType == SeekTarget::Type::PrevSyncPoint; }
+  bool IsAccurate() const { return mType == SeekTarget::Type::Accurate; }
+  bool IsNextFrame() const { return mType == SeekTarget::Type::NextFrame; }
+  bool IsVideoOnly() const { return mVideoOnly; }
 
 private:
   // Seek target time.

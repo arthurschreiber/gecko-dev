@@ -9,14 +9,14 @@ function test_relative_sub() {
             getService(Ci.nsIIOService);
 
   var spec = "jar:" + ios.newFileURI(do_get_file(path)).spec + "!/";
-  var base = ios.newURI(spec, null, null);
+  var base = ios.newURI(spec);
   var uri = ios.newURI("../modules/libjar", null, base);
 
   // This is the URI we expect to see.
   var expected = "jar:" + ios.newFileURI(do_get_file(path)).spec +
     "!/modules/libjar";
   
-  do_check_eq(uri.spec, expected);
+  Assert.equal(uri.spec, expected);
 }
 
 function test_relative_base() {
@@ -30,7 +30,7 @@ function test_relative_base() {
   var expected = "jar:" + ios.newFileURI(do_get_file(path)).spec +
     "!/";
 
-  do_check_eq(uri.spec, expected);
+  Assert.equal(uri.spec, expected);
 }
 
 function run_test() {

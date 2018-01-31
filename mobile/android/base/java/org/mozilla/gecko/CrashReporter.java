@@ -5,6 +5,7 @@
 
 package org.mozilla.gecko;
 
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 import java.io.BufferedReader;
@@ -12,16 +13,27 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.InputStreamReader;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
+import java.security.MessageDigest;
 import java.util.zip.GZIPOutputStream;
 
 import org.mozilla.gecko.AppConstants.Versions;
+import org.mozilla.gecko.GeckoProfile;
+import org.mozilla.gecko.telemetry.pingbuilders.TelemetryCrashPingBuilder;
+import org.mozilla.gecko.telemetry.TelemetryDispatcher;
+import org.mozilla.gecko.util.INIParser;
+import org.mozilla.gecko.util.INISection;
+import org.mozilla.gecko.util.ProxySelector;
 
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
@@ -115,6 +127,7 @@ public class CrashReporter extends AppCompatActivity
     }
 
     @Override
+    @SuppressLint("WrongThread") // We don't have a worker thread for the TelemetryDispatcher
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         // mHandler is created here so runnables can be run on the main thread
@@ -138,8 +151,33 @@ public class CrashReporter extends AppCompatActivity
         mPendingExtrasFile = new File(pendingDir, extrasFile.getName());
         moveFile(extrasFile, mPendingExtrasFile);
 
+        computeMinidumpHash(mPendingExtrasFile, mPendingMinidumpFile);
         mExtrasStringMap = new HashMap<String, String>();
         readStringsFromFile(mPendingExtrasFile.getPath(), mExtrasStringMap);
+
+        try {
+            // Find the profile name and path. Since we don't have any other way of getting it within
+            // this context we extract it from the crash dump path.
+            final File profileDir = passedMinidumpFile.getParentFile().getParentFile();
+            final String profileName = getProfileName(profileDir);
+
+            if (profileName != null) {
+                // Extract the crash dump ID and telemetry client ID, we need profile access for the latter.
+                final String passedMinidumpName = passedMinidumpFile.getName();
+                // Strip the .dmp suffix from the minidump name to obtain the crash ID.
+                final String crashId = passedMinidumpName.substring(0, passedMinidumpName.length() - 4);
+                final GeckoProfile profile = GeckoProfile.get(this, profileName, profileDir);
+                final String clientId = profile.getClientId();
+
+                // Assemble and send the crash ping
+                final TelemetryCrashPingBuilder pingBuilder =
+                    new TelemetryCrashPingBuilder(crashId, clientId, mExtrasStringMap);
+                final TelemetryDispatcher dispatcher = new TelemetryDispatcher(profileDir.getPath(), profileName);
+                dispatcher.queuePingForUpload(this, pingBuilder);
+            }
+        } catch (GeckoProfileDirectories.NoMozillaDirectoryException | IOException e) {
+            Log.e(LOGTAG, "Cannot send the crash ping: ", e);
+        }
 
         // Notify GeckoApp that we've crashed, so it can react appropriately during the next start.
         try {
@@ -267,6 +305,69 @@ public class CrashReporter extends AppCompatActivity
         backgroundSendReport();
     }
 
+    private String getProfileName(File profileDir) throws GeckoProfileDirectories.NoMozillaDirectoryException {
+        final File mozillaDir = GeckoProfileDirectories.getMozillaDirectory(this);
+        final INIParser parser = GeckoProfileDirectories.getProfilesINI(mozillaDir);
+        String profileName = null;
+
+        if (parser.getSections() != null) {
+            for (Enumeration<INISection> e = parser.getSections().elements(); e.hasMoreElements(); ) {
+                final INISection section = e.nextElement();
+                final String path = section.getStringProperty("Path");
+                final boolean isRelative = (section.getIntProperty("IsRelative") == 1);
+
+                if ((isRelative && path.equals(profileDir.getName())) ||
+                    path.equals(profileDir.getPath())) {
+                    profileName = section.getStringProperty("Name");
+                    break;
+                }
+            }
+        }
+
+        return profileName;
+    }
+
+
+    private void computeMinidumpHash(File extraFile, File minidump) {
+        try {
+            FileInputStream stream = new FileInputStream(minidump);
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+
+            try {
+                byte[] buffer = new byte[4096];
+                int readBytes;
+
+                while ((readBytes = stream.read(buffer)) != -1) {
+                    md.update(buffer, 0, readBytes);
+                }
+            } finally {
+              stream.close();
+            }
+
+            byte[] digest = md.digest();
+            StringBuilder hash = new StringBuilder(84);
+
+            hash.append("MinidumpSha256Hash=");
+
+            for (int i = 0; i < digest.length; i++) {
+              hash.append(Integer.toHexString((digest[i] & 0xf0) >> 4));
+              hash.append(Integer.toHexString(digest[i] & 0x0f));
+            }
+
+            hash.append('\n');
+
+            FileWriter writer = new FileWriter(extraFile, /* append */ true);
+
+            try {
+                writer.write(hash.toString());
+            } finally {
+                writer.close();
+            }
+        } catch (Exception e) {
+            Log.e(LOGTAG, "exception while computing the minidump hash: ", e);
+        }
+    }
+
     private boolean readStringsFromFile(String filePath, Map<String, String> stringMap) {
         try {
             BufferedReader reader = new BufferedReader(new FileReader(filePath));
@@ -365,8 +466,11 @@ public class CrashReporter extends AppCompatActivity
 
         Log.i(LOGTAG, "server url: " + spec);
         try {
-            URL url = new URL(spec);
-            HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+            final URL url = new URL(URLDecoder.decode(spec, "UTF-8"));
+            final URI uri = new URI(url.getProtocol(), url.getUserInfo(),
+                                    url.getHost(), url.getPort(),
+                                    url.getPath(), url.getQuery(), url.getRef());
+            HttpURLConnection conn = (HttpURLConnection)ProxySelector.openConnectionWithProxy(uri);
             conn.setRequestMethod("POST");
             String boundary = generateBoundary();
             conn.setDoOutput(true);
@@ -455,6 +559,8 @@ public class CrashReporter extends AppCompatActivity
             }
         } catch (IOException e) {
             Log.e(LOGTAG, "exception during send: ", e);
+        } catch (URISyntaxException e) {
+            Log.e(LOGTAG, "exception during new URI: ", e);
         }
 
         doFinish();

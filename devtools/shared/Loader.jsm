@@ -5,12 +5,13 @@
 "use strict";
 
 /**
- * Manages the addon-sdk loader instance used to load the developer tools.
+ * Manages the base loader (base-loader.js) instance used to load the developer tools.
  */
 
 var { utils: Cu } = Components;
 var { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
-var { Loader, descriptor, resolveURI } = Cu.import("resource://gre/modules/commonjs/toolkit/loader.js", {});
+var { Loader, Require, resolveURI, unload } =
+  Cu.import("resource://devtools/shared/base-loader.js", {});
 var { requireRawId } = Cu.import("resource://devtools/shared/loader-plugin-raw.jsm", {});
 
 this.EXPORTED_SYMBOLS = ["DevToolsLoader", "devtools", "BuiltinProvider",
@@ -19,8 +20,6 @@ this.EXPORTED_SYMBOLS = ["DevToolsLoader", "devtools", "BuiltinProvider",
 /**
  * Providers are different strategies for loading the devtools.
  */
-
-var sharedGlobalBlocklist = ["sdk/indexed-db"];
 
 /**
  * Used when the tools should be loaded from the Firefox package itself.
@@ -31,27 +30,26 @@ BuiltinProvider.prototype = {
   load: function () {
     const paths = {
       // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-      "": "resource://gre/modules/commonjs/",
-      // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-      // Modules here are intended to have one implementation for
-      // chrome, and a separate implementation for content.  Here we
-      // map the directory to the chrome subdirectory, but the content
-      // loader will map to the content subdirectory.  See the
-      // README.md in devtools/shared/platform.
-      "devtools/shared/platform": "resource://devtools/shared/platform/chrome",
-      // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
       "devtools": "resource://devtools",
       // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
       "gcli": "resource://devtools/shared/gcli/source/lib/gcli",
       // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-      "acorn": "resource://devtools/acorn",
+      "acorn": "resource://devtools/shared/acorn",
       // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
-      "acorn/util/walk": "resource://devtools/acorn/walk.js",
+      "acorn/util/walk": "resource://devtools/shared/acorn/walk.js",
       // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
       "source-map": "resource://devtools/shared/sourcemap/source-map.js",
       // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
       // Allow access to xpcshell test items from the loader.
       "xpcshell-test": "resource://test",
+
+      // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠
+      // Allow access to locale data using paths closer to what is
+      // used in the source tree.
+      "devtools/client/locales": "chrome://devtools/locale",
+      "devtools/shared/locales": "chrome://devtools-shared/locale",
+      "devtools/shim/locales": "chrome://devtools-shim/locale",
+      "toolkit/locales": "chrome://global/locale",
     };
     // When creating a Loader invisible to the Debugger, we have to ensure
     // using only modules and not depend on any JSM. As everything that is
@@ -61,14 +59,13 @@ BuiltinProvider.prototype = {
     if (this.invisibleToDebugger) {
       paths.promise = "resource://gre/modules/Promise-backend.js";
     }
-    this.loader = new Loader.Loader({
-      id: "fx-devtools",
+    this.loader = new Loader({
       paths,
       invisibleToDebugger: this.invisibleToDebugger,
       sharedGlobal: true,
-      sharedGlobalBlocklist,
+      sandboxName: "DevTools (Module loader)",
       requireHook: (id, require) => {
-        if (id.startsWith("raw!")) {
+        if (id.startsWith("raw!") || id.startsWith("theme-loader!")) {
           return requireRawId(id, require);
         }
         return require(id);
@@ -77,7 +74,7 @@ BuiltinProvider.prototype = {
   },
 
   unload: function (reason) {
-    Loader.unload(this.loader, reason);
+    unload(this.loader, reason);
     delete this.loader;
   },
 };
@@ -92,7 +89,7 @@ var gNextLoaderID = 0;
 this.DevToolsLoader = function DevToolsLoader() {
   this.require = this.require.bind(this);
 
-  Services.obs.addObserver(this, "devtools-unload", false);
+  Services.obs.addObserver(this, "devtools-unload");
 };
 
 DevToolsLoader.prototype = {
@@ -160,7 +157,7 @@ DevToolsLoader.prototype = {
     this._provider.invisibleToDebugger = this.invisibleToDebugger;
 
     this._provider.load();
-    this.require = Loader.Require(this._provider.loader, { id: "devtools" });
+    this.require = Require(this._provider.loader, { id: "devtools" });
 
     // Fetch custom pseudo modules and globals
     let { modules, globals } = this.require("devtools/shared/builtin-modules");
@@ -175,14 +172,17 @@ DevToolsLoader.prototype = {
     // Register custom pseudo modules to the current loader instance
     let loader = this._provider.loader;
     for (let id in modules) {
-      let exports = modules[id];
       let uri = resolveURI(id, loader.mapping);
-      loader.modules[uri] = { exports };
+      loader.modules[uri] = {
+        get exports() {
+          return modules[id];
+        }
+      };
     }
 
     // Register custom globals to the current loader instance
     globals.loader.id = this.id;
-    Object.defineProperties(loader.globals, descriptor(globals));
+    Object.defineProperties(loader.globals, Object.getOwnPropertyDescriptors(globals));
 
     // Expose lazy helpers on loader
     this.lazyGetter = globals.loader.lazyGetter;

@@ -18,17 +18,19 @@ import android.view.View;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-import org.mozilla.gecko.GeckoAppShell;
+import org.mozilla.gecko.GeckoApplication;
 import org.mozilla.gecko.GeckoProfile;
 import org.mozilla.gecko.Locales;
 import org.mozilla.gecko.R;
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
+import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.db.UrlAnnotations;
 import org.mozilla.gecko.icons.IconCallback;
 import org.mozilla.gecko.icons.IconResponse;
 import org.mozilla.gecko.icons.Icons;
 import org.mozilla.gecko.Experiments;
+import org.mozilla.gecko.util.ActivityUtils;
 import org.mozilla.gecko.util.ThreadUtils;
 
 /**
@@ -118,26 +120,15 @@ public class HomeScreenPrompt extends Locales.LocaleAwareActivity implements Ico
         ThreadUtils.postToBackgroundThread(new Runnable() {
             @Override
             public void run() {
-                GeckoAppShell.createShortcut(title, url);
+                GeckoApplication.createBrowserShortcut(title, url);
 
                 Telemetry.sendUIEvent(TelemetryContract.Event.ACTION, TelemetryContract.Method.BUTTON, TELEMETRY_EXTRA);
 
-                goToHomeScreen();
+                ActivityUtils.goToHomeScreen(HomeScreenPrompt.this);
+
+                finish();
             }
         });
-    }
-
-    /**
-     * Finish this activity and launch the default home screen activity.
-     */
-    private void goToHomeScreen() {
-        Intent intent = new Intent(Intent.ACTION_MAIN);
-
-        intent.addCategory(Intent.CATEGORY_HOME);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        startActivity(intent);
-
-        finish();
     }
 
     private void loadShortcutIcon() {
@@ -175,7 +166,7 @@ public class HomeScreenPrompt extends Locales.LocaleAwareActivity implements Ico
         ThreadUtils.postToBackgroundThread(new Runnable() {
             @Override
             public void run() {
-                final UrlAnnotations urlAnnotations = GeckoProfile.get(HomeScreenPrompt.this).getDB().getUrlAnnotations();
+                final UrlAnnotations urlAnnotations = BrowserDB.from(HomeScreenPrompt.this).getUrlAnnotations();
                 urlAnnotations.insertHomeScreenShortcut(getContentResolver(), url, false);
             }
         });

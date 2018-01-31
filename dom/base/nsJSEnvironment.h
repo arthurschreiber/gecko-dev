@@ -15,16 +15,16 @@
 #include "nsIXPConnect.h"
 #include "nsIArray.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/TimeStamp.h"
 #include "nsThreadUtils.h"
 #include "xpcpublic.h"
 
 class nsICycleCollectorListener;
 class nsScriptNameSpaceManager;
+class nsIDocShell;
 
 namespace JS {
-template <typename T>
-class AutoVectorRooter;
-typedef AutoVectorRooter<Value> AutoValueVector;
+class AutoValueVector;
 } // namespace JS
 
 namespace mozilla {
@@ -65,7 +65,6 @@ public:
 
   virtual void SetWindowProxy(JS::Handle<JSObject*> aWindowProxy) override;
   virtual JSObject* GetWindowProxy() override;
-  virtual JSObject* GetWindowProxyPreserveColor() override;
 
   static void LoadStart();
   static void LoadEnd();
@@ -88,13 +87,10 @@ public:
                                 IsShrinking aShrinking = NonShrinkingGC,
                                 int64_t aSliceMillis = 0);
 
-  // If aExtraForgetSkippableCalls is -1, forgetSkippable won't be
-  // called even if the previous collection was GC.
-  static void CycleCollectNow(nsICycleCollectorListener *aListener = nullptr,
-                              int32_t aExtraForgetSkippableCalls = 0);
+  static void CycleCollectNow(nsICycleCollectorListener *aListener = nullptr);
 
   // Run a cycle collector slice, using a heuristic to decide how long to run it.
-  static void RunCycleCollectorSlice();
+  static void RunCycleCollectorSlice(mozilla::TimeStamp aDeadline);
 
   // Run a cycle collector slice, using the given work budget.
   static void RunCycleCollectorWorkSlice(int64_t aWorkBudget);
@@ -106,19 +102,27 @@ public:
   static uint32_t GetMaxCCSliceTimeSinceClear();
   static void ClearMaxCCSliceTime();
 
-  static void RunNextCollectorTimer();
+  // If there is some pending CC or GC timer/runner, this will run it.
+  static void RunNextCollectorTimer(JS::gcreason::Reason aReason,
+                                    mozilla::TimeStamp aDeadline = mozilla::TimeStamp());
+  // If user has been idle and aDocShell is for an iframe being loaded in an
+  // already loaded top level docshell, this will run a CC or GC
+  // timer/runner if there is such pending.
+  static void MaybeRunNextCollectorSlice(nsIDocShell* aDocShell,
+                                         JS::gcreason::Reason aReason);
 
-  static void PokeGC(JS::gcreason::Reason aReason, int aDelay = 0);
+  // The GC should probably run soon, in the zone of object aObj (if given).
+  static void PokeGC(JS::gcreason::Reason aReason, JSObject* aObj, int aDelay = 0);
   static void KillGCTimer();
 
   static void PokeShrinkingGC();
   static void KillShrinkingGCTimer();
 
   static void MaybePokeCC();
-  static void KillCCTimer();
-  static void KillICCTimer();
+  static void KillCCRunner();
+  static void KillICCRunner();
   static void KillFullGCTimer();
-  static void KillInterSliceGCTimer();
+  static void KillInterSliceGCRunner();
 
   // Calling LikelyShortLivingObjectCreated() makes a GC more likely.
   static void LikelyShortLivingObjectCreated();
@@ -133,7 +137,6 @@ public:
     return global ? mGlobalObjectRef.get() : nullptr;
   }
 
-  static void NotifyDidPaint();
 protected:
   virtual ~nsJSContext();
 
@@ -181,7 +184,8 @@ class AsyncErrorReporter final : public mozilla::Runnable
 public:
   // aWindow may be null if this error report is not associated with a window
   explicit AsyncErrorReporter(xpc::ErrorReport* aReport)
-    : mReport(aReport)
+    : Runnable("dom::AsyncErrorReporter")
+    , mReport(aReport)
   {}
 
   NS_IMETHOD Run() override

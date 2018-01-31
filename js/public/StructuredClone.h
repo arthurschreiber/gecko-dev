@@ -9,6 +9,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/BufferList.h"
+#include "mozilla/MemoryReporting.h"
 
 #include <stdint.h>
 
@@ -17,6 +18,7 @@
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
+#include "js/Vector.h"
 
 struct JSRuntime;
 struct JSStructuredCloneReader;
@@ -45,21 +47,48 @@ enum TransferableOwnership {
     /** Data is a pointer that can be freed */
     SCTAG_TMO_ALLOC_DATA = 2,
 
-    /** Data is a SharedArrayBufferObject's buffer */
-    SCTAG_TMO_SHARED_BUFFER = 3,
-
     /** Data is a memory mapped pointer */
-    SCTAG_TMO_MAPPED_DATA = 4,
+    SCTAG_TMO_MAPPED_DATA = 3,
 
     /**
      * Data is embedding-specific. The engine can free it by calling the
      * freeTransfer op. The embedding can also use SCTAG_TMO_USER_MIN and
      * greater, up to 32 bits, to distinguish specific ownership variants.
      */
-    SCTAG_TMO_CUSTOM = 5,
+    SCTAG_TMO_CUSTOM = 4,
 
     SCTAG_TMO_USER_MIN
 };
+
+class CloneDataPolicy
+{
+    bool sharedArrayBuffer_;
+
+  public:
+    // The default is to allow all policy-controlled aspects.
+
+    CloneDataPolicy() :
+      sharedArrayBuffer_(true)
+    {}
+
+    // In the JS engine, SharedArrayBuffers can only be cloned intra-process
+    // because the shared memory areas are allocated in process-private memory.
+    // Clients should therefore deny SharedArrayBuffers when cloning data that
+    // are to be transmitted inter-process.
+    //
+    // Clients should also deny SharedArrayBuffers when cloning data that are to
+    // be transmitted intra-process if policy needs dictate such denial.
+
+    CloneDataPolicy& denySharedArrayBuffer() {
+        sharedArrayBuffer_ = false;
+        return *this;
+    }
+
+    bool isSharedArrayBufferAllowed() const {
+        return sharedArrayBuffer_;
+    }
+};
+
 } /* namespace JS */
 
 /**
@@ -144,7 +173,7 @@ typedef void (*FreeTransferStructuredCloneOp)(uint32_t tag, JS::TransferableOwne
 // Increment this when anything at all changes in the serialization format.
 // (Note that this does not need to be bumped for Transferable-only changes,
 // since they are never saved to persistent storage.)
-#define JS_STRUCTURED_CLONE_VERSION 7
+#define JS_STRUCTURED_CLONE_VERSION 8
 
 struct JSStructuredCloneCallbacks {
     ReadStructuredCloneOp read;
@@ -161,7 +190,30 @@ enum OwnTransferablePolicy {
     NoTransferables
 };
 
-class MOZ_NON_MEMMOVABLE JSStructuredCloneData : public mozilla::BufferList<js::SystemAllocPolicy>
+namespace js
+{
+    class SharedArrayRawBuffer;
+
+    class SharedArrayRawBufferRefs
+    {
+      public:
+        SharedArrayRawBufferRefs() = default;
+        SharedArrayRawBufferRefs(SharedArrayRawBufferRefs&& other) = default;
+        SharedArrayRawBufferRefs& operator=(SharedArrayRawBufferRefs&& other);
+        ~SharedArrayRawBufferRefs();
+
+        MOZ_MUST_USE bool acquire(JSContext* cx, SharedArrayRawBuffer* rawbuf);
+        MOZ_MUST_USE bool acquireAll(JSContext* cx, const SharedArrayRawBufferRefs& that);
+        void takeOwnership(SharedArrayRawBufferRefs&&);
+        void releaseAll();
+
+      private:
+        js::Vector<js::SharedArrayRawBuffer*, 0, js::SystemAllocPolicy> refs_;
+    };
+}
+
+class MOZ_NON_MEMMOVABLE JS_PUBLIC_API(JSStructuredCloneData) :
+    public mozilla::BufferList<js::SystemAllocPolicy>
 {
     typedef js::SystemAllocPolicy AllocPolicy;
     typedef mozilla::BufferList<js::SystemAllocPolicy> BufferList;
@@ -170,9 +222,10 @@ class MOZ_NON_MEMMOVABLE JSStructuredCloneData : public mozilla::BufferList<js::
     static const size_t kInitialCapacity = 4096;
     static const size_t kStandardCapacity = 4096;
 
-    const JSStructuredCloneCallbacks* callbacks_;
-    void* closure_;
-    OwnTransferablePolicy ownTransferables_;
+    const JSStructuredCloneCallbacks* callbacks_ = nullptr;
+    void* closure_ = nullptr;
+    OwnTransferablePolicy ownTransferables_ = OwnTransferablePolicy::NoTransferables;
+    js::SharedArrayRawBufferRefs refsHeld_;
 
     void setOptionalCallbacks(const JSStructuredCloneCallbacks* callbacks,
                               void* closure,
@@ -212,9 +265,15 @@ JS_ReadStructuredClone(JSContext* cx, JSStructuredCloneData& data, uint32_t vers
                        JS::MutableHandleValue vp,
                        const JSStructuredCloneCallbacks* optionalCallbacks, void* closure);
 
+/**
+ * Note: If the scope is DifferentProcess then the cloneDataPolicy must deny
+ * shared-memory objects, or an error will be signaled if a shared memory object
+ * is seen.
+ */
 JS_PUBLIC_API(bool)
 JS_WriteStructuredClone(JSContext* cx, JS::HandleValue v, JSStructuredCloneData* data,
                         JS::StructuredCloneScope scope,
+                        JS::CloneDataPolicy cloneDataPolicy,
                         const JSStructuredCloneCallbacks* optionalCallbacks,
                         void* closure, JS::HandleValue transferable);
 
@@ -250,7 +309,8 @@ class JS_PUBLIC_API(JSAutoStructuredCloneBuffer) {
     void clear(const JSStructuredCloneCallbacks* optionalCallbacks=nullptr, void* closure=nullptr);
 
     /** Copy some memory. It will be automatically freed by the destructor. */
-    bool copy(const JSStructuredCloneData& data, uint32_t version=JS_STRUCTURED_CLONE_VERSION,
+    bool copy(JSContext* cx, const JSStructuredCloneData& data,
+              uint32_t version=JS_STRUCTURED_CLONE_VERSION,
               const JSStructuredCloneCallbacks* callbacks=nullptr, void* closure=nullptr);
 
     /**
@@ -282,7 +342,18 @@ class JS_PUBLIC_API(JSAutoStructuredCloneBuffer) {
                const JSStructuredCloneCallbacks* optionalCallbacks=nullptr, void* closure=nullptr);
 
     bool write(JSContext* cx, JS::HandleValue v, JS::HandleValue transferable,
+               JS::CloneDataPolicy cloneDataPolicy,
                const JSStructuredCloneCallbacks* optionalCallbacks=nullptr, void* closure=nullptr);
+
+    size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf)
+    {
+        return data_.SizeOfExcludingThis(mallocSizeOf);
+    }
+
+    size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf)
+    {
+        return mallocSizeOf(this) + sizeOfExcludingThis(mallocSizeOf);
+    }
 
   private:
     // Copy and assignment are not supported.
@@ -298,6 +369,7 @@ class JS_PUBLIC_API(JSAutoStructuredCloneBuffer) {
 #define JS_SCERR_TRANSFERABLE 1
 #define JS_SCERR_DUP_TRANSFERABLE 2
 #define JS_SCERR_UNSUPPORTED_TYPE 3
+#define JS_SCERR_SHMEM_TRANSFERABLE 4
 
 JS_PUBLIC_API(bool)
 JS_ReadUint32Pair(JSStructuredCloneReader* r, uint32_t* p1, uint32_t* p2);

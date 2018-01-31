@@ -30,6 +30,7 @@ public:
 
   NS_IMETHOD GetWidth(int32_t* aWidth) override;
   NS_IMETHOD GetHeight(int32_t* aHeight) override;
+  nsresult GetNativeSizes(nsTArray<gfx::IntSize>& aNativeSizes) const override;
   NS_IMETHOD GetIntrinsicSize(nsSize* aSize) override;
   NS_IMETHOD GetIntrinsicRatio(nsSize* aRatio) override;
   NS_IMETHOD_(already_AddRefed<SourceSurface>)
@@ -43,13 +44,23 @@ public:
   NS_IMETHOD_(already_AddRefed<layers::ImageContainer>)
     GetImageContainer(layers::LayerManager* aManager,
                       uint32_t aFlags) override;
-  NS_IMETHOD_(DrawResult) Draw(gfxContext* aContext,
+  NS_IMETHOD_(bool)
+    IsImageContainerAvailableAtSize(layers::LayerManager* aManager,
+                                    const gfx::IntSize& aSize,
+                                    uint32_t aFlags) override;
+  NS_IMETHOD_(already_AddRefed<layers::ImageContainer>)
+    GetImageContainerAtSize(layers::LayerManager* aManager,
+                            const gfx::IntSize& aSize,
+                            const Maybe<SVGImageContext>& aSVGContext,
+                            uint32_t aFlags) override;
+  NS_IMETHOD_(ImgDrawResult) Draw(gfxContext* aContext,
                                const nsIntSize& aSize,
                                const ImageRegion& aRegion,
                                uint32_t aWhichFrame,
                                gfx::SamplingFilter aSamplingFilter,
                                const Maybe<SVGImageContext>& aSVGContext,
-                               uint32_t aFlags) override;
+                               uint32_t aFlags,
+                               float aOpacity) override;
   NS_IMETHOD_(nsIntRect) GetImageSpaceInvalidationRect(
                                            const nsIntRect& aRect) override;
   nsIntSize OptimalImageSizeForDest(const gfxSize& aDest,

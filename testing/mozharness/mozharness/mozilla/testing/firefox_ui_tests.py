@@ -17,6 +17,10 @@ from mozharness.mozilla.testing.testbase import (
     TestingMixin,
     testing_config_options,
 )
+from mozharness.mozilla.testing.codecoverage import (
+    CodeCoverageMixin,
+    code_coverage_config_options
+)
 from mozharness.mozilla.vcstools import VCSToolsScript
 
 
@@ -27,6 +31,12 @@ firefox_ui_tests_config_options = [
         "dest": "allow_software_gl_layers",
         "default": False,
         "help": "Permits a software GL implementation (such as LLVMPipe) to use the GL compositor.",
+    }],
+    [["--enable-webrender"], {
+        "action": "store_true",
+        "dest": "enable_webrender",
+        "default": False,
+        "help": "Tries to enable the WebRender compositor.",
     }],
     [['--dry-run'], {
         'dest': 'dry_run',
@@ -48,7 +58,8 @@ firefox_ui_tests_config_options = [
         'dest': 'tag',
         'help': 'Subset of tests to run (local, remote).',
     }],
-] + copy.deepcopy(testing_config_options)
+] + copy.deepcopy(testing_config_options) \
+  + copy.deepcopy(code_coverage_config_options)
 
 # Command line arguments for update tests
 firefox_ui_update_harness_config_options = [
@@ -90,7 +101,7 @@ firefox_ui_update_config_options = firefox_ui_update_harness_config_options \
     + copy.deepcopy(firefox_ui_tests_config_options)
 
 
-class FirefoxUITests(TestingMixin, VCSToolsScript):
+class FirefoxUITests(TestingMixin, VCSToolsScript, CodeCoverageMixin):
 
     # Needs to be overwritten in sub classes
     cli_script = None
@@ -134,17 +145,12 @@ class FirefoxUITests(TestingMixin, VCSToolsScript):
         self.register_virtualenv_module(requirements=[requirements], two_pass=True)
 
     def download_and_extract(self):
-        """Overriding method from TestingMixin for more specific behavior.
-
-        We use the test_packages_url command line argument to check where to get the
-        harness, puppeteer, and tests from and how to set them up.
-
-        """
+        """Override method from TestingMixin for more specific behavior."""
         extract_dirs = ['config/*',
                         'firefox-ui/*',
                         'marionette/*',
                         'mozbase/*',
-                        'puppeteer/*',
+                        'tools/mozterm/*',
                         'tools/wptserve/*',
                         ]
         super(FirefoxUITests, self).download_and_extract(extract_dirs=extract_dirs)
@@ -157,9 +163,13 @@ class FirefoxUITests(TestingMixin, VCSToolsScript):
         abs_tests_install_dir = os.path.join(abs_dirs['abs_work_dir'], 'tests')
 
         dirs = {
-            'abs_blob_upload_dir': os.path.join(abs_dirs['abs_work_dir'], 'blobber_upload_dir'),
+            'abs_blob_upload_dir': os.path.join(
+                abs_dirs['abs_work_dir'], 'blobber_upload_dir'),
+            'abs_fxui_dir': os.path.join(
+                abs_tests_install_dir, 'firefox-ui'),
+            'abs_fxui_manifest_dir': os.path.join(
+                abs_tests_install_dir, 'firefox-ui', 'tests', 'testing', 'firefox-ui', 'tests'),
             'abs_test_install_dir': abs_tests_install_dir,
-            'abs_fxui_dir': os.path.join(abs_tests_install_dir, 'firefox-ui'),
         }
 
         for key in dirs:
@@ -216,6 +226,9 @@ class FirefoxUITests(TestingMixin, VCSToolsScript):
             # additional reports helpful for Jenkins and inpection via Treeherder
             '--log-html', os.path.join(dirs['abs_blob_upload_dir'], 'report.html'),
             '--log-xunit', os.path.join(dirs['abs_blob_upload_dir'], 'report.xml'),
+
+            # Enable tracing output to log transmission protocol
+            '-vv',
         ]
 
         # Collect all pass-through harness options to the script
@@ -236,7 +249,7 @@ class FirefoxUITests(TestingMixin, VCSToolsScript):
                                         strict=False)
 
         # Add the default tests to run
-        tests = [os.path.join(dirs['abs_fxui_dir'], 'tests', test) for test in self.default_tests]
+        tests = [os.path.join(dirs['abs_fxui_manifest_dir'], t) for t in self.default_tests]
         cmd.extend(tests)
 
         # Set further environment settings
@@ -244,13 +257,22 @@ class FirefoxUITests(TestingMixin, VCSToolsScript):
         env.update({'MINIDUMP_SAVE_PATH': dirs['abs_blob_upload_dir']})
         if self.query_minidump_stackwalk():
             env.update({'MINIDUMP_STACKWALK': self.minidump_stackwalk_path})
+        env['RUST_BACKTRACE'] = 'full'
+
+        # If code coverage is enabled, set GCOV_PREFIX and JS_CODE_COVERAGE_OUTPUT_DIR env variables
+        if self.config.get('code_coverage'):
+            env['GCOV_PREFIX'] = self.gcov_dir
+            env['JS_CODE_COVERAGE_OUTPUT_DIR'] = self.jsvm_dir
 
         if self.config['allow_software_gl_layers']:
             env['MOZ_LAYERS_ALLOW_SOFTWARE_GL'] = '1'
+        if self.config['enable_webrender']:
+            env['MOZ_WEBRENDER'] = '1'
+            env['MOZ_ACCELERATED'] = '1'
 
         return_code = self.run_command(cmd,
-                                       cwd=dirs['abs_work_dir'],
-                                       output_timeout=300,
+                                       cwd=dirs['abs_fxui_dir'],
+                                       output_timeout=1000,
                                        output_parser=parser,
                                        env=env)
 

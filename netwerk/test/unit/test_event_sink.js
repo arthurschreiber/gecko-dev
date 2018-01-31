@@ -1,7 +1,7 @@
 // This file tests channel event sinks (bug 315598 et al)
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "URL", function() {
   return "http://localhost:" + httpserv.identity.primaryPort;
@@ -67,11 +67,11 @@ var listener = {
 
       if (request instanceof Components.interfaces.nsIHttpChannel) {
         // As we expect a blocked redirect, verify that we have a 3xx status
-        do_check_eq(Math.floor(request.responseStatus / 100), 3);
-        do_check_eq(request.requestSucceeded, false);
+        Assert.equal(Math.floor(request.responseStatus / 100), 3);
+        Assert.equal(request.requestSucceeded, false);
       }
 
-      do_check_eq(eventsink.called, this.expectSinkCall);
+      Assert.equal(eventsink.called, this.expectSinkCall);
     } catch (e) {
       do_throw("Unexpected exception: " + e);
     }

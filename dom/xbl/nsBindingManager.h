@@ -18,11 +18,12 @@
 #include "nsXBLBinding.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
-#include "mozilla/StyleSheetHandle.h"
+#include "mozilla/StyleSheet.h"
+#include "mozilla/EventStates.h"
 
 struct ElementDependentRuleProcessorData;
 class nsIXPConnectWrappedJS;
-class nsIAtom;
+class nsAtom;
 class nsIDOMNodeList;
 class nsIDocument;
 class nsIURI;
@@ -46,7 +47,7 @@ public:
 
   explicit nsBindingManager(nsIDocument* aDocument);
 
-  nsXBLBinding* GetBindingWithContent(nsIContent* aContent);
+  nsXBLBinding* GetBindingWithContent(const nsIContent* aContent);
 
   void AddBoundContent(nsIContent* aContent);
   void RemoveBoundContent(nsIContent* aContent);
@@ -79,7 +80,7 @@ public:
                                    nsIDocument* aOldDocument,
                                    DestructorHandling aDestructorHandling);
 
-  nsIAtom* ResolveTag(nsIContent* aContent, int32_t* aNameSpaceID);
+  nsAtom* ResolveTag(nsIContent* aContent, int32_t* aNameSpaceID);
 
   /**
    * Return the nodelist of "anonymous" kids for this node.  This might
@@ -90,7 +91,7 @@ public:
   nsresult GetAnonymousNodesFor(nsIContent* aContent, nsIDOMNodeList** aResult);
   nsINodeList* GetAnonymousNodesFor(nsIContent* aContent);
 
-  nsresult ClearBinding(nsIContent* aContent);
+  nsresult ClearBinding(mozilla::dom::Element* aElement);
   nsresult LoadBindingDocument(nsIDocument* aBoundDoc, nsIURI* aURL,
                                nsIPrincipal* aOriginPrincipal);
 
@@ -130,15 +131,18 @@ public:
 
   void WalkAllRules(nsIStyleRuleProcessor::EnumFunc aFunc,
                     ElementDependentRuleProcessorData* aData);
-  /**
-   * Do any processing that needs to happen as a result of a change in
-   * the characteristics of the medium, and return whether this rule
-   * processor's rules have changed (e.g., because of media queries).
-   */
-  nsresult MediumFeaturesChanged(nsPresContext* aPresContext,
-                                 bool* aRulesChanged);
 
-  void AppendAllSheets(nsTArray<mozilla::StyleSheetHandle>& aArray);
+  // Do any processing that needs to happen as a result of a change in the
+  // characteristics of the medium, and return whether this rule processor's
+  // rules or the servo style set have changed (e.g., because of media
+  // queries).
+  bool MediumFeaturesChanged(nsPresContext* aPresContext);
+
+  // Update the content bindings in mBoundContentSet due to medium features
+  // changed.
+  void UpdateBoundContentBindingsForServo(nsPresContext* aPresContext);
+
+  void AppendAllSheets(nsTArray<mozilla::StyleSheet*>& aArray);
 
   void Traverse(nsIContent *aContent,
                             nsCycleCollectionTraversalCallback &cb);
@@ -167,10 +171,13 @@ public:
   // Called when the document is going away
   void DropDocumentReference();
 
-  nsIContent* FindNestedInsertionPoint(nsIContent* aContainer,
-                                       nsIContent* aChild);
-
   nsIContent* FindNestedSingleInsertionPoint(nsIContent* aContainer, bool* aMulti);
+
+  // Enumerate each bound content's bindings (including its base bindings)
+  // in mBoundContentSet. Return false from the callback to stop enumeration.
+  using BoundContentBindingCallback = std::function<bool (nsXBLBinding*)>;
+  bool EnumerateBoundContentBindings(
+    const BoundContentBindingCallback& aCallback) const;
 
 protected:
   nsIXPConnectWrappedJS* GetWrappedJS(nsIContent* aContent);
@@ -178,10 +185,9 @@ protected:
 
   // Called by ContentAppended and ContentInserted to handle a single child
   // insertion.  aChild must not be null.  aContainer may be null.
-  // aIndexInContainer is the index of the child in the parent.  aAppend is
-  // true if this child is being appended, not inserted.
+  // aAppend is true if this child is being appended, not inserted.
   void HandleChildInsertion(nsIContent* aContainer, nsIContent* aChild,
-                            uint32_t aIndexInContainer, bool aAppend);
+                            bool aAppend);
 
   // Same as ProcessAttachedQueue, but also nulls out
   // mProcessAttachedQueueEvent
@@ -194,7 +200,6 @@ protected:
   static void PostPAQEventCallback(nsITimer* aTimer, void* aClosure);
 
 // MEMBER VARIABLES
-protected:
   // A set of nsIContent that currently have a binding installed.
   nsAutoPtr<nsTHashtable<nsRefPtrHashKey<nsIContent> > > mBoundContentSet;
 

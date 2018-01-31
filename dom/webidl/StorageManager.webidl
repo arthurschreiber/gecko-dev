@@ -8,12 +8,16 @@
  *
  */
 
-[Exposed=(Window,Worker)]
+[SecureContext,
+ Exposed=(Window,Worker),
+ Func="mozilla::dom::DOMPrefs::StorageManagerEnabled"]
 interface StorageManager {
-  // [Throws]
-  // Promise<boolean> persisted();
-  // [Throws]
-  // [Exposed=Window] Promise<boolean> persist();
+  [Throws]
+  Promise<boolean> persisted();
+
+  [Exposed=Window, Throws]
+  Promise<boolean> persist();
+
   [Throws]
   Promise<StorageEstimate> estimate();
 };

@@ -4,24 +4,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <algorithm>
+
+#include "mozilla/Attributes.h"
+#include "mozilla/Likely.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/dom/FunctionBinding.h"
 #include "nsCOMPtr.h"
-#include "nsIDocument.h"
-#include "nsIScriptTimeoutHandler.h"
-#include "nsIXPConnect.h"
-#include "nsJSUtils.h"
 #include "nsContentUtils.h"
 #include "nsError.h"
 #include "nsGlobalWindow.h"
 #include "nsIContentSecurityPolicy.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/Likely.h"
-#include <algorithm>
-#include "mozilla/dom/FunctionBinding.h"
+#include "nsIDocument.h"
+#include "nsIScriptTimeoutHandler.h"
+#include "nsIXPConnect.h"
+#include "nsJSUtils.h"
 #include "WorkerPrivate.h"
-#include "nsAXPCNativeCallContext.h"
-
-static const char kSetIntervalStr[] = "setInterval";
-static const char kSetTimeoutStr[] = "setTimeout";
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -37,11 +35,11 @@ public:
 
   nsJSScriptTimeoutHandler();
   // This will call SwapElements on aArguments with an empty array.
-  nsJSScriptTimeoutHandler(JSContext* aCx, nsGlobalWindow *aWindow,
+  nsJSScriptTimeoutHandler(JSContext* aCx, nsGlobalWindowInner* aWindow,
                            Function& aFunction,
                            nsTArray<JS::Heap<JS::Value>>&& aArguments,
                            ErrorResult& aError);
-  nsJSScriptTimeoutHandler(JSContext* aCx, nsGlobalWindow *aWindow,
+  nsJSScriptTimeoutHandler(JSContext* aCx, nsGlobalWindowInner* aWindow,
                            const nsAString& aExpression, bool* aAllowEval,
                            ErrorResult& aError);
   nsJSScriptTimeoutHandler(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
@@ -51,10 +49,22 @@ public:
                            const nsAString& aExpression);
 
   virtual const nsAString& GetHandlerText() override;
+
   virtual Function* GetCallback() override
   {
     return mFunction;
   }
+
+  virtual const nsTArray<JS::Value>& GetArgs() override
+  {
+    return mArgs;
+  }
+
+  virtual nsresult Call() override
+  {
+    return NS_OK;
+  }
+
   virtual void GetLocation(const char** aFileName, uint32_t* aLineNo,
                            uint32_t* aColumn) override
   {
@@ -63,9 +73,11 @@ public:
     *aColumn = mColumn;
   }
 
-  virtual const nsTArray<JS::Value>& GetArgs() override
+  virtual void MarkForCC() override
   {
-    return mArgs;
+    if (mFunction) {
+      mFunction->MarkForCC();
+    }
   }
 
   void ReleaseJSObjects();
@@ -102,8 +114,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsJSScriptTimeoutHandler)
   if (MOZ_UNLIKELY(cb.WantDebugInfo())) {
     nsAutoCString name("nsJSScriptTimeoutHandler");
     if (tmp->mFunction) {
-      JSFunction* fun =
-        JS_GetObjectFunction(js::UncheckedUnwrap(tmp->mFunction->Callable()));
+      JSObject* obj = tmp->mFunction->CallablePreserveColor();
+      JSFunction* fun = JS_GetObjectFunction(js::UncheckedUnwrapWithoutExpose(obj));
       if (fun && JS_GetFunctionId(fun)) {
         JSFlatString *funId = JS_ASSERT_STRING_IS_FLAT(JS_GetFunctionId(fun));
         size_t size = 1 + JS_PutEscapedFlatString(nullptr, 0, funId, 0);
@@ -134,7 +146,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsJSScriptTimeoutHandler)
 
   if (tmp->mFunction) {
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFunction)
-    NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
   }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
@@ -146,6 +157,7 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsJSScriptTimeoutHandler)
   NS_INTERFACE_MAP_ENTRY(nsIScriptTimeoutHandler)
+  NS_INTERFACE_MAP_ENTRY(nsITimeoutHandler)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
@@ -153,7 +165,7 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(nsJSScriptTimeoutHandler)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsJSScriptTimeoutHandler)
 
 static bool
-CheckCSPForEval(JSContext* aCx, nsGlobalWindow* aWindow, ErrorResult& aError)
+CheckCSPForEval(JSContext* aCx, nsGlobalWindowInner* aWindow, ErrorResult& aError)
 {
   // if CSP is enabled, and setTimeout/setInterval was called with a string,
   // disable the registration and log an error
@@ -207,7 +219,7 @@ nsJSScriptTimeoutHandler::nsJSScriptTimeoutHandler()
 }
 
 nsJSScriptTimeoutHandler::nsJSScriptTimeoutHandler(JSContext* aCx,
-                                                   nsGlobalWindow *aWindow,
+                                                   nsGlobalWindowInner *aWindow,
                                                    Function& aFunction,
                                                    nsTArray<JS::Heap<JS::Value>>&& aArguments,
                                                    ErrorResult& aError)
@@ -226,7 +238,7 @@ nsJSScriptTimeoutHandler::nsJSScriptTimeoutHandler(JSContext* aCx,
 }
 
 nsJSScriptTimeoutHandler::nsJSScriptTimeoutHandler(JSContext* aCx,
-                                                   nsGlobalWindow *aWindow,
+                                                   nsGlobalWindowInner *aWindow,
                                                    const nsAString& aExpression,
                                                    bool* aAllowEval,
                                                    ErrorResult& aError)
@@ -316,7 +328,7 @@ nsJSScriptTimeoutHandler::GetHandlerText()
 }
 
 already_AddRefed<nsIScriptTimeoutHandler>
-NS_CreateJSTimeoutHandler(JSContext *aCx, nsGlobalWindow *aWindow,
+NS_CreateJSTimeoutHandler(JSContext *aCx, nsGlobalWindowInner *aWindow,
                           Function& aFunction,
                           const Sequence<JS::Value>& aArguments,
                           ErrorResult& aError)
@@ -333,7 +345,7 @@ NS_CreateJSTimeoutHandler(JSContext *aCx, nsGlobalWindow *aWindow,
 }
 
 already_AddRefed<nsIScriptTimeoutHandler>
-NS_CreateJSTimeoutHandler(JSContext* aCx, nsGlobalWindow *aWindow,
+NS_CreateJSTimeoutHandler(JSContext* aCx, nsGlobalWindowInner *aWindow,
                           const nsAString& aExpression, ErrorResult& aError)
 {
   bool allowEval = false;

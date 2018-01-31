@@ -11,6 +11,7 @@
 #include "js/RootingAPI.h"
 
 namespace js {
+
 struct Class;
 
 // Allocate a new GC thing. After a successful allocation the caller must
@@ -20,14 +21,15 @@ struct Class;
 //
 // Note that JSObject allocation must use the longer signature below that
 // includes slot, heap, and finalizer information in support of various
-// object-specific optimizations.
+// object-specific optimizations. If dynamic slots are requested they will be
+// allocated and the pointer stored directly in |NativeObject::slots_|.
 template <typename T, AllowGC allowGC = CanGC>
 T*
-Allocate(ExclusiveContext* cx);
+Allocate(JSContext* cx);
 
 template <typename, AllowGC allowGC = CanGC>
 JSObject*
-Allocate(ExclusiveContext* cx, gc::AllocKind kind, size_t nDynamicSlots, gc::InitialHeap heap,
+Allocate(JSContext* cx, gc::AllocKind kind, size_t nDynamicSlots, gc::InitialHeap heap,
          const Class* clasp);
 
 } // namespace js

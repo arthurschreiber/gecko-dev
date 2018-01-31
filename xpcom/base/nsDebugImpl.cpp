@@ -8,12 +8,12 @@
 #include "base/process_util.h"
 
 #include "mozilla/Atomics.h"
+#include "mozilla/Printf.h"
 
+#include "MainThreadUtils.h"
 #include "nsDebugImpl.h"
 #include "nsDebug.h"
-#ifdef MOZ_CRASHREPORTER
-# include "nsExceptionHandler.h"
-#endif
+#include "nsExceptionHandler.h"
 #include "nsString.h"
 #include "nsXULAppAPI.h"
 #include "prprf.h"
@@ -147,20 +147,14 @@ nsDebugImpl::Abort(const char* aFile, int32_t aLine)
   return NS_OK;
 }
 
-#ifdef MOZ_RUST
 // From toolkit/library/rust/lib.rs
 extern "C" void intentional_panic(const char* message);
-#endif
 
 NS_IMETHODIMP
 nsDebugImpl::RustPanic(const char* aMessage)
 {
-#ifdef MOZ_RUST
   intentional_panic(aMessage);
   return NS_OK;
-#else
-  return NS_ERROR_NOT_IMPLEMENTED;
-#endif
 }
 
 NS_IMETHODIMP
@@ -280,7 +274,7 @@ GetAssertBehavior()
   return gAssertBehavior;
 }
 
-struct FixedBuffer
+struct FixedBuffer final : public mozilla::PrintfTarget
 {
   FixedBuffer() : curlen(0)
   {
@@ -289,33 +283,28 @@ struct FixedBuffer
 
   char buffer[500];
   uint32_t curlen;
+
+  bool append(const char* sp, size_t len) override;
 };
 
-static int
-StuffFixedBuffer(void* aClosure, const char* aBuf, uint32_t aLen)
+bool
+FixedBuffer::append(const char* aBuf, size_t aLen)
 {
   if (!aLen) {
-    return 0;
+    return true;
   }
 
-  FixedBuffer* fb = (FixedBuffer*)aClosure;
-
-  // strip the trailing null, we add it again later
-  if (aBuf[aLen - 1] == '\0') {
-    --aLen;
-  }
-
-  if (fb->curlen + aLen >= sizeof(fb->buffer)) {
-    aLen = sizeof(fb->buffer) - fb->curlen - 1;
+  if (curlen + aLen >= sizeof(buffer)) {
+    aLen = sizeof(buffer) - curlen - 1;
   }
 
   if (aLen) {
-    memcpy(fb->buffer + fb->curlen, aBuf, aLen);
-    fb->curlen += aLen;
-    fb->buffer[fb->curlen] = '\0';
+    memcpy(buffer + curlen, aBuf, aLen);
+    curlen += aLen;
+    buffer[curlen] = '\0';
   }
 
-  return aLen;
+  return true;
 }
 
 EXPORT_XPCOM_API(void)
@@ -343,31 +332,36 @@ NS_DebugBreak(uint32_t aSeverity, const char* aStr, const char* aExpr,
       aSeverity = NS_DEBUG_WARNING;
   }
 
-#define PRINT_TO_NONPID_BUFFER(...) PR_sxprintf(StuffFixedBuffer, &nonPIDBuf, __VA_ARGS__)
-  PRINT_TO_NONPID_BUFFER("%s: ", sevString);
+  nonPIDBuf.print("%s: ", sevString);
   if (aStr) {
-    PRINT_TO_NONPID_BUFFER("%s: ", aStr);
+    nonPIDBuf.print("%s: ", aStr);
   }
   if (aExpr) {
-    PRINT_TO_NONPID_BUFFER("'%s', ", aExpr);
+    nonPIDBuf.print("'%s', ", aExpr);
   }
   if (aFile) {
-    PRINT_TO_NONPID_BUFFER("file %s, ", aFile);
+    nonPIDBuf.print("file %s, ", aFile);
   }
   if (aLine != -1) {
-    PRINT_TO_NONPID_BUFFER("line %d", aLine);
+    nonPIDBuf.print("line %d", aLine);
   }
-#undef PRINT_TO_NONPID_BUFFER
 
   // Print "[PID]" or "[Desc PID]" at the beginning of the message.
-#define PRINT_TO_BUFFER(...) PR_sxprintf(StuffFixedBuffer, &buf, __VA_ARGS__)
-  PRINT_TO_BUFFER("[");
+  buf.print("[");
   if (sMultiprocessDescription) {
-    PRINT_TO_BUFFER("%s ", sMultiprocessDescription);
+    buf.print("%s ", sMultiprocessDescription);
   }
-  PRINT_TO_BUFFER("%d] %s", base::GetCurrentProcId(), nonPIDBuf.buffer);
-#undef PRINT_TO_BUFFER
 
+  bool isMainthread = (NS_IsMainThreadTLSInitialized() && NS_IsMainThread());
+  PRThread *currentThread = PR_GetCurrentThread();
+  const char *currentThreadName = isMainthread
+    ? "Main Thread"
+    : PR_GetThreadName(currentThread);
+  if(currentThreadName) {
+    buf.print("%d, %s] %s", base::GetCurrentProcId(), currentThreadName , nonPIDBuf.buffer);
+  } else {
+    buf.print("%d, Unnamed thread %p] %s", base::GetCurrentProcId(), currentThread, nonPIDBuf.buffer);
+  }
 
   // errors on platforms without a debugdlg ring a bell on stderr
 #if !defined(XP_WIN)
@@ -396,7 +390,6 @@ NS_DebugBreak(uint32_t aSeverity, const char* aStr, const char* aExpr,
       return;
 
     case NS_DEBUG_ABORT: {
-#if defined(MOZ_CRASHREPORTER)
       // Updating crash annotations in the child causes us to do IPC. This can
       // really cause trouble if we're asserting from within IPC code. So we
       // have to do without the annotations in that case.
@@ -410,7 +403,6 @@ NS_DebugBreak(uint32_t aSeverity, const char* aStr, const char* aExpr,
         CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("AbortMessage"),
                                            nsDependentCString(nonPIDBuf.buffer));
       }
-#endif  // MOZ_CRASHREPORTER
 
 #if defined(DEBUG) && defined(_WIN32)
       RealBreak();
@@ -485,6 +477,8 @@ RealBreak()
     ".object_arch armv4t\n"
 #endif
     "BKPT #0");
+#elif defined(__aarch64__)
+  asm("brk #0");
 #elif defined(SOLARIS)
 #if defined(__i386__) || defined(__i386) || defined(__x86_64__)
   asm("int $3");
@@ -563,7 +557,7 @@ Break(const char* aMsg)
   RealBreak();
 #elif defined(__GNUC__) && (defined(__i386__) || defined(__i386) || defined(__x86_64__))
   RealBreak();
-#elif defined(__arm__)
+#elif defined(__arm__) || defined(__aarch64__)
   RealBreak();
 #elif defined(SOLARIS)
   RealBreak();
@@ -616,8 +610,6 @@ NS_ErrorAccordingToNSPR()
 void
 NS_ABORT_OOM(size_t aSize)
 {
-#if defined(MOZ_CRASHREPORTER)
   CrashReporter::AnnotateOOMAllocationSize(aSize);
-#endif
   MOZ_CRASH("OOM");
 }

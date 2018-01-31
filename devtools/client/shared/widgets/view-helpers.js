@@ -14,29 +14,6 @@ const WIDGET_FOCUSABLE_NODES = new Set(["vbox", "hbox"]);
 var namedTimeoutsStore = new Map();
 
 /**
- * Inheritance helpers from the addon SDK's core/heritage.
- * Remove these when all devtools are loadered.
- */
-exports.Heritage = {
-  /**
-   * @see extend in sdk/core/heritage.
-   */
-  extend: function (prototype, properties = {}) {
-    return Object.create(prototype, this.getOwnPropertyDescriptors(properties));
-  },
-
-  /**
-   * @see getOwnPropertyDescriptors in sdk/core/heritage.
-   */
-  getOwnPropertyDescriptors: function (object) {
-    return Object.getOwnPropertyNames(object).reduce((descriptor, name) => {
-      descriptor[name] = Object.getOwnPropertyDescriptor(object, name);
-      return descriptor;
-    }, {});
-  }
-};
-
-/**
  * Helper for draining a rapid succession of events and invoking a callback
  * once everything settles down.
  *
@@ -252,6 +229,11 @@ const ViewHelpers = exports.ViewHelpers = {
     // Add a class to the pane to handle min-widths, margins and animations.
     pane.classList.add("generic-toggled-pane");
 
+    // Avoid toggles in the middle of animation.
+    if (pane.hasAttribute("animated")) {
+      return;
+    }
+
     // Avoid useless toggles.
     if (flags.visible == !pane.classList.contains("pane-collapsed")) {
       if (flags.callback) {
@@ -283,23 +265,36 @@ const ViewHelpers = exports.ViewHelpers = {
         pane.style.marginLeft = -width + "px";
         pane.style.marginRight = -width + "px";
         pane.style.marginBottom = -height + "px";
-        pane.classList.add("pane-collapsed");
       }
 
       // Wait for the animation to end before calling afterToggle()
       if (flags.animated) {
-        pane.addEventListener("transitionend", function onEvent() {
-          pane.removeEventListener("transitionend", onEvent, false);
+        let options = {
+          useCapture: false,
+          once: true
+        };
+
+        pane.addEventListener("transitionend", () => {
           // Prevent unwanted transitions: if the panel is hidden and the layout
           // changes margins will be updated and the panel will pop out.
           pane.removeAttribute("animated");
+
+          if (!flags.visible) {
+            pane.classList.add("pane-collapsed");
+          }
           if (flags.callback) {
             flags.callback();
           }
-        }, false);
-      } else if (flags.callback) {
+        }, options);
+      } else {
+        if (!flags.visible) {
+          pane.classList.add("pane-collapsed");
+        }
+
         // Invoke the callback immediately since there's no transition.
-        flags.callback();
+        if (flags.callback) {
+          flags.callback();
+        }
       }
     };
 
@@ -472,7 +467,7 @@ Item.prototype = {
  *     this.widget = new MyWidget(document.querySelector(".my-node"));
  *   }
  *
- *   MyView.prototype = Heritage.extend(WidgetMethods, {
+ *   MyView.prototype = extend(WidgetMethods, {
  *     myMethod: function() {},
  *     ...
  *   });
@@ -1506,25 +1501,25 @@ const WidgetMethods = exports.WidgetMethods = {
       case KeyCodes.DOM_VK_UP:
       case KeyCodes.DOM_VK_LEFT:
         this.focusPrevItem();
-        return;
+        break;
       case KeyCodes.DOM_VK_DOWN:
       case KeyCodes.DOM_VK_RIGHT:
         this.focusNextItem();
-        return;
+        break;
       case KeyCodes.DOM_VK_PAGE_UP:
         this.focusItemAtDelta(-(this.pageSize ||
                                (this.itemCount / PAGE_SIZE_ITEM_COUNT_RATIO)));
-        return;
+        break;
       case KeyCodes.DOM_VK_PAGE_DOWN:
         this.focusItemAtDelta(+(this.pageSize ||
                                (this.itemCount / PAGE_SIZE_ITEM_COUNT_RATIO)));
-        return;
+        break;
       case KeyCodes.DOM_VK_HOME:
         this.focusFirstVisibleItem();
-        return;
+        break;
       case KeyCodes.DOM_VK_END:
         this.focusLastVisibleItem();
-        return;
+        break;
     }
   },
 

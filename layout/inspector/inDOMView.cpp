@@ -1,21 +1,20 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "inDOMView.h"
-#include "inIDOMUtils.h"
 
 #include "inLayoutUtils.h"
 
 #include "nsString.h"
 #include "nsReadableUtils.h"
+#include "nsIAttribute.h"
 #include "nsIDOMNode.h"
 #include "nsIDOMNodeFilter.h"
 #include "nsIDOMNodeList.h"
 #include "nsIDOMCharacterData.h"
-#include "nsIDOMAttr.h"
-#include "nsIDOMMozNamedAttrMap.h"
 #include "nsIDOMMutationEvent.h"
 #include "nsBindingManager.h"
 #include "nsNameSpaceManager.h"
@@ -23,8 +22,10 @@
 #include "nsIServiceManager.h"
 #include "nsITreeColumns.h"
 #include "nsITreeBoxObject.h"
+#include "mozilla/dom/Attr.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/Services.h"
+#include "mozilla/dom/InspectorUtils.h"
 
 #ifdef ACCESSIBILITY
 #include "nsAccessibilityService.h"
@@ -139,15 +140,12 @@ inDOMView::SetRootNode(nsIDOMNode* aNode)
 
     // store an owning reference to document so that it isn't
     // destroyed before we are
-    mRootDocument = do_QueryInterface(aNode);
-    if (!mRootDocument) {
-      aNode->GetOwnerDocument(getter_AddRefs(mRootDocument));
-    }
+    nsCOMPtr<nsINode> node = do_QueryInterface(aNode);
+    nsIDocument* doc = node->OwnerDoc();
+    mRootDocument = do_QueryInterface(doc);
 
     // add document observer
-    nsCOMPtr<nsINode> doc(do_QueryInterface(mRootDocument));
-    if (doc)
-      doc->AddMutationObserver(this);
+    doc->AddMutationObserver(this);
   } else {
     mRootDocument = nullptr;
   }
@@ -281,48 +279,47 @@ inDOMView::GetCellProperties(int32_t row, nsITreeColumn* col,
   RowToNode(row, &node);
   if (!node) return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsIContent> content = do_QueryInterface(node->node);
-  if (content && content->IsInAnonymousSubtree()) {
+  nsCOMPtr<nsINode> domNode = do_QueryInterface(node->node);
+  if (domNode->IsInAnonymousSubtree()) {
     aProps.AppendLiteral("anonymous ");
   }
 
-  uint16_t nodeType;
-  node->node->GetNodeType(&nodeType);
+  uint16_t nodeType = domNode->NodeType();
   switch (nodeType) {
-    case nsIDOMNode::ELEMENT_NODE:
+    case nsINode::ELEMENT_NODE:
       aProps.AppendLiteral("ELEMENT_NODE");
       break;
-    case nsIDOMNode::ATTRIBUTE_NODE:
+    case nsINode::ATTRIBUTE_NODE:
       aProps.AppendLiteral("ATTRIBUTE_NODE");
       break;
-    case nsIDOMNode::TEXT_NODE:
+    case nsINode::TEXT_NODE:
       aProps.AppendLiteral("TEXT_NODE");
       break;
-    case nsIDOMNode::CDATA_SECTION_NODE:
+    case nsINode::CDATA_SECTION_NODE:
       aProps.AppendLiteral("CDATA_SECTION_NODE");
       break;
-    case nsIDOMNode::ENTITY_REFERENCE_NODE:
+    case nsINode::ENTITY_REFERENCE_NODE:
       aProps.AppendLiteral("ENTITY_REFERENCE_NODE");
       break;
-    case nsIDOMNode::ENTITY_NODE:
+    case nsINode::ENTITY_NODE:
       aProps.AppendLiteral("ENTITY_NODE");
       break;
-    case nsIDOMNode::PROCESSING_INSTRUCTION_NODE:
+    case nsINode::PROCESSING_INSTRUCTION_NODE:
       aProps.AppendLiteral("PROCESSING_INSTRUCTION_NODE");
       break;
-    case nsIDOMNode::COMMENT_NODE:
+    case nsINode::COMMENT_NODE:
       aProps.AppendLiteral("COMMENT_NODE");
       break;
-    case nsIDOMNode::DOCUMENT_NODE:
+    case nsINode::DOCUMENT_NODE:
       aProps.AppendLiteral("DOCUMENT_NODE");
       break;
-    case nsIDOMNode::DOCUMENT_TYPE_NODE:
+    case nsINode::DOCUMENT_TYPE_NODE:
       aProps.AppendLiteral("DOCUMENT_TYPE_NODE");
       break;
-    case nsIDOMNode::DOCUMENT_FRAGMENT_NODE:
+    case nsINode::DOCUMENT_FRAGMENT_NODE:
       aProps.AppendLiteral("DOCUMENT_FRAGMENT_NODE");
       break;
-    case nsIDOMNode::NOTATION_NODE:
+    case nsINode::NOTATION_NODE:
       aProps.AppendLiteral("NOTATION_NODE");
       break;
   }
@@ -353,12 +350,6 @@ inDOMView::GetImageSrc(int32_t row, nsITreeColumn* col, nsAString& _retval)
 }
 
 NS_IMETHODIMP
-inDOMView::GetProgressMode(int32_t row, nsITreeColumn* col, int32_t* _retval)
-{
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 inDOMView::GetCellValue(int32_t row, nsITreeColumn* col, nsAString& _retval)
 {
   return NS_OK;
@@ -371,21 +362,20 @@ inDOMView::GetCellText(int32_t row, nsITreeColumn* col, nsAString& _retval)
   RowToNode(row, &node);
   if (!node) return NS_ERROR_FAILURE;
 
-  nsIDOMNode* domNode = node->node;
+  nsCOMPtr<nsINode> domNode = do_QueryInterface(node->node);
 
   nsAutoString colID;
   col->GetId(colID);
   if (colID.EqualsLiteral("colNodeName"))
-    domNode->GetNodeName(_retval);
+    _retval = domNode->NodeName();
   else if (colID.EqualsLiteral("colLocalName"))
-    domNode->GetLocalName(_retval);
+    _retval = domNode->LocalName();
   else if (colID.EqualsLiteral("colPrefix"))
     domNode->GetPrefix(_retval);
   else if (colID.EqualsLiteral("colNamespaceURI"))
     domNode->GetNamespaceURI(_retval);
   else if (colID.EqualsLiteral("colNodeType")) {
-    uint16_t nodeType;
-    domNode->GetNodeType(&nodeType);
+    uint16_t nodeType = domNode->NodeType();
     nsAutoString temp;
     temp.AppendInt(int32_t(nodeType));
     _retval = temp;
@@ -393,11 +383,10 @@ inDOMView::GetCellText(int32_t row, nsITreeColumn* col, nsAString& _retval)
     domNode->GetNodeValue(_retval);
   else {
     if (StringBeginsWith(colID, NS_LITERAL_STRING("col@"))) {
-      nsCOMPtr<nsIDOMElement> el = do_QueryInterface(node->node);
-      if (el) {
+      if (domNode->IsElement()) {
         nsAutoString attr;
         colID.Right(attr, colID.Length()-4); // have to use this because Substring is crashing on me!
-        el->GetAttribute(attr, _retval);
+        domNode->AsElement()->GetAttribute(attr, _retval);
       }
     }
   }
@@ -456,9 +445,9 @@ inDOMView::GetParentIndex(int32_t rowIndex, int32_t *_retval)
   RowToNode(rowIndex, &node);
   if (!node) return NS_ERROR_FAILURE;
 
-  // GetParentIndex returns -1 if there is no parent  
+  // GetParentIndex returns -1 if there is no parent
   *_retval = -1;
-  
+
   inDOMViewNode* checkNode = nullptr;
   int32_t i = rowIndex - 1;
   do {
@@ -467,7 +456,7 @@ inDOMView::GetParentIndex(int32_t rowIndex, int32_t *_retval)
       // No parent. Just break out.
       break;
     }
-    
+
     if (checkNode == node->parent) {
       *_retval = i;
       return NS_OK;
@@ -630,7 +619,7 @@ inDOMView::NodeWillBeDestroyed(const nsINode* aNode)
 
 void
 inDOMView::AttributeChanged(nsIDocument* aDocument, dom::Element* aElement,
-                            int32_t aNameSpaceID, nsIAtom* aAttribute,
+                            int32_t aNameSpaceID, nsAtom* aAttribute,
                             int32_t aModType,
                             const nsAttrValue* aOldValue)
 {
@@ -643,10 +632,10 @@ inDOMView::AttributeChanged(nsIDocument* aDocument, dom::Element* aElement,
   }
 
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
-  
+
   // get the dom attribute node, if there is any
   nsCOMPtr<nsIDOMElement> el(do_QueryInterface(aElement));
-  nsCOMPtr<nsIDOMAttr> domAttr;
+  RefPtr<dom::Attr> domAttr;
   nsDependentAtomString attrStr(aAttribute);
   if (aNameSpaceID) {
     nsNameSpaceManager* nsm = nsNameSpaceManager::GetInstance();
@@ -659,9 +648,9 @@ inDOMView::AttributeChanged(nsIDocument* aDocument, dom::Element* aElement,
     if (NS_FAILED(rv)) {
       return;
     }
-    (void)el->GetAttributeNodeNS(attrNS, attrStr, getter_AddRefs(domAttr));
+    domAttr = aElement->GetAttributeNodeNS(attrNS, attrStr);
   } else {
-    (void)el->GetAttributeNode(attrStr, getter_AddRefs(domAttr));
+    domAttr = aElement->GetAttributeNode(attrStr);
   }
 
   if (aModType == nsIDOMMutationEvent::MODIFICATION) {
@@ -677,10 +666,7 @@ inDOMView::AttributeChanged(nsIDocument* aDocument, dom::Element* aElement,
       return;
     }
     // get the number of attributes on this content node
-    nsCOMPtr<nsIDOMMozNamedAttrMap> attrs;
-    el->GetAttributes(getter_AddRefs(attrs));
-    uint32_t attrCount;
-    attrs->GetLength(&attrCount);
+    uint32_t attrCount = aElement->GetAttrCount();
 
     inDOMViewNode* contentNode = nullptr;
     int32_t contentRow;
@@ -740,10 +726,10 @@ inDOMView::AttributeChanged(nsIDocument* aDocument, dom::Element* aElement,
     for (row = contentRow+1; row < GetRowCount(); ++row) {
       checkNode = GetNodeAt(row);
       if (checkNode->level == baseLevel+1) {
-        domAttr = do_QueryInterface(checkNode->node);
+        nsCOMPtr<nsIAttribute> attr = do_QueryInterface(checkNode->node);
+        domAttr = static_cast<dom::Attr*>(attr.get());
         if (domAttr) {
-          nsAutoString attrName;
-          domAttr->GetNodeName(attrName);
+          const nsString& attrName = attr->NodeName();
           if (attrName.Equals(attrStr)) {
             // we have found the row for the attribute that was removed
             RemoveLink(checkNode);
@@ -763,8 +749,7 @@ inDOMView::AttributeChanged(nsIDocument* aDocument, dom::Element* aElement,
 void
 inDOMView::ContentAppended(nsIDocument *aDocument,
                            nsIContent* aContainer,
-                           nsIContent* aFirstNewContent,
-                           int32_t /* unused */)
+                           nsIContent* aFirstNewContent)
 {
   if (!mTree) {
     return;
@@ -772,28 +757,30 @@ inDOMView::ContentAppended(nsIDocument *aDocument,
 
   for (nsIContent* cur = aFirstNewContent; cur; cur = cur->GetNextSibling()) {
     // Our ContentInserted impl doesn't use the index
-    ContentInserted(aDocument, aContainer, cur, 0);
+    ContentInserted(aDocument, aContainer, cur);
   }
+}
+
+static already_AddRefed<nsIDOMNode>
+GetParentForNode(nsINode* aChild, bool aShowAnonymous)
+{
+  MOZ_ASSERT(aChild);
+  nsINode* parent = InspectorUtils::GetParentForNode(*aChild, aShowAnonymous);
+
+  nsCOMPtr<nsIDOMNode> parentDOMNode = do_QueryInterface(parent);
+  return parentDOMNode.forget();
 }
 
 void
 inDOMView::ContentInserted(nsIDocument *aDocument, nsIContent* aContainer,
-                           nsIContent* aChild, int32_t /* unused */)
+                           nsIContent* aChild)
 {
   if (!mTree)
     return;
 
   nsresult rv;
   nsCOMPtr<nsIDOMNode> childDOMNode(do_QueryInterface(aChild));
-  nsCOMPtr<nsIDOMNode> parent;
-  if (!mDOMUtils) {
-    mDOMUtils = services::GetInDOMUtils();
-    if (!mDOMUtils) {
-      return;
-    }
-  }
-  mDOMUtils->GetParentForNode(childDOMNode, mShowAnonymous,
-                              getter_AddRefs(parent));
+  nsCOMPtr<nsIDOMNode> parent = GetParentForNode(aChild, mShowAnonymous);
 
   // find the inDOMViewNode for the parent of the inserted content
   int32_t parentRow = 0;
@@ -804,7 +791,7 @@ inDOMView::ContentInserted(nsIDocument *aDocument, nsIContent* aContainer,
     return;
 
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
-  
+
   if (!parentNode->isOpen) {
     // Parent is not open, so don't bother creating tree rows for the
     // kids.  But do indicate that it's now a container, if needed.
@@ -816,8 +803,8 @@ inDOMView::ContentInserted(nsIDocument *aDocument, nsIContent* aContainer,
   }
 
   // get the previous sibling of the inserted content
-  nsCOMPtr<nsIDOMNode> previous;
-  GetRealPreviousSibling(childDOMNode, parent, getter_AddRefs(previous));
+  // This should probably be done on the flattened tree instead.
+  nsCOMPtr<nsIDOMNode> previous = do_QueryInterface(aChild->GetPreviousSibling());
   inDOMViewNode* previousNode = nullptr;
 
   int32_t row = 0;
@@ -859,8 +846,7 @@ inDOMView::ContentInserted(nsIDocument *aDocument, nsIContent* aContainer,
 
 void
 inDOMView::ContentRemoved(nsIDocument *aDocument, nsIContent* aContainer,
-                          nsIContent* aChild, int32_t aIndexInContainer,
-                          nsIContent* aPreviousSibling)
+                          nsIContent* aChild, nsIContent* aPreviousSibling)
 {
   if (!mTree)
     return;
@@ -877,16 +863,16 @@ inDOMView::ContentRemoved(nsIDocument *aDocument, nsIContent* aContainer,
     return;
 
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
-  
+
   // The parent may no longer be a container.  Note that we don't want
   // to access oldNode after calling RemoveNode, so do this now.
   inDOMViewNode* parentNode = oldNode->parent;
   bool isOnlyChild = oldNode->previous == nullptr && oldNode->next == nullptr;
-  
+
   // Keep track of how many rows we are removing.  It's at least one,
   // but if we're open it's more.
   int32_t oldCount = GetRowCount();
-  
+
   if (oldNode->isOpen)
     CollapseNode(row);
 
@@ -899,7 +885,7 @@ inDOMView::ContentRemoved(nsIDocument *aDocument, nsIContent* aContainer,
     parentNode->isOpen = false;
     mTree->InvalidateRow(NodeToRow(parentNode));
   }
-    
+
   mTree->RowCountChanged(row, GetRowCount() - oldCount);
 }
 
@@ -1173,28 +1159,18 @@ inDOMView::GetChildNodesFor(nsIDOMNode* aNode, nsCOMArray<nsIDOMNode>& aResult)
   NS_ENSURE_ARG(aNode);
   // attribute nodes
   if (mWhatToShow & nsIDOMNodeFilter::SHOW_ATTRIBUTE) {
-    nsCOMPtr<nsIDOMElement> element = do_QueryInterface(aNode);
+    nsCOMPtr<dom::Element> element = do_QueryInterface(aNode);
     if (element) {
-      nsCOMPtr<nsIDOMMozNamedAttrMap> attrs;
-      element->GetAttributes(getter_AddRefs(attrs));
-      if (attrs) {
-        AppendAttrsToArray(attrs, aResult);
-      }
+      AppendAttrsToArray(element->Attributes(), aResult);
     }
   }
 
   if (mWhatToShow & nsIDOMNodeFilter::SHOW_ELEMENT) {
-    nsCOMPtr<nsIDOMNodeList> kids;
-    if (!mDOMUtils) {
-      mDOMUtils = services::GetInDOMUtils();
-      if (!mDOMUtils) {
-        return NS_ERROR_FAILURE;
-      }
-    }
+    nsCOMPtr<nsINode> node = do_QueryInterface(aNode);
+    MOZ_ASSERT(node);
 
-    mDOMUtils->GetChildrenForNode(aNode, mShowAnonymous,
-                                  getter_AddRefs(kids));
-
+    nsCOMPtr<nsINodeList> kids =
+      InspectorUtils::GetChildrenForNode(*node, mShowAnonymous);
     if (kids) {
       AppendKidsToArray(kids, aResult);
     }
@@ -1211,34 +1187,15 @@ inDOMView::GetChildNodesFor(nsIDOMNode* aNode, nsCOMArray<nsIDOMNode>& aResult)
   return NS_OK;
 }
 
-nsresult
-inDOMView::GetRealPreviousSibling(nsIDOMNode* aNode, nsIDOMNode* aRealParent, nsIDOMNode** aSibling)
-{
-  // XXXjrh: This won't work for some cases during some situations where XBL insertion points
-  // are involved.  Fix me!
-  aNode->GetPreviousSibling(aSibling);
-  return NS_OK;
-}
-
-nsresult
-inDOMView::AppendKidsToArray(nsIDOMNodeList* aKids,
+void
+inDOMView::AppendKidsToArray(nsINodeList* aKids,
                              nsCOMArray<nsIDOMNode>& aArray)
 {
-  uint32_t l = 0;
-  aKids->GetLength(&l);
-  nsCOMPtr<nsIDOMNode> kid;
-  uint16_t nodeType = 0;
+  for (uint32_t i = 0, len = aKids->Length(); i < len; ++i) {
+    nsIContent* kid = aKids->Item(i);
+    uint16_t nodeType = kid->NodeType();
 
-  // Try and get DOM Utils in case we don't have one yet.
-  if (!mShowWhitespaceNodes && !mDOMUtils) {
-    mDOMUtils = services::GetInDOMUtils();
-  }
-
-  for (uint32_t i = 0; i < l; ++i) {
-    aKids->Item(i, getter_AddRefs(kid));
-    kid->GetNodeType(&nodeType);
-
-    NS_ASSERTION(nodeType && nodeType <= nsIDOMNode::NOTATION_NODE,
+    NS_ASSERTION(nodeType && nodeType <= nsINode::NOTATION_NODE,
                  "Unknown node type. "
                  "Were new types added to the spec?");
     // As of DOM Level 2 Core and Traversal, each NodeFilter constant
@@ -1249,35 +1206,30 @@ inDOMView::AppendKidsToArray(nsIDOMNodeList* aKids,
     uint32_t filterForNodeType = 1 << (nodeType - 1);
 
     if (mWhatToShow & filterForNodeType) {
-      if ((nodeType == nsIDOMNode::TEXT_NODE ||
-           nodeType == nsIDOMNode::COMMENT_NODE) &&
-          !mShowWhitespaceNodes && mDOMUtils) {
-        nsCOMPtr<nsIDOMCharacterData> data = do_QueryInterface(kid);
+      if ((nodeType == nsINode::TEXT_NODE ||
+           nodeType == nsINode::COMMENT_NODE) &&
+          !mShowWhitespaceNodes) {
+        nsCOMPtr<nsIContent> content = do_QueryInterface(kid);
+        auto data = static_cast<nsGenericDOMDataNode*>(content.get());
         NS_ASSERTION(data, "Does not implement nsIDOMCharacterData!");
-        bool ignore;
-        mDOMUtils->IsIgnorableWhitespace(data, &ignore);
-        if (ignore) {
+        if (InspectorUtils::IsIgnorableWhitespace(*data)) {
           continue;
         }
       }
 
-      aArray.AppendElement(kid.forget());
+      nsCOMPtr<nsIDOMNode> node = do_QueryInterface(kid);
+      aArray.AppendElement(node.forget());
     }
   }
-
-  return NS_OK;
 }
 
 nsresult
-inDOMView::AppendAttrsToArray(nsIDOMMozNamedAttrMap* aAttributes,
+inDOMView::AppendAttrsToArray(nsDOMAttributeMap* aAttributes,
                               nsCOMArray<nsIDOMNode>& aArray)
 {
-  uint32_t l = 0;
-  aAttributes->GetLength(&l);
-  nsCOMPtr<nsIDOMAttr> attribute;
+  uint32_t l = aAttributes->Length();
   for (uint32_t i = 0; i < l; ++i) {
-    aAttributes->Item(i, getter_AddRefs(attribute));
-    aArray.AppendElement(attribute.forget());
+    aArray.AppendElement(aAttributes->Item(i));
   }
   return NS_OK;
 }

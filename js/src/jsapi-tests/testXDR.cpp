@@ -25,14 +25,16 @@ FreezeThaw(JSContext* cx, JS::HandleScript script)
     JS::SetBuildIdOp(cx, GetBuildId);
 
     // freeze
-    uint32_t nbytes;
-    void* memory = JS_EncodeScript(cx, script, &nbytes);
-    if (!memory)
+    JS::TranscodeBuffer buffer;
+    JS::TranscodeResult rs = JS::EncodeScript(cx, buffer, script);
+    if (rs != JS::TranscodeResult_Ok)
         return nullptr;
 
     // thaw
-    JSScript* script2 = JS_DecodeScript(cx, memory, nbytes);
-    js_free(memory);
+    JS::RootedScript script2(cx);
+    rs = JS::DecodeScript(cx, buffer, &script2);
+    if (rs != JS::TranscodeResult_Ok)
+        return nullptr;
     return script2;
 }
 
@@ -114,7 +116,7 @@ BEGIN_TEST(testXDR_source)
         CHECK(script);
         script = FreezeThaw(cx, script);
         CHECK(script);
-        JSString* out = JS_DecompileScript(cx, script, "testing", 0);
+        JSString* out = JS_DecompileScript(cx, script);
         CHECK(out);
         bool equal;
         CHECK(JS_StringEqualsAscii(cx, out, *s, &equal));
@@ -139,8 +141,8 @@ BEGIN_TEST(testXDR_sourceMap)
         CHECK(script);
 
         size_t len = strlen(*sm);
-        JS::UniqueTwoByteChars expected_wrapper(js::InflateString(cx, *sm, &len));
-        char16_t *expected = expected_wrapper.get();
+        JS::UniqueTwoByteChars expected_wrapper(js::InflateString(cx, *sm, len));
+        char16_t* expected = expected_wrapper.get();
         CHECK(expected);
 
         // The script source takes responsibility of free'ing |expected|.

@@ -20,11 +20,13 @@ import android.view.WindowManager;
 
 import org.mozilla.gecko.AppConstants.Versions;
 
+import org.mozilla.gecko.annotation.BuildFlag;
 import org.mozilla.gecko.annotation.WrapForJNI;
 
 /**
  * A MediaPlayerManager with API 17+ Presentation support.
  */
+@BuildFlag("MOZ_NATIVE_DEVICES")
 @TargetApi(17)
 public class PresentationMediaPlayerManager extends MediaPlayerManager {
 
@@ -51,6 +53,10 @@ public class PresentationMediaPlayerManager extends MediaPlayerManager {
     @Override
     protected void updatePresentation() {
         if (mediaRouter == null) {
+            return;
+        }
+
+        if (isPresentationMode) {
             return;
         }
 
@@ -82,10 +88,10 @@ public class PresentationMediaPlayerManager extends MediaPlayerManager {
     }
 
     @WrapForJNI(calledFrom = "ui")
-    /* protected */ static native void invalidateAndScheduleComposite(GeckoView geckoView);
+    /* protected */ static native void invalidateAndScheduleComposite(GeckoSession session);
 
     @WrapForJNI(calledFrom = "ui")
-    /* protected */ static native void addPresentationSurface(GeckoView geckoView, Surface surface);
+    /* protected */ static native void addPresentationSurface(GeckoSession session, Surface surface);
 
     @WrapForJNI(calledFrom = "ui")
     /* protected */ static native void removePresentationSurface();
@@ -124,14 +130,14 @@ public class PresentationMediaPlayerManager extends MediaPlayerManager {
                                    int height) {
             // Surface changed so force a composite
             if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
-                invalidateAndScheduleComposite(mGeckoView);
+                invalidateAndScheduleComposite(mGeckoView.getSession());
             }
         }
 
         @Override
         public void surfaceCreated(SurfaceHolder holder) {
             if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
-                addPresentationSurface(mGeckoView, holder.getSurface());
+                addPresentationSurface(mGeckoView.getSession(), holder.getSurface());
             }
         }
 

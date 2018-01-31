@@ -138,9 +138,9 @@ public:
 
   void DisconnectFromSM();
 #endif
-  NS_IMETHOD Start(bool* aRetVal);
-  NS_IMETHOD Stop(bool *aResult);
-  NS_IMETHOD Enable();
+  NS_IMETHOD Start(bool* aRetVal) override;
+  NS_IMETHOD Stop(bool *aResult) override;
+  NS_IMETHOD Enable() override;
 
 private:
 #if MOZ_X11
@@ -254,7 +254,10 @@ nsNativeAppSupportUnix::InteractCB(SmcConn smc_conn, SmPointer client_data)
   // means we won't process any more. libsm hates us if we do the InteractDone
   // with a pending ShutdownCancelled, and we would certainly like to handle Die
   // whilst a dialog is displayed
-  NS_DispatchToCurrentThread(NewRunnableMethod(self, &nsNativeAppSupportUnix::DoInteract));
+  NS_DispatchToCurrentThread(
+    NewRunnableMethod("nsNativeAppSupportUnix::DoInteract",
+                      self,
+                      &nsNativeAppSupportUnix::DoInteract));
 }
 
 void
@@ -455,25 +458,6 @@ nsNativeAppSupportUnix::Start(bool *aRetVal)
 // initialized before making any other library calls.
 #ifdef MOZ_ENABLE_DBUS
   dbus_threads_init_default();
-#endif
-
-#if (MOZ_WIDGET_GTK == 2)
-  if (gtk_major_version < MIN_GTK_MAJOR_VERSION ||
-      (gtk_major_version == MIN_GTK_MAJOR_VERSION && gtk_minor_version < MIN_GTK_MINOR_VERSION)) {
-    GtkWidget* versionErrDialog = gtk_message_dialog_new(nullptr,
-                     GtkDialogFlags(GTK_DIALOG_MODAL |
-                                    GTK_DIALOG_DESTROY_WITH_PARENT),
-                     GTK_MESSAGE_ERROR,
-                     GTK_BUTTONS_OK,
-                     UNSUPPORTED_GTK_MSG,
-                     gtk_major_version,
-                     gtk_minor_version,
-                     MIN_GTK_MAJOR_VERSION,
-                     MIN_GTK_MINOR_VERSION);
-    gtk_dialog_run(GTK_DIALOG(versionErrDialog));
-    gtk_widget_destroy(versionErrDialog);
-    exit(0);
-  }
 #endif
 
   *aRetVal = true;

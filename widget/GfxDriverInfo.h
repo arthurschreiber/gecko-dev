@@ -58,6 +58,7 @@ enum class OperatingSystem {
   OSX10_10,
   OSX10_11,
   OSX10_12,
+  OSX10_13,
   Android,
   Ios
 };
@@ -100,12 +101,14 @@ enum DeviceFamily {
 };
 
 enum DeviceVendor {
-  VendorAll,
+  VendorAll, // There is an assumption that this is the first enum
   VendorIntel,
   VendorNVIDIA,
   VendorAMD,
   VendorATI,
   VendorMicrosoft,
+  VendorParallels,
+  VendorQualcomm,
   DeviceVendorMax
 };
 

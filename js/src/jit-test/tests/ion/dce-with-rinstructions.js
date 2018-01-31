@@ -3,6 +3,7 @@ setJitCompilerOption("ion.warmup.trigger", 20);
 var i;
 
 var config = getBuildConfiguration();
+var max = 200;
 
 // Check that we are able to remove the operation inside recover test functions (denoted by "rop..."),
 // when we inline the first version of uceFault, and ensure that the bailout is correct
@@ -398,10 +399,10 @@ function rnot_number(i) {
 
 var uceFault_not_object = eval(uneval(uceFault).replace('uceFault', 'uceFault_not_object'));
 function rnot_object(i) {
-    var o = objectEmulatingUndefined();
+    var o = createIsHTMLDDA();
     var x = !o;
     if(uceFault_not_object(i) || uceFault_not_object(i))
-        assertEq(x, true /* = !undefined = !document.all = !objectEmulatingUndefined() */);
+        assertEq(x, true /* = !undefined = !document.all = !createIsHTMLDDA() */);
     assertRecoveredOnBailout(x, true);
     return i;
 }
@@ -494,11 +495,29 @@ function rfloor_object(i) {
     return i;
 }
 
+let uceFault_floor_double = eval(uneval(uceFault).replace('uceFault', 'uceFault_floor_double'));
+function rfloor_double(i) {
+    const x = Math.floor(i + (-1 >>> 0));
+    if (uceFault_floor_double(i) || uceFault_floor_double(i))
+        assertEq(x, 99 + (-1 >>> 0)); /* = i + 2 ^ 32 - 1 */
+    assertRecoveredOnBailout(x, true);
+    return i;
+}
+
 var uceFault_ceil_number = eval(uneval(uceFault).replace('uceFault', 'uceFault_ceil_number'));
 function rceil_number(i) {
     var x = Math.ceil(-i - 0.12010799100);
     if (uceFault_ceil_number(i) || uceFault_ceil_number(i))
         assertEq(x, -i);
+    assertRecoveredOnBailout(x, true);
+    return i;
+}
+
+let uceFault_ceil_double = eval(uneval(uceFault).replace('uceFault', 'uceFault_ceil_double'));
+function rceil_double(i) {
+    const x = Math.floor(i + (-1 >>> 0));
+    if (uceFault_ceil_double(i) || uceFault_ceil_double(i))
+        assertEq(x, 99 + (-1 >>> 0)); /* = i + 2 ^ 32 - 1 */
     assertRecoveredOnBailout(x, true);
     return i;
 }
@@ -554,8 +573,7 @@ function rpow_number(i) {
     var x = Math.pow(i, 3.14159);
     if (uceFault_pow_number(i) || uceFault_pow_number(i))
         assertEq(x, Math.pow(99, 3.14159));
-    // POW recovery temporarily disabled. See bug 1188586.
-    assertRecoveredOnBailout(x, false);
+    assertRecoveredOnBailout(x, true);
     return i;
 }
 
@@ -1291,23 +1309,12 @@ function rhypot_object_4args(i) {
 var uceFault_random = eval(uneval(uceFault).replace('uceFault', 'uceFault_random'));
 function rrandom(i) {
     // setRNGState() exists only in debug builds
+    if(config.debug) setRNGState(2, 1+i);
 
-    if(config.debug) {
-        setRNGState(2, 0);
-        var x = Math.random();
-        if (uceFault_random(i) || uceFault_random(i)) {
-            setRNGState(2, 0);
-            assertEq(x, Math.random());
-        }
-        assertRecoveredOnBailout(x, true);
-    } else {
-        var x = Math.random();
-        if (uceFault_random(i) || uceFault_random(i)) {
-            Math.random();
-        }
-        assertRecoveredOnBailout(x, true);
-    }
-
+    var x = Math.random();
+    if (uceFault_random(i) || uceFault_random(i))
+        assertEq(x, config.debug ? setRNGState(2, 1+i) || Math.random() : x);
+    assertRecoveredOnBailout(x, true);
     return i;
 }
 
@@ -1353,7 +1360,9 @@ function rlog_object(i) {
     return i;
 }
 
-for (i = 0; i < 100; i++) {
+for (j = 100 - max; j < 100; j++) {
+    with({}){} // Do not Ion-compile this loop.
+    let i = j < 2 ? (Math.abs(j) % 50) + 2 : j;
     rbitnot_number(i);
     rbitnot_object(i);
     rbitand_number(i);
@@ -1400,8 +1409,10 @@ for (i = 0; i < 100; i++) {
     rinline_arguments_length_1(i);
     rinline_arguments_length_3(i, 0, 1);
     rfloor_number(i);
+    rfloor_double(i);
     rfloor_object(i);
     rceil_number(i);
+    rceil_double(i);
     rround_number(i);
     rround_double(i);
     rcharCodeAt(i);

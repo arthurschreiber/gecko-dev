@@ -3,7 +3,7 @@
  */
 
 // This verifies that bootstrappable add-ons can be used without restarts.
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 // Enable loading extensions from the user scopes
 Services.prefs.setIntPref("extensions.enabledScopes",
@@ -21,7 +21,7 @@ userExtDir.append("extensions2");
 userExtDir.append(gAppInfo.ID);
 registerDirectory("XREUSysExt", userExtDir.parent);
 
-Components.utils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://testing-common/httpd.js");
 // Create and configure the HTTP server.
 var testserver = new HttpServer();
 testserver.start(-1);
@@ -124,15 +124,15 @@ function run_test_1() {
   AddonManager.getInstallForFile(do_get_addon("test_dictionary"), function(install) {
     ensure_test_completed();
 
-    do_check_neq(install, null);
-    do_check_eq(install.type, "dictionary");
-    do_check_eq(install.version, "1.0");
-    do_check_eq(install.name, "Test Dictionary");
-    do_check_eq(install.state, AddonManager.STATE_DOWNLOADED);
-    do_check_true(install.addon.hasResource("install.rdf"));
-    do_check_false(install.addon.hasResource("bootstrap.js"));
-    do_check_eq(install.addon.operationsRequiringRestart &
-                AddonManager.OP_NEEDS_RESTART_INSTALL, 0);
+    Assert.notEqual(install, null);
+    Assert.equal(install.type, "dictionary");
+    Assert.equal(install.version, "1.0");
+    Assert.equal(install.name, "Test Dictionary");
+    Assert.equal(install.state, AddonManager.STATE_DOWNLOADED);
+    Assert.ok(install.addon.hasResource("install.rdf"));
+    Assert.ok(!install.addon.hasResource("bootstrap.js"));
+    Assert.equal(install.addon.operationsRequiringRestart &
+                 AddonManager.OP_NEEDS_RESTART_INSTALL, 0);
     do_check_not_in_crash_annotation("ab-CD@dictionaries.addons.mozilla.org", "1.0");
 
     let addon = install.addon;
@@ -145,11 +145,11 @@ function run_test_1() {
       "onInstallStarted",
       "onInstallEnded",
     ], function() {
-      do_check_true(addon.hasResource("install.rdf"));
+      Assert.ok(addon.hasResource("install.rdf"));
       HunspellEngine.listener = function(aEvent) {
         HunspellEngine.listener = null;
-        do_check_eq(aEvent, "addDirectory");
-        do_execute_soon(check_test_1);
+        Assert.equal(aEvent, "addDirectory");
+        executeSoon(check_test_1);
       };
     });
     install.install();
@@ -160,33 +160,30 @@ function check_test_1() {
   AddonManager.getAllInstalls(function(installs) {
     // There should be no active installs now since the install completed and
     // doesn't require a restart.
-    do_check_eq(installs.length, 0);
+    Assert.equal(installs.length, 0);
 
     AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1) {
-      do_check_neq(b1, null);
-      do_check_eq(b1.version, "1.0");
-      do_check_false(b1.appDisabled);
-      do_check_false(b1.userDisabled);
-      do_check_true(b1.isActive);
-      do_check_true(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
-      do_check_true(b1.hasResource("install.rdf"));
-      do_check_false(b1.hasResource("bootstrap.js"));
+      Assert.notEqual(b1, null);
+      Assert.equal(b1.version, "1.0");
+      Assert.ok(!b1.appDisabled);
+      Assert.ok(!b1.userDisabled);
+      Assert.ok(b1.isActive);
+      Assert.ok(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+      Assert.ok(b1.hasResource("install.rdf"));
+      Assert.ok(!b1.hasResource("bootstrap.js"));
       do_check_in_crash_annotation("ab-CD@dictionaries.addons.mozilla.org", "1.0");
-
-      let dir = do_get_addon_root_uri(profileDir, "ab-CD@dictionaries.addons.mozilla.org");
 
       let chromeReg = AM_Cc["@mozilla.org/chrome/chrome-registry;1"].
                       getService(AM_Ci.nsIChromeRegistry);
       try {
         chromeReg.convertChromeURL(NetUtil.newURI("chrome://dict/content/dict.xul"));
         do_throw("Chrome manifest should not have been registered");
-      }
-      catch (e) {
+      } catch (e) {
         // Expected the chrome url to not be registered
       }
 
       AddonManager.getAddonsWithOperationsByTypes(null, function(list) {
-        do_check_eq(list.length, 0);
+        Assert.equal(list.length, 0);
 
         run_test_2();
       });
@@ -204,27 +201,27 @@ function run_test_2() {
       ]
     });
 
-    do_check_eq(b1.operationsRequiringRestart &
-                AddonManager.OP_NEEDS_RESTART_DISABLE, 0);
+    Assert.equal(b1.operationsRequiringRestart &
+                 AddonManager.OP_NEEDS_RESTART_DISABLE, 0);
     b1.userDisabled = true;
     ensure_test_completed();
 
-    do_check_neq(b1, null);
-    do_check_eq(b1.version, "1.0");
-    do_check_false(b1.appDisabled);
-    do_check_true(b1.userDisabled);
-    do_check_false(b1.isActive);
-    do_check_false(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+    Assert.notEqual(b1, null);
+    Assert.equal(b1.version, "1.0");
+    Assert.ok(!b1.appDisabled);
+    Assert.ok(b1.userDisabled);
+    Assert.ok(!b1.isActive);
+    Assert.ok(!HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
     do_check_not_in_crash_annotation("ab-CD@dictionaries.addons.mozilla.org", "1.0");
 
     AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(newb1) {
-      do_check_neq(newb1, null);
-      do_check_eq(newb1.version, "1.0");
-      do_check_false(newb1.appDisabled);
-      do_check_true(newb1.userDisabled);
-      do_check_false(newb1.isActive);
+      Assert.notEqual(newb1, null);
+      Assert.equal(newb1.version, "1.0");
+      Assert.ok(!newb1.appDisabled);
+      Assert.ok(newb1.userDisabled);
+      Assert.ok(!newb1.isActive);
 
-      do_execute_soon(run_test_3);
+      executeSoon(run_test_3);
     });
   });
 }
@@ -232,17 +229,17 @@ function run_test_2() {
 // Test that restarting doesn't accidentally re-enable
 function run_test_3() {
   shutdownManager();
-  do_check_false(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+  Assert.ok(!HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
   startupManager(false);
-  do_check_false(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+  Assert.ok(!HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
   do_check_not_in_crash_annotation("ab-CD@dictionaries.addons.mozilla.org", "1.0");
 
   AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1) {
-    do_check_neq(b1, null);
-    do_check_eq(b1.version, "1.0");
-    do_check_false(b1.appDisabled);
-    do_check_true(b1.userDisabled);
-    do_check_false(b1.isActive);
+    Assert.notEqual(b1, null);
+    Assert.equal(b1.version, "1.0");
+    Assert.ok(!b1.appDisabled);
+    Assert.ok(b1.userDisabled);
+    Assert.ok(!b1.isActive);
 
     run_test_4();
   });
@@ -258,27 +255,27 @@ function run_test_4() {
       ]
     });
 
-    do_check_eq(b1.operationsRequiringRestart &
-                AddonManager.OP_NEEDS_RESTART_ENABLE, 0);
+    Assert.equal(b1.operationsRequiringRestart &
+                 AddonManager.OP_NEEDS_RESTART_ENABLE, 0);
     b1.userDisabled = false;
     ensure_test_completed();
 
-    do_check_neq(b1, null);
-    do_check_eq(b1.version, "1.0");
-    do_check_false(b1.appDisabled);
-    do_check_false(b1.userDisabled);
-    do_check_true(b1.isActive);
-    do_check_true(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+    Assert.notEqual(b1, null);
+    Assert.equal(b1.version, "1.0");
+    Assert.ok(!b1.appDisabled);
+    Assert.ok(!b1.userDisabled);
+    Assert.ok(b1.isActive);
+    Assert.ok(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
     do_check_in_crash_annotation("ab-CD@dictionaries.addons.mozilla.org", "1.0");
 
     AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(newb1) {
-      do_check_neq(newb1, null);
-      do_check_eq(newb1.version, "1.0");
-      do_check_false(newb1.appDisabled);
-      do_check_false(newb1.userDisabled);
-      do_check_true(newb1.isActive);
+      Assert.notEqual(newb1, null);
+      Assert.equal(newb1.version, "1.0");
+      Assert.ok(!newb1.appDisabled);
+      Assert.ok(!newb1.userDisabled);
+      Assert.ok(newb1.isActive);
 
-      do_execute_soon(run_test_5);
+      executeSoon(run_test_5);
     });
   });
 }
@@ -286,19 +283,19 @@ function run_test_4() {
 // Tests that a restart shuts down and restarts the add-on
 function run_test_5() {
   shutdownManager();
-  do_check_false(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+  Assert.ok(!HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
   do_check_not_in_crash_annotation("ab-CD@dictionaries.addons.mozilla.org", "1.0");
   startupManager(false);
-  do_check_true(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+  Assert.ok(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
   do_check_in_crash_annotation("ab-CD@dictionaries.addons.mozilla.org", "1.0");
 
   AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1) {
-    do_check_neq(b1, null);
-    do_check_eq(b1.version, "1.0");
-    do_check_false(b1.appDisabled);
-    do_check_false(b1.userDisabled);
-    do_check_true(b1.isActive);
-    do_check_false(isExtensionInAddonsList(profileDir, b1.id));
+    Assert.notEqual(b1, null);
+    Assert.equal(b1.version, "1.0");
+    Assert.ok(!b1.appDisabled);
+    Assert.ok(!b1.userDisabled);
+    Assert.ok(b1.isActive);
+    Assert.ok(!isExtensionInAddonsList(profileDir, b1.id));
 
     run_test_7();
   });
@@ -314,8 +311,8 @@ function run_test_7() {
       ]
     });
 
-    do_check_eq(b1.operationsRequiringRestart &
-                AddonManager.OP_NEEDS_RESTART_UNINSTALL, 0);
+    Assert.equal(b1.operationsRequiringRestart &
+                 AddonManager.OP_NEEDS_RESTART_UNINSTALL, 0);
     b1.uninstall();
 
     check_test_7();
@@ -324,19 +321,19 @@ function run_test_7() {
 
 function check_test_7() {
   ensure_test_completed();
-  do_check_false(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+  Assert.ok(!HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
   do_check_not_in_crash_annotation("ab-CD@dictionaries.addons.mozilla.org", "1.0");
 
   AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org",
    callback_soon(function(b1) {
-    do_check_eq(b1, null);
+    Assert.equal(b1, null);
 
     restartManager();
 
     AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(newb1) {
-      do_check_eq(newb1, null);
+      Assert.equal(newb1, null);
 
-      do_execute_soon(run_test_8);
+      executeSoon(run_test_8);
     });
   }));
 }
@@ -354,25 +351,27 @@ function run_test_8() {
   zip.open(do_get_addon("test_dictionary"));
   dir.append("install.rdf");
   zip.extract("install.rdf", dir);
+  dir.permissions |= FileUtils.PERMS_FILE;
   dir = dir.parent;
   dir.append("dictionaries");
   dir.create(AM_Ci.nsIFile.DIRECTORY_TYPE, 0o755);
   dir.append("ab-CD.dic");
   zip.extract("dictionaries/ab-CD.dic", dir);
+  dir.permissions |= FileUtils.PERMS_FILE;
   zip.close();
 
   startupManager(false);
 
   AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1) {
-    do_check_neq(b1, null);
-    do_check_eq(b1.version, "1.0");
-    do_check_false(b1.appDisabled);
-    do_check_false(b1.userDisabled);
-    do_check_true(b1.isActive);
-    do_check_true(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+    Assert.notEqual(b1, null);
+    Assert.equal(b1.version, "1.0");
+    Assert.ok(!b1.appDisabled);
+    Assert.ok(!b1.userDisabled);
+    Assert.ok(b1.isActive);
+    Assert.ok(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
     do_check_in_crash_annotation("ab-CD@dictionaries.addons.mozilla.org", "1.0");
 
-    do_execute_soon(run_test_9);
+    executeSoon(run_test_9);
   });
 }
 
@@ -386,10 +385,10 @@ function run_test_9() {
   startupManager(false);
 
   AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1) {
-    do_check_eq(b1, null);
+    Assert.equal(b1, null);
     do_check_not_in_crash_annotation("ab-CD@dictionaries.addons.mozilla.org", "1.0");
 
-    do_execute_soon(run_test_12);
+    executeSoon(run_test_12);
   });
 }
 
@@ -417,16 +416,16 @@ function run_test_12() {
   startupManager(true);
 
   AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1) {
-    do_check_neq(b1, null);
-    do_check_eq(b1.version, "1.0");
-    do_check_false(b1.appDisabled);
-    do_check_false(b1.userDisabled);
-    do_check_true(b1.isActive);
-    do_check_true(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+    Assert.notEqual(b1, null);
+    Assert.equal(b1.version, "1.0");
+    Assert.ok(!b1.appDisabled);
+    Assert.ok(!b1.userDisabled);
+    Assert.ok(b1.isActive);
+    Assert.ok(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
     do_check_in_crash_annotation("ab-CD@dictionaries.addons.mozilla.org", "1.0");
 
     b1.uninstall();
-    do_execute_soon(run_test_16);
+    executeSoon(run_test_16);
   });
 }
 
@@ -437,37 +436,37 @@ function run_test_16() {
 
   installAllFiles([do_get_addon("test_dictionary")], function() {
     // spin the event loop to let the addon finish starting
-   do_execute_soon(function check_installed_dictionary() {
+   executeSoon(function check_installed_dictionary() {
     AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org",
      callback_soon(function(b1) {
       // Should have installed and started
-      do_check_true(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+      Assert.ok(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
 
       shutdownManager();
 
       // Should have stopped
-      do_check_false(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+      Assert.ok(!HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
 
       gAppInfo.inSafeMode = true;
       startupManager(false);
 
       AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org",
-       callback_soon(function(b1) {
+       callback_soon(function(b1_2) {
         // Should still be stopped
-        do_check_false(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
-        do_check_false(b1.isActive);
+        Assert.ok(!HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+        Assert.ok(!b1_2.isActive);
 
         shutdownManager();
         gAppInfo.inSafeMode = false;
         startupManager(false);
 
         // Should have started
-        do_check_true(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+        Assert.ok(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
 
-        AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1) {
-          b1.uninstall();
+        AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1_3) {
+          b1_3.uninstall();
 
-          do_execute_soon(run_test_17);
+          executeSoon(run_test_17);
         });
       }));
     }));
@@ -487,11 +486,13 @@ function run_test_17() {
   zip.open(do_get_addon("test_dictionary"));
   dir.append("install.rdf");
   zip.extract("install.rdf", dir);
+  dir.permissions |= FileUtils.PERMS_FILE;
   dir = dir.parent;
   dir.append("dictionaries");
   dir.create(AM_Ci.nsIFile.DIRECTORY_TYPE, 0o755);
   dir.append("ab-CD.dic");
   zip.extract("dictionaries/ab-CD.dic", dir);
+  dir.permissions |= FileUtils.PERMS_FILE;
   zip.close();
 
   startupManager();
@@ -499,10 +500,10 @@ function run_test_17() {
   AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org",
    callback_soon(function(b1) {
     // Should have installed and started
-    do_check_true(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
-    do_check_neq(b1, null);
-    do_check_eq(b1.version, "1.0");
-    do_check_true(b1.isActive);
+    Assert.ok(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+    Assert.notEqual(b1, null);
+    Assert.equal(b1.version, "1.0");
+    Assert.ok(b1.isActive);
 
     // From run_test_21
     dir = userExtDir.clone();
@@ -525,20 +526,20 @@ function run_test_23() {
   AddonManager.getInstallForURL(url, function(install) {
     ensure_test_completed();
 
-    do_check_neq(install, null);
+    Assert.notEqual(install, null);
 
     prepare_test({ }, [
       "onDownloadStarted",
       "onDownloadEnded"
     ], function() {
-      do_check_eq(install.type, "dictionary");
-      do_check_eq(install.version, "1.0");
-      do_check_eq(install.name, "Test Dictionary");
-      do_check_eq(install.state, AddonManager.STATE_DOWNLOADED);
-      do_check_true(install.addon.hasResource("install.rdf"));
-      do_check_false(install.addon.hasResource("bootstrap.js"));
-      do_check_eq(install.addon.operationsRequiringRestart &
-                  AddonManager.OP_NEEDS_RESTART_INSTALL, 0);
+      Assert.equal(install.type, "dictionary");
+      Assert.equal(install.version, "1.0");
+      Assert.equal(install.name, "Test Dictionary");
+      Assert.equal(install.state, AddonManager.STATE_DOWNLOADED);
+      Assert.ok(install.addon.hasResource("install.rdf"));
+      Assert.ok(!install.addon.hasResource("bootstrap.js"));
+      Assert.equal(install.addon.operationsRequiringRestart &
+                   AddonManager.OP_NEEDS_RESTART_INSTALL, 0);
       do_check_not_in_crash_annotation("ab-CD@dictionaries.addons.mozilla.org", "1.0");
 
       let addon = install.addon;
@@ -551,9 +552,9 @@ function run_test_23() {
         "onInstallStarted",
         "onInstallEnded",
       ], function() {
-        do_check_true(addon.hasResource("install.rdf"));
+        Assert.ok(addon.hasResource("install.rdf"));
         // spin to let the addon startup finish
-        do_execute_soon(check_test_23);
+        executeSoon(check_test_23);
       });
     });
     install.install();
@@ -564,28 +565,26 @@ function check_test_23() {
   AddonManager.getAllInstalls(function(installs) {
     // There should be no active installs now since the install completed and
     // doesn't require a restart.
-    do_check_eq(installs.length, 0);
+    Assert.equal(installs.length, 0);
 
     AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1) {
-      do_check_neq(b1, null);
-      do_check_eq(b1.version, "1.0");
-      do_check_false(b1.appDisabled);
-      do_check_false(b1.userDisabled);
-      do_check_true(b1.isActive);
-      do_check_true(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
-      do_check_true(b1.hasResource("install.rdf"));
-      do_check_false(b1.hasResource("bootstrap.js"));
+      Assert.notEqual(b1, null);
+      Assert.equal(b1.version, "1.0");
+      Assert.ok(!b1.appDisabled);
+      Assert.ok(!b1.userDisabled);
+      Assert.ok(b1.isActive);
+      Assert.ok(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+      Assert.ok(b1.hasResource("install.rdf"));
+      Assert.ok(!b1.hasResource("bootstrap.js"));
       do_check_in_crash_annotation("ab-CD@dictionaries.addons.mozilla.org", "1.0");
 
-      let dir = do_get_addon_root_uri(profileDir, "ab-CD@dictionaries.addons.mozilla.org");
-
       AddonManager.getAddonsWithOperationsByTypes(null, callback_soon(function(list) {
-        do_check_eq(list.length, 0);
+        Assert.equal(list.length, 0);
 
         restartManager();
-        AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1) {
-          b1.uninstall();
-          do_execute_soon(run_test_25);
+        AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1_2) {
+          b1_2.uninstall();
+          executeSoon(run_test_25);
         });
       }));
     });
@@ -599,31 +598,31 @@ function run_test_25() {
 
   HunspellEngine.listener = function(aEvent) {
     HunspellEngine.listener = null;
-    do_check_eq(aEvent, "addDirectory");
-    do_check_true(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+    Assert.equal(aEvent, "addDirectory");
+    Assert.ok(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
 
     installAllFiles([do_get_addon("test_dictionary_2")], function test_25_installed2() {
       // Needs a restart to complete this so the old version stays running
-      do_check_true(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+      Assert.ok(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
 
       AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org",
        callback_soon(function(b1) {
-        do_check_neq(b1, null);
-        do_check_eq(b1.version, "1.0");
-        do_check_true(b1.isActive);
-        do_check_true(hasFlag(b1.pendingOperations, AddonManager.PENDING_UPGRADE));
+        Assert.notEqual(b1, null);
+        Assert.equal(b1.version, "1.0");
+        Assert.ok(b1.isActive);
+        Assert.ok(hasFlag(b1.pendingOperations, AddonManager.PENDING_UPGRADE));
 
         restartManager();
 
-        do_check_false(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+        Assert.ok(!HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
 
-        AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1) {
-          do_check_neq(b1, null);
-          do_check_eq(b1.version, "2.0");
-          do_check_true(b1.isActive);
-          do_check_eq(b1.pendingOperations, AddonManager.PENDING_NONE);
+        AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1_2) {
+          Assert.notEqual(b1_2, null);
+          Assert.equal(b1_2.version, "2.0");
+          Assert.ok(b1_2.isActive);
+          Assert.equal(b1_2.pendingOperations, AddonManager.PENDING_NONE);
 
-          do_execute_soon(run_test_26);
+          executeSoon(run_test_26);
         });
       }));
     });
@@ -637,28 +636,28 @@ function run_test_25() {
 function run_test_26() {
   installAllFiles([do_get_addon("test_dictionary")], function test_26_install() {
     // Needs a restart to complete this
-    do_check_false(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+    Assert.ok(!HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
 
     AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org",
      callback_soon(function(b1) {
-      do_check_neq(b1, null);
-      do_check_eq(b1.version, "2.0");
-      do_check_true(b1.isActive);
-      do_check_true(hasFlag(b1.pendingOperations, AddonManager.PENDING_UPGRADE));
+      Assert.notEqual(b1, null);
+      Assert.equal(b1.version, "2.0");
+      Assert.ok(b1.isActive);
+      Assert.ok(hasFlag(b1.pendingOperations, AddonManager.PENDING_UPGRADE));
 
       restartManager();
 
-      do_check_true(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
+      Assert.ok(HunspellEngine.isDictionaryEnabled("ab-CD.dic"));
 
-      AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1) {
-        do_check_neq(b1, null);
-        do_check_eq(b1.version, "1.0");
-        do_check_true(b1.isActive);
-        do_check_eq(b1.pendingOperations, AddonManager.PENDING_NONE);
+      AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1_2) {
+        Assert.notEqual(b1_2, null);
+        Assert.equal(b1_2.version, "1.0");
+        Assert.ok(b1_2.isActive);
+        Assert.equal(b1_2.pendingOperations, AddonManager.PENDING_NONE);
 
         HunspellEngine.deactivate();
-        b1.uninstall();
-        do_execute_soon(run_test_27);
+        b1_2.uninstall();
+        executeSoon(run_test_27);
       });
     }));
   });
@@ -696,15 +695,15 @@ function run_test_27() {
 }
 
 function check_test_27(install) {
-  do_check_eq(install.existingAddon.pendingUpgrade.install, install);
+  Assert.equal(install.existingAddon.pendingUpgrade.install, install);
 
   restartManager();
   AddonManager.getAddonByID("ab-CD@dictionaries.addons.mozilla.org", function(b1) {
-    do_check_neq(b1, null);
-    do_check_eq(b1.version, "2.0");
-    do_check_eq(b1.type, "dictionary");
+    Assert.notEqual(b1, null);
+    Assert.equal(b1.version, "2.0");
+    Assert.equal(b1.type, "dictionary");
     b1.uninstall();
-    do_execute_soon(run_test_28);
+    executeSoon(run_test_28);
   });
 }
 
@@ -742,15 +741,15 @@ function run_test_28() {
 }
 
 function check_test_28(install) {
-  do_check_eq(install.existingAddon.pendingUpgrade.install, install);
+  Assert.equal(install.existingAddon.pendingUpgrade.install, install);
 
   restartManager();
   AddonManager.getAddonByID("ef@dictionaries.addons.mozilla.org", function(b2) {
-    do_check_neq(b2, null);
-    do_check_eq(b2.version, "2.0");
-    do_check_eq(b2.type, "extension");
+    Assert.notEqual(b2, null);
+    Assert.equal(b2.version, "2.0");
+    Assert.equal(b2.type, "extension");
     b2.uninstall();
-    do_execute_soon(run_test_29);
+    executeSoon(run_test_29);
   });
 }
 
@@ -790,9 +789,9 @@ function run_test_29() {
 
 function check_test_29(install) {
   AddonManager.getAddonByID("gh@dictionaries.addons.mozilla.org", function(b2) {
-    do_check_neq(b2, null);
-    do_check_eq(b2.version, "2.0");
-    do_check_eq(b2.type, "dictionary");
+    Assert.notEqual(b2, null);
+    Assert.equal(b2.version, "2.0");
+    Assert.equal(b2.type, "dictionary");
 
     prepare_test({
       "gh@dictionaries.addons.mozilla.org": [

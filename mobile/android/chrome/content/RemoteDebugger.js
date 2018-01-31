@@ -6,7 +6,7 @@
 "use strict";
 
 XPCOMUtils.defineLazyGetter(this, "DebuggerServer", () => {
-  let { require } = Cu.import("resource://devtools/shared/Loader.jsm", {});
+  let { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm", {});
   let { DebuggerServer } = require("devtools/server/main");
   return DebuggerServer;
 });
@@ -60,7 +60,7 @@ var RemoteDebugger = {
   },
 
   _promptForUSB(session) {
-    if (session.authentication !== 'PROMPT') {
+    if (session.authentication !== "PROMPT") {
       // This dialog is not prepared for any other authentication method at
       // this time.
       return DebuggerServer.AuthenticationResult.DENY;
@@ -94,7 +94,7 @@ var RemoteDebugger = {
   },
 
   _promptForTCP(session) {
-    if (session.authentication !== 'OOB_CERT' || !session.client.cert) {
+    if (session.authentication !== "OOB_CERT" || !session.client.cert) {
       // This dialog is not prepared for any other authentication method at
       // this time.
       return DebuggerServer.AuthenticationResult.DENY;
@@ -151,7 +151,7 @@ var RemoteDebugger = {
       return this._receivingOOB;
     }
 
-    this._receivingOOB = Messaging.sendRequestForResult({
+    this._receivingOOB = WindowEventDispatcher.sendRequestForResult({
       type: "DevToolsAuth:Scan"
     }).then(data => {
       return JSON.parse(data);
@@ -176,14 +176,10 @@ var RemoteDebugger = {
   },
 
   initServer: function() {
-    if (DebuggerServer.initialized) {
-      return;
-    }
-
     DebuggerServer.init();
 
     // Add browser and Fennec specific actors
-    DebuggerServer.addBrowserActors();
+    DebuggerServer.registerAllActors();
     DebuggerServer.registerModule("resource://gre/modules/dbg-browser-actors.js");
 
     // Allow debugging of chrome for any process
@@ -199,7 +195,7 @@ RemoteDebugger.receiveOOB =
 var USBRemoteDebugger = {
 
   init() {
-    Services.prefs.addObserver("devtools.", this, false);
+    Services.prefs.addObserver("devtools.", this);
 
     if (this.isEnabled) {
       this.start();
@@ -279,7 +275,7 @@ var USBRemoteDebugger = {
 var WiFiRemoteDebugger = {
 
   init() {
-    Services.prefs.addObserver("devtools.", this, false);
+    Services.prefs.addObserver("devtools.", this);
 
     if (this.isEnabled) {
       this.start();

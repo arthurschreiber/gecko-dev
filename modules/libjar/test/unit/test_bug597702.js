@@ -5,7 +5,7 @@
 var Cc = Components.classes;
 var Ci = Components.interfaces;
 var Cu = Components.utils;
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 // Check that reading non existant inner jars results in the right error
 
@@ -29,7 +29,7 @@ function run_test() {
     instr = badChannel.open2();
     do_throw("Failed to report that file doesn't exist");
   } catch (e) {
-    do_check_true(e.name == "NS_ERROR_FILE_NOT_FOUND");
+    Assert.ok(e.name == "NS_ERROR_FILE_NOT_FOUND");
   }
 }
 

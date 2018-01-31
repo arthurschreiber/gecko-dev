@@ -52,7 +52,7 @@ nsTextEquivUtils::GetNameFromSubtree(Accessible* aAccessible,
 
 nsresult
 nsTextEquivUtils::GetTextEquivFromIDRefs(Accessible* aAccessible,
-                                         nsIAtom *aIDRefsAttr,
+                                         nsAtom *aIDRefsAttr,
                                          nsAString& aTextEquiv)
 {
   aTextEquiv.Truncate();
@@ -135,7 +135,7 @@ nsTextEquivUtils::AppendTextEquivFromTextContent(nsIContent *aContent,
         }
       }
     }
-    
+
     if (aContent->TextLength() > 0) {
       nsIFrame *frame = aContent->GetPrimaryFrame();
       if (frame) {
@@ -151,16 +151,16 @@ nsTextEquivUtils::AppendTextEquivFromTextContent(nsIContent *aContent,
         aString->Append(char16_t(' '));
       }
     }
-    
+
     return NS_OK;
   }
-  
+
   if (aContent->IsHTMLElement() &&
       aContent->NodeInfo()->Equals(nsGkAtoms::br)) {
     aString->AppendLiteral("\r\n");
     return NS_OK;
   }
-  
+
   return NS_OK_NO_NAME_CLAUSE_HANDLED;
 }
 
@@ -313,12 +313,12 @@ nsTextEquivUtils::AppendFromDOMNode(nsIContent *aContent, nsAString *aString)
     } else {
       if (aContent->NodeInfo()->Equals(nsGkAtoms::label,
                                        kNameSpaceID_XUL))
-        aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::value,
-                          textEquivalent);
+        aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::value,
+                                       textEquivalent);
 
       if (textEquivalent.IsEmpty())
-        aContent->GetAttr(kNameSpaceID_None,
-                          nsGkAtoms::tooltiptext, textEquivalent);
+        aContent->AsElement()->GetAttr(kNameSpaceID_None,
+                                       nsGkAtoms::tooltiptext, textEquivalent);
     }
 
     AppendString(aString, textEquivalent);

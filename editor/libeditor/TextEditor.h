@@ -19,10 +19,8 @@ class nsIContent;
 class nsIDOMDocument;
 class nsIDOMElement;
 class nsIDOMEvent;
-class nsIDOMKeyEvent;
 class nsIDOMNode;
 class nsIDocumentEncoder;
-class nsIEditRules;
 class nsIOutputStream;
 class nsISelectionController;
 class nsITransferable;
@@ -31,7 +29,8 @@ namespace mozilla {
 
 class AutoEditInitRulesTrigger;
 class HTMLEditRules;
-class TextEditRules;
+enum class EditAction : int32_t;
+
 namespace dom {
 class Selection;
 } // namespace dom
@@ -63,21 +62,24 @@ public:
   // nsIEditorMailSupport overrides
   NS_DECL_NSIEDITORMAILSUPPORT
 
-  // Overrides of EditorBase interface methods
-  NS_IMETHOD SetAttributeOrEquivalent(nsIDOMElement* aElement,
-                                      const nsAString& aAttribute,
-                                      const nsAString& aValue,
-                                      bool aSuppressTransaction) override;
-  NS_IMETHOD RemoveAttributeOrEquivalent(nsIDOMElement* aElement,
-                                         const nsAString& aAttribute,
-                                         bool aSuppressTransaction) override;
+  // Overrides of EditorBase
+  virtual nsresult RemoveAttributeOrEquivalent(
+                     Element* aElement,
+                     nsAtom* aAttribute,
+                     bool aSuppressTransaction) override;
+  virtual nsresult SetAttributeOrEquivalent(Element* aElement,
+                                            nsAtom* aAttribute,
+                                            const nsAString& aValue,
+                                            bool aSuppressTransaction) override;
+  using EditorBase::RemoveAttributeOrEquivalent;
+  using EditorBase::SetAttributeOrEquivalent;
 
   NS_IMETHOD Init(nsIDOMDocument* aDoc, nsIContent* aRoot,
                   nsISelectionController* aSelCon, uint32_t aFlags,
                   const nsAString& aValue) override;
 
+  nsresult DocumentIsEmpty(bool* aIsEmpty);
   NS_IMETHOD GetDocumentIsEmpty(bool* aDocumentIsEmpty) override;
-  NS_IMETHOD GetIsDocumentEditable(bool* aIsDocumentEditable) override;
 
   NS_IMETHOD DeleteSelection(EDirection aAction,
                              EStripWrappers aStripWrappers) override;
@@ -125,12 +127,14 @@ public:
    */
   virtual nsresult SelectEntireDocument(Selection* aSelection) override;
 
-  virtual nsresult HandleKeyPressEvent(nsIDOMKeyEvent* aKeyEvent) override;
+  virtual nsresult HandleKeyPressEvent(
+                     WidgetKeyboardEvent* aKeyboardEvent) override;
 
-  virtual already_AddRefed<dom::EventTarget> GetDOMEventTarget() override;
+  virtual dom::EventTarget* GetDOMEventTarget() override;
 
   virtual nsresult BeginIMEComposition(WidgetCompositionEvent* aEvent) override;
-  virtual nsresult UpdateIMEComposition(nsIDOMEvent* aTextEvent) override;
+  virtual nsresult UpdateIMEComposition(
+                     WidgetCompositionEvent* aCompositionChangeEvet) override;
 
   virtual already_AddRefed<nsIContent> GetInputEventTargetContent() override;
 
@@ -169,6 +173,8 @@ public:
   static void GetDefaultEditorPrefs(int32_t& aNewLineHandling,
                                     int32_t& aCaretStyle);
 
+  int32_t MaxTextLength() const { return mMaxTextLength; }
+
 protected:
   virtual ~TextEditor();
 
@@ -176,32 +182,58 @@ protected:
   void BeginEditorInit();
   nsresult EndEditorInit();
 
-  NS_IMETHOD GetAndInitDocEncoder(const nsAString& aFormatType,
-                                  uint32_t aFlags,
-                                  const nsACString& aCharset,
-                                  nsIDocumentEncoder** encoder);
+  already_AddRefed<nsIDocumentEncoder> GetAndInitDocEncoder(
+                                         const nsAString& aFormatType,
+                                         uint32_t aFlags,
+                                         const nsACString& aCharset);
 
-  NS_IMETHOD CreateBR(nsIDOMNode* aNode, int32_t aOffset,
-                      nsCOMPtr<nsIDOMNode>* outBRNode,
-                      EDirection aSelect = eNone);
-  already_AddRefed<Element> CreateBRImpl(nsCOMPtr<nsINode>* aInOutParent,
-                                         int32_t* aInOutOffset,
-                                         EDirection aSelect);
-  nsresult CreateBRImpl(nsCOMPtr<nsIDOMNode>* aInOutParent,
-                        int32_t* aInOutOffset,
-                        nsCOMPtr<nsIDOMNode>* outBRNode,
-                        EDirection aSelect);
-  nsresult InsertBR(nsCOMPtr<nsIDOMNode>* outBRNode);
+  /**
+   * CreateBR() creates new <br> element and inserts it before aPointToInsert,
+   * and collapse selection if it's necessary.
+   *
+   * @param aPointToInsert  The point to insert new <br> element.
+   * @param aSelect         If eNone, this won't change selection.
+   *                        If eNext, selection will be collapsed after the
+   *                        <br> element.
+   *                        If ePrevious, selection will be collapsed at the
+   *                        <br> element.
+   * @return                The new <br> node.  If failed to create new <br>
+   *                        node, returns nullptr.
+   */
+  already_AddRefed<Element> CreateBR(const EditorRawDOMPoint& aPointToInsert,
+                                     EDirection aSelect = eNone);
+
+  /**
+   * CreateBRImpl() creates a <br> element and inserts it before aPointToInsert.
+   * Then, tries to collapse selection at or after the new <br> node if
+   * aSelect is not eNone.
+   * XXX Perhaps, this should be merged with CreateBR().
+   *
+   * @param aSelection          The selection of this editor.
+   * @param aPointToInsert      The DOM point where should be <br> node inserted
+   *                            before.
+   * @param aSelect             If eNone, this won't change selection.
+   *                            If eNext, selection will be collapsed after
+   *                            the <br> element.
+   *                            If ePrevious, selection will be collapsed at
+   *                            the <br> element.
+   * @return                    The new <br> node.  If failed to create new
+   *                            <br> node, returns nullptr.
+   */
+  already_AddRefed<Element>
+  CreateBRImpl(Selection& aSelection,
+               const EditorRawDOMPoint& aPointToInsert,
+               EDirection aSelect);
 
   /**
    * Factored methods for handling insertion of data from transferables
    * (drag&drop or clipboard).
    */
   NS_IMETHOD PrepareTransferable(nsITransferable** transferable);
-  NS_IMETHOD InsertTextFromTransferable(nsITransferable* transferable,
-                                        nsIDOMNode* aDestinationNode,
-                                        int32_t aDestOffset,
-                                        bool aDoDeleteSelection);
+  nsresult InsertTextFromTransferable(nsITransferable* transferable,
+                                      nsIDOMNode* aDestinationNode,
+                                      int32_t aDestOffset,
+                                      bool aDoDeleteSelection);
 
   /**
    * Shared outputstring; returns whether selection is collapsed and resulting
@@ -209,11 +241,6 @@ protected:
    */
   nsresult SharedOutputString(uint32_t aFlags, bool* aIsCollapsed,
                               nsAString& aResult);
-
-  /**
-   * Small utility routine to test the eEditorReadonly bit.
-   */
-  bool IsModifiable();
 
   enum PasswordFieldAllowed
   {
@@ -225,11 +252,12 @@ protected:
                           int32_t aSelectionType,
                           bool* aActionTaken = nullptr);
 
-  bool UpdateMetaCharset(nsIDOMDocument* aDocument,
+  bool UpdateMetaCharset(nsIDocument& aDocument,
                          const nsACString& aCharacterSet);
 
 protected:
-  nsCOMPtr<nsIEditRules> mRules;
+  nsCOMPtr<nsIDocumentEncoder> mCachedDocumentEncoder;
+  nsString mCachedDocumentEncoderType;
   int32_t mWrapColumn;
   int32_t mMaxTextLength;
   int32_t mInitTriggerCounter;
@@ -242,5 +270,17 @@ protected:
 };
 
 } // namespace mozilla
+
+mozilla::TextEditor*
+nsIEditor::AsTextEditor()
+{
+  return static_cast<mozilla::TextEditor*>(this);
+}
+
+const mozilla::TextEditor*
+nsIEditor::AsTextEditor() const
+{
+  return static_cast<const mozilla::TextEditor*>(this);
+}
 
 #endif // #ifndef mozilla_TextEditor_h

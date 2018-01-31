@@ -22,7 +22,6 @@ import mozinfo
 SCRIPT_DIR = os.path.abspath(os.path.realpath(os.path.dirname(__file__)))
 
 
-# TODO inherit from MochitestBase instead
 class MochiRemote(MochitestDesktop):
     _automation = None
     _dm = None
@@ -30,13 +29,14 @@ class MochiRemote(MochitestDesktop):
     logMessages = []
 
     def __init__(self, automation, devmgr, options):
-        MochitestDesktop.__init__(self, options)
+        MochitestDesktop.__init__(self, options.flavor, vars(options))
 
         self._automation = automation
         self._dm = devmgr
         self.environment = self._automation.environment
         self.remoteProfile = os.path.join(options.remoteTestRoot, "profile/")
         self.remoteModulesDir = os.path.join(options.remoteTestRoot, "modules/")
+        self.remoteCache = os.path.join(options.remoteTestRoot, "cache/")
         self._automation.setRemoteProfile(self.remoteProfile)
         self.remoteLog = options.remoteLogFile
         self.localLog = options.logFile
@@ -51,6 +51,10 @@ class MochiRemote(MochitestDesktop):
             "chrome")
         self._dm.removeDir(self.remoteChromeTestDir)
         self._dm.mkDir(self.remoteChromeTestDir)
+        self._dm.removeDir(self.remoteProfile)
+        self._dm.removeDir(self.remoteCache)
+        # move necko cache to a location that can be cleaned up
+        options.extraPrefs += ["browser.cache.disk.parent_directory=%s" % self.remoteCache]
 
     def cleanup(self, options):
         if self._dm.fileExists(self.remoteLog):
@@ -60,12 +64,14 @@ class MochiRemote(MochitestDesktop):
             self.log.warning(
                 "Unable to retrieve log file (%s) from remote device" %
                 self.remoteLog)
-        self._dm.removeDir(self.remoteProfile)
         self._dm.removeDir(self.remoteChromeTestDir)
+        self._dm.removeDir(self.remoteProfile)
+        self._dm.removeDir(self.remoteCache)
         blobberUploadDir = os.environ.get('MOZ_UPLOAD_DIR', None)
         if blobberUploadDir:
             self._dm.getDirectory(self.remoteMozLog, blobberUploadDir)
         MochitestDesktop.cleanup(self, options)
+        self.localProfile = None
 
     def findPath(self, paths, filename=None):
         for path in paths:
@@ -190,11 +196,11 @@ class MochiRemote(MochitestDesktop):
     def addChromeToProfile(self, options):
         manifest = MochitestDesktop.addChromeToProfile(self, options)
 
-        # Support Firefox (browser), B2G (shell), SeaMonkey (navigator), and Webapp
-        # Runtime (webapp).
+        # Support Firefox (browser), SeaMonkey (navigator), and Webapp Runtime (webapp).
         if options.flavor == 'chrome':
             # append overlay to chrome.manifest
-            chrome = "overlay chrome://browser/content/browser.xul chrome://mochikit/content/browser-test-overlay.xul"
+            chrome = ("overlay chrome://browser/content/browser.xul "
+                      "chrome://mochikit/content/browser-test-overlay.xul")
             path = os.path.join(options.profilePath, 'extensions', 'staged',
                                 'mochikit@mozilla.org', 'chrome.manifest')
             with open(path, "a") as f:
@@ -267,8 +273,6 @@ class MochiRemote(MochitestDesktop):
             options,
             debugger=debugger)
         # remove desktop environment not used on device
-        if "MOZ_WIN_INHERIT_STD_HANDLES_PRE_VISTA" in browserEnv:
-            del browserEnv["MOZ_WIN_INHERIT_STD_HANDLES_PRE_VISTA"]
         if "XPCOM_MEM_BLOAT_LOG" in browserEnv:
             del browserEnv["XPCOM_MEM_BLOAT_LOG"]
         # override mozLogs to avoid processing in MochitestDesktop base class
@@ -276,6 +280,8 @@ class MochiRemote(MochitestDesktop):
         browserEnv["MOZ_LOG_FILE"] = os.path.join(
             self.remoteMozLog,
             self.mozLogName)
+        if options.dmd:
+            browserEnv['DMD'] = '1'
         return browserEnv
 
     def runApp(self, *args, **kwargs):
@@ -288,9 +294,9 @@ class MochiRemote(MochitestDesktop):
 
         # remove args not supported by automation.py
         kwargs.pop('marionette_args', None)
-        kwargs.pop('quiet', None)
 
-        return self._automation.runApp(*args, **kwargs)
+        ret, _ = self._automation.runApp(*args, **kwargs)
+        return ret, None
 
 
 def run_test_harness(parser, options):
@@ -303,7 +309,7 @@ def run_test_harness(parser, options):
     if options is None:
         raise ValueError("Invalid options specified, use --help for a list of valid options")
 
-    options.runByDir = False
+    options.runByManifest = False
     # roboextender is used by mochitest-chrome tests like test_java_addons.html,
     # but not by any plain mochitests
     if options.flavor != 'chrome':
@@ -312,6 +318,7 @@ def run_test_harness(parser, options):
     dm = options.dm
     auto.setDeviceManager(dm)
     mochitest = MochiRemote(auto, dm, options)
+    options.dm = None
 
     log = mochitest.log
     message_logger.logger = log
@@ -332,6 +339,7 @@ def run_test_harness(parser, options):
     auto.setAppName(options.remoteappname)
 
     logParent = os.path.dirname(options.remoteLogFile)
+    dm.removeDir(logParent)
     dm.mkDir(logParent)
     auto.setRemoteLog(options.remoteLogFile)
     auto.setServerInfo(options.webServer, options.httpPort, options.sslPort)
@@ -348,22 +356,20 @@ def run_test_harness(parser, options):
     mozinfo.info['android_version'] = androidVersion
 
     deviceRoot = dm.deviceRoot
-    if options.dmdPath:
-        dmdLibrary = "libdmd.so"
-        dmdPathOnDevice = os.path.join(deviceRoot, dmdLibrary)
-        dm.removeFile(dmdPathOnDevice)
-        dm.pushFile(os.path.join(options.dmdPath, dmdLibrary), dmdPathOnDevice)
-        options.dmdPath = deviceRoot
-
     options.dumpOutputDirectory = deviceRoot
 
     procName = options.app.split('/')[-1]
     dm.killProcess(procName)
+    if dm.processExist(procName):
+        log.warning("unable to kill %s before running tests!" % procName)
 
     mochitest.mozLogName = "moz.log"
     try:
         dm.recordLogcat()
-        retVal = mochitest.runTests(options)
+        if options.verify:
+            retVal = mochitest.verifyTests(options)
+        else:
+            retVal = mochitest.runTests(options)
     except:
         log.error("Automation Error: Exception caught while running tests")
         traceback.print_exc()

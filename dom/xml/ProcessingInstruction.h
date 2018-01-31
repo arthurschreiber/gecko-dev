@@ -25,9 +25,6 @@ public:
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
-  // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE_TO_NSINODE
-
   // nsIDOMCharacterData
   NS_FORWARD_NSIDOMCHARACTERDATA(nsGenericDOMDataNode::)
   using nsGenericDOMDataNode::SetData; // Prevent hiding overloaded virtual function.
@@ -66,7 +63,7 @@ protected:
    * @param aValue [out] the value for the attribute with name specified in
    *                     aAttribute. Empty if the attribute isn't present.
    */
-  bool GetAttrValue(nsIAtom *aName, nsAString& aValue);
+  bool GetAttrValue(nsAtom *aName, nsAString& aValue);
 
   virtual JSObject* WrapNode(JSContext *aCx, JS::Handle<JSObject*> aGivenProto) override;
 };

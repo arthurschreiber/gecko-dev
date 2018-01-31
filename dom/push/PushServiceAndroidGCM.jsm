@@ -10,24 +10,20 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 const Cr = Components.results;
 
-const {PushDB} = Cu.import("resource://gre/modules/PushDB.jsm");
-const {PushRecord} = Cu.import("resource://gre/modules/PushRecord.jsm");
-const {
-  PushCrypto,
-  getCryptoParams,
-} = Cu.import("resource://gre/modules/PushCrypto.jsm");
-Cu.import("resource://gre/modules/Messaging.jsm"); /*global: Messaging */
-Cu.import("resource://gre/modules/Services.jsm"); /*global: Services */
-Cu.import("resource://gre/modules/Preferences.jsm"); /*global: Preferences */
-Cu.import("resource://gre/modules/Promise.jsm"); /*global: Promise */
-Cu.import("resource://gre/modules/XPCOMUtils.jsm"); /*global: XPCOMUtils */
+const {PushDB} = ChromeUtils.import("resource://gre/modules/PushDB.jsm");
+const {PushRecord} = ChromeUtils.import("resource://gre/modules/PushRecord.jsm");
+const {PushCrypto} = ChromeUtils.import("resource://gre/modules/PushCrypto.jsm");
+ChromeUtils.import("resource://gre/modules/Messaging.jsm"); /*global: EventDispatcher */
+ChromeUtils.import("resource://gre/modules/Services.jsm"); /*global: Services */
+ChromeUtils.import("resource://gre/modules/Preferences.jsm"); /*global: Preferences */
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm"); /*global: XPCOMUtils */
 
-const Log = Cu.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.bind("Push");
+const Log = ChromeUtils.import("resource://gre/modules/AndroidLog.jsm", {}).AndroidLog.bind("Push");
 
 this.EXPORTED_SYMBOLS = ["PushServiceAndroidGCM"];
 
 XPCOMUtils.defineLazyGetter(this, "console", () => {
-  let {ConsoleAPI} = Cu.import("resource://gre/modules/Console.jsm", {});
+  let {ConsoleAPI} = ChromeUtils.import("resource://gre/modules/Console.jsm", {});
   return new ConsoleAPI({
     dump: Log.i,
     maxLogLevelPref: "dom.push.loglevel",
@@ -107,40 +103,39 @@ this.PushServiceAndroidGCM = {
     data = JSON.parse(data);
     console.debug("ReceivedPushMessage with data", data);
 
-    let { message, cryptoParams } = this._messageAndCryptoParams(data);
+    let { headers, message } = this._messageAndHeaders(data);
 
-    console.debug("Delivering message to main PushService:", message, cryptoParams);
+    console.debug("Delivering message to main PushService:", message, headers);
     this._mainPushService.receivedPushMessage(
-      data.channelID, "", message, cryptoParams, (record) => {
+      data.channelID, "", headers, message, (record) => {
         // Always update the stored record.
         return record;
       });
   },
 
-  _messageAndCryptoParams(data) {
+  _messageAndHeaders(data) {
     // Default is no data (and no encryption).
     let message = null;
-    let cryptoParams = null;
+    let headers = null;
 
     if (data.message && data.enc && (data.enckey || data.cryptokey)) {
-      let headers = {
+      headers = {
         encryption_key: data.enckey,
         crypto_key: data.cryptokey,
         encryption: data.enc,
         encoding: data.con,
       };
-      cryptoParams = getCryptoParams(headers);
       // Ciphertext is (urlsafe) Base 64 encoded.
       message = ChromeUtils.base64URLDecode(data.message, {
         // The Push server may append padding.
         padding: "ignore",
       });
     }
-    return { message, cryptoParams };
+    return { headers, message };
   },
 
   _configure: function(serverURL, debug) {
-    return Messaging.sendRequestForResult({
+    return EventDispatcher.instance.sendRequestForResult({
       type: "PushServiceAndroidGCM:Configure",
       endpoint: serverURL.spec,
       debug: debug,
@@ -153,10 +148,10 @@ this.PushServiceAndroidGCM = {
     this._serverURI = serverURL;
 
     prefs.observe("debug", this);
-    Services.obs.addObserver(this, "PushServiceAndroidGCM:ReceivedPushMessage", false);
+    Services.obs.addObserver(this, "PushServiceAndroidGCM:ReceivedPushMessage");
 
     return this._configure(serverURL, !!prefs.get("debug")).then(() => {
-      Messaging.sendRequestForResult({
+      EventDispatcher.instance.sendRequestForResult({
         type: "PushServiceAndroidGCM:Initialized"
       });
     });
@@ -164,7 +159,7 @@ this.PushServiceAndroidGCM = {
 
   uninit: function() {
     console.debug("uninit()");
-    Messaging.sendRequestForResult({
+    EventDispatcher.instance.sendRequestForResult({
       type: "PushServiceAndroidGCM:Uninitialized"
     });
 
@@ -182,10 +177,11 @@ this.PushServiceAndroidGCM = {
     // It's possible for the registration or subscriptions backing the
     // PushService to not be registered with the underlying AndroidPushService.
     // Expire those that are unrecognized.
-    return Messaging.sendRequestForResult({
+    return EventDispatcher.instance.sendRequestForResult({
       type: "PushServiceAndroidGCM:DumpSubscriptions",
     })
     .then(subscriptions => {
+      subscriptions = JSON.parse(subscriptions);
       console.debug("connect:", subscriptions);
       // subscriptions maps chid => subscription data.
       return Promise.all(records.map(record => {
@@ -227,8 +223,9 @@ this.PushServiceAndroidGCM = {
       message.service = "fxa";
     }
     // Caller handles errors.
-    return Messaging.sendRequestForResult(message)
+    return EventDispatcher.instance.sendRequestForResult(message)
     .then(data => {
+      data = JSON.parse(data);
       console.debug("Got data:", data);
       return PushCrypto.generateKeys()
         .then(exportedKeys =>
@@ -253,7 +250,7 @@ this.PushServiceAndroidGCM = {
 
   unregister: function(record) {
     console.debug("unregister: ", record);
-    return Messaging.sendRequestForResult({
+    return EventDispatcher.instance.sendRequestForResult({
       type: "PushServiceAndroidGCM:UnsubscribeChannel",
       channelID: record.keyID,
     });

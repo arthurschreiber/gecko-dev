@@ -10,8 +10,8 @@ var Cr = Components.results;
 
 const URI_EXTENSION_BLOCKLIST_DIALOG = "chrome://mozapps/content/extensions/blocklist.xul";
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://testing-common/MockRegistrar.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://testing-common/MockRegistrar.jsm");
 var gTestserver = new HttpServer();
 gTestserver.start(-1);
 gPort = gTestserver.identity.primaryPort;
@@ -89,8 +89,7 @@ function MockPlugin(name, version, enabledState) {
 }
 Object.defineProperty(MockPlugin.prototype, "blocklisted", {
   get: function MockPlugin_getBlocklisted() {
-    let bls = Cc["@mozilla.org/extensions/blocklist;1"].getService(Ci.nsIBlocklistService);
-    return bls.getPluginBlocklistState(this) == bls.STATE_BLOCKED;
+    return Services.blocklist.getPluginBlocklistState(this) == Services.blocklist.STATE_BLOCKED;
   }
 });
 Object.defineProperty(MockPlugin.prototype, "disabled", {
@@ -119,47 +118,47 @@ var gTestCheck = null;
 
 // A fake plugin host for the blocklist service to use
 var PluginHost = {
-  getPluginTags: function(countRef) {
+  getPluginTags(countRef) {
     countRef.value = PLUGINS.length;
     return PLUGINS;
   },
 
-  QueryInterface: function(iid) {
+  QueryInterface(iid) {
     if (iid.equals(Ci.nsIPluginHost)
      || iid.equals(Ci.nsISupports))
       return this;
 
     throw Components.results.NS_ERROR_NO_INTERFACE;
   }
-}
+};
 
 // Don't need the full interface, attempts to call other methods will just
 // throw which is just fine
 var WindowWatcher = {
-  openWindow: function(parent, url, name, features, windowArguments) {
+  openWindow(parent, url, name, features, windowArguments) {
     // Should be called to list the newly blocklisted items
-    do_check_eq(url, URI_EXTENSION_BLOCKLIST_DIALOG);
+    Assert.equal(url, URI_EXTENSION_BLOCKLIST_DIALOG);
 
     if (gNotificationCheck) {
       var args = windowArguments.wrappedJSObject;
       gNotificationCheck(args);
     }
 
-    //run the code after the blocklist is closed
-    Services.obs.notifyObservers(null, "addon-blocklist-closed", null);
+    // run the code after the blocklist is closed
+    Services.obs.notifyObservers(null, "addon-blocklist-closed");
 
     // Call the next test after the blocklist has finished up
     do_timeout(0, gTestCheck);
   },
 
-  QueryInterface: function(iid) {
+  QueryInterface(iid) {
     if (iid.equals(Ci.nsIWindowWatcher)
      || iid.equals(Ci.nsISupports))
       return this;
 
     throw Cr.NS_ERROR_NO_INTERFACE;
   }
-}
+};
 
 MockRegistrar.register("@mozilla.org/plugin/host;1", PluginHost);
 MockRegistrar.register("@mozilla.org/embedcomp/window-watcher;1", WindowWatcher);
@@ -240,20 +239,20 @@ function run_test() {
 // Before every main test this is the state the add-ons are meant to be in
 function check_initial_state(callback) {
   AddonManager.getAddonsByIDs(ADDONS.map(a => a.id), function(addons) {
-    do_check_eq(check_addon_state(addons[0]), "true,false,false");
-    do_check_eq(check_addon_state(addons[1]), "false,false,false");
-    do_check_eq(check_addon_state(addons[2]), "false,false,false");
-    do_check_eq(check_addon_state(addons[3]), "true,true,false");
-    do_check_eq(check_addon_state(addons[4]), "false,false,false");
-    do_check_eq(check_addon_state(addons[5]), "false,false,true");
-    do_check_eq(check_addon_state(addons[6]), "false,false,true");
+    Assert.equal(check_addon_state(addons[0]), "true,false,false");
+    Assert.equal(check_addon_state(addons[1]), "false,false,false");
+    Assert.equal(check_addon_state(addons[2]), "false,false,false");
+    Assert.equal(check_addon_state(addons[3]), "true,true,false");
+    Assert.equal(check_addon_state(addons[4]), "false,false,false");
+    Assert.equal(check_addon_state(addons[5]), "false,false,true");
+    Assert.equal(check_addon_state(addons[6]), "false,false,true");
 
-    do_check_eq(check_plugin_state(PLUGINS[0]), "true,false");
-    do_check_eq(check_plugin_state(PLUGINS[1]), "false,false");
-    do_check_eq(check_plugin_state(PLUGINS[2]), "false,false");
-    do_check_eq(check_plugin_state(PLUGINS[3]), "true,false");
-    do_check_eq(check_plugin_state(PLUGINS[4]), "false,false");
-    do_check_eq(check_plugin_state(PLUGINS[5]), "false,true");
+    Assert.equal(check_plugin_state(PLUGINS[0]), "true,false");
+    Assert.equal(check_plugin_state(PLUGINS[1]), "false,false");
+    Assert.equal(check_plugin_state(PLUGINS[2]), "false,false");
+    Assert.equal(check_plugin_state(PLUGINS[3]), "true,false");
+    Assert.equal(check_plugin_state(PLUGINS[4]), "false,false");
+    Assert.equal(check_plugin_state(PLUGINS[5]), "false,true");
 
     callback();
   });
@@ -269,17 +268,17 @@ function check_test_pt1() {
         do_throw("Addon " + (i + 1) + " did not get installed correctly");
     }
 
-    do_check_eq(check_addon_state(addons[0]), "false,false,false");
-    do_check_eq(check_addon_state(addons[1]), "false,false,false");
-    do_check_eq(check_addon_state(addons[2]), "false,false,false");
+    Assert.equal(check_addon_state(addons[0]), "false,false,false");
+    Assert.equal(check_addon_state(addons[1]), "false,false,false");
+    Assert.equal(check_addon_state(addons[2]), "false,false,false");
 
     // Warn add-ons should be soft disabled automatically
-    do_check_eq(check_addon_state(addons[3]), "true,true,false");
-    do_check_eq(check_addon_state(addons[4]), "true,true,false");
+    Assert.equal(check_addon_state(addons[3]), "true,true,false");
+    Assert.equal(check_addon_state(addons[4]), "true,true,false");
 
     // Blocked and incompatible should be app disabled only
-    do_check_eq(check_addon_state(addons[5]), "false,false,true");
-    do_check_eq(check_addon_state(addons[6]), "false,false,true");
+    Assert.equal(check_addon_state(addons[5]), "false,false,true");
+    Assert.equal(check_addon_state(addons[6]), "false,false,true");
 
     // We've overridden the plugin host so we cannot tell what that would have
     // initialised the plugins as
@@ -299,29 +298,28 @@ function check_test_pt1() {
 
 function check_notification_pt2(args) {
   dump("Checking notification pt 2\n");
-  do_check_eq(args.list.length, 4);
+  Assert.equal(args.list.length, 4);
 
   for (let addon of args.list) {
     if (addon.item instanceof Ci.nsIPluginTag) {
       switch (addon.item.name) {
         case "test_bug455906_2":
-          do_check_false(addon.blocked);
+          Assert.ok(!addon.blocked);
           break;
         case "test_bug455906_3":
-          do_check_false(addon.blocked);
+          Assert.ok(!addon.blocked);
           addon.disable = true;
           break;
         default:
           do_throw("Unknown addon: " + addon.item.name);
       }
-    }
-    else {
+    } else {
       switch (addon.item.id) {
         case "test_bug455906_2@tests.mozilla.org":
-          do_check_false(addon.blocked);
+          Assert.ok(!addon.blocked);
           break;
         case "test_bug455906_3@tests.mozilla.org":
-          do_check_false(addon.blocked);
+          Assert.ok(!addon.blocked);
           addon.disable = true;
           break;
         default:
@@ -337,23 +335,23 @@ function check_test_pt2() {
 
   AddonManager.getAddonsByIDs(ADDONS.map(a => a.id), callback_soon(function(addons) {
     // Should have disabled this add-on as requested
-    do_check_eq(check_addon_state(addons[2]), "true,true,false");
-    do_check_eq(check_plugin_state(PLUGINS[2]), "true,false");
+    Assert.equal(check_addon_state(addons[2]), "true,true,false");
+    Assert.equal(check_plugin_state(PLUGINS[2]), "true,false");
 
     // The blocked add-on should have changed to soft disabled
-    do_check_eq(check_addon_state(addons[5]), "true,true,false");
-    do_check_eq(check_addon_state(addons[6]), "true,true,true");
-    do_check_eq(check_plugin_state(PLUGINS[5]), "true,false");
+    Assert.equal(check_addon_state(addons[5]), "true,true,false");
+    Assert.equal(check_addon_state(addons[6]), "true,true,true");
+    Assert.equal(check_plugin_state(PLUGINS[5]), "true,false");
 
     // These should have been unchanged
-    do_check_eq(check_addon_state(addons[0]), "true,false,false");
-    do_check_eq(check_addon_state(addons[1]), "false,false,false");
-    do_check_eq(check_addon_state(addons[3]), "true,true,false");
-    do_check_eq(check_addon_state(addons[4]), "false,false,false");
-    do_check_eq(check_plugin_state(PLUGINS[0]), "true,false");
-    do_check_eq(check_plugin_state(PLUGINS[1]), "false,false");
-    do_check_eq(check_plugin_state(PLUGINS[3]), "true,false");
-    do_check_eq(check_plugin_state(PLUGINS[4]), "false,false");
+    Assert.equal(check_addon_state(addons[0]), "true,false,false");
+    Assert.equal(check_addon_state(addons[1]), "false,false,false");
+    Assert.equal(check_addon_state(addons[3]), "true,true,false");
+    Assert.equal(check_addon_state(addons[4]), "false,false,false");
+    Assert.equal(check_plugin_state(PLUGINS[0]), "true,false");
+    Assert.equal(check_plugin_state(PLUGINS[1]), "false,false");
+    Assert.equal(check_plugin_state(PLUGINS[3]), "true,false");
+    Assert.equal(check_plugin_state(PLUGINS[4]), "false,false");
 
     // Back to starting state
     addons[2].userDisabled = false;
@@ -378,34 +376,33 @@ function run_test_pt3() {
 
 function check_notification_pt3(args) {
   dump("Checking notification pt 3\n");
-  do_check_eq(args.list.length, 6);
+  Assert.equal(args.list.length, 6);
 
   for (let addon of args.list) {
     if (addon.item instanceof Ci.nsIPluginTag) {
       switch (addon.item.name) {
         case "test_bug455906_2":
-          do_check_true(addon.blocked);
+          Assert.ok(addon.blocked);
           break;
         case "test_bug455906_3":
-          do_check_true(addon.blocked);
+          Assert.ok(addon.blocked);
           break;
         case "test_bug455906_5":
-          do_check_true(addon.blocked);
+          Assert.ok(addon.blocked);
           break;
         default:
           do_throw("Unknown addon: " + addon.item.name);
       }
-    }
-    else {
+    } else {
       switch (addon.item.id) {
         case "test_bug455906_2@tests.mozilla.org":
-          do_check_true(addon.blocked);
+          Assert.ok(addon.blocked);
           break;
         case "test_bug455906_3@tests.mozilla.org":
-          do_check_true(addon.blocked);
+          Assert.ok(addon.blocked);
           break;
         case "test_bug455906_5@tests.mozilla.org":
-          do_check_true(addon.blocked);
+          Assert.ok(addon.blocked);
           break;
         default:
           do_throw("Unknown addon: " + addon.item.id);
@@ -418,42 +415,39 @@ function check_test_pt3() {
   restartManager();
   dump("Checking results pt 3\n");
 
-  let blocklist = Cc["@mozilla.org/extensions/blocklist;1"].
-                  getService(Ci.nsIBlocklistService);
-
   AddonManager.getAddonsByIDs(ADDONS.map(a => a.id), function(addons) {
     // All should have gained the blocklist state, user disabled as previously
-    do_check_eq(check_addon_state(addons[0]), "true,false,true");
-    do_check_eq(check_addon_state(addons[1]), "false,false,true");
-    do_check_eq(check_addon_state(addons[2]), "false,false,true");
-    do_check_eq(check_addon_state(addons[4]), "false,false,true");
-    do_check_eq(check_plugin_state(PLUGINS[0]), "true,true");
-    do_check_eq(check_plugin_state(PLUGINS[1]), "false,true");
-    do_check_eq(check_plugin_state(PLUGINS[2]), "false,true");
-    do_check_eq(check_plugin_state(PLUGINS[3]), "true,true");
-    do_check_eq(check_plugin_state(PLUGINS[4]), "false,true");
+    Assert.equal(check_addon_state(addons[0]), "true,false,true");
+    Assert.equal(check_addon_state(addons[1]), "false,false,true");
+    Assert.equal(check_addon_state(addons[2]), "false,false,true");
+    Assert.equal(check_addon_state(addons[4]), "false,false,true");
+    Assert.equal(check_plugin_state(PLUGINS[0]), "true,true");
+    Assert.equal(check_plugin_state(PLUGINS[1]), "false,true");
+    Assert.equal(check_plugin_state(PLUGINS[2]), "false,true");
+    Assert.equal(check_plugin_state(PLUGINS[3]), "true,true");
+    Assert.equal(check_plugin_state(PLUGINS[4]), "false,true");
 
     // Should have gained the blocklist state but no longer be soft disabled
-    do_check_eq(check_addon_state(addons[3]), "false,false,true");
+    Assert.equal(check_addon_state(addons[3]), "false,false,true");
 
     // Check blockIDs are correct
-    do_check_eq(blocklist.getAddonBlocklistURL(addons[0]), create_blocklistURL(addons[0].id));
-    do_check_eq(blocklist.getAddonBlocklistURL(addons[1]), create_blocklistURL(addons[1].id));
-    do_check_eq(blocklist.getAddonBlocklistURL(addons[2]), create_blocklistURL(addons[2].id));
-    do_check_eq(blocklist.getAddonBlocklistURL(addons[3]), create_blocklistURL(addons[3].id));
-    do_check_eq(blocklist.getAddonBlocklistURL(addons[4]), create_blocklistURL(addons[4].id));
+    Assert.equal(Services.blocklist.getAddonBlocklistURL(addons[0]), create_blocklistURL(addons[0].id));
+    Assert.equal(Services.blocklist.getAddonBlocklistURL(addons[1]), create_blocklistURL(addons[1].id));
+    Assert.equal(Services.blocklist.getAddonBlocklistURL(addons[2]), create_blocklistURL(addons[2].id));
+    Assert.equal(Services.blocklist.getAddonBlocklistURL(addons[3]), create_blocklistURL(addons[3].id));
+    Assert.equal(Services.blocklist.getAddonBlocklistURL(addons[4]), create_blocklistURL(addons[4].id));
 
     // All plugins have the same blockID on the test
-    do_check_eq(blocklist.getPluginBlocklistURL(PLUGINS[0]), create_blocklistURL('test_bug455906_plugin'));
-    do_check_eq(blocklist.getPluginBlocklistURL(PLUGINS[1]), create_blocklistURL('test_bug455906_plugin'));
-    do_check_eq(blocklist.getPluginBlocklistURL(PLUGINS[2]), create_blocklistURL('test_bug455906_plugin'));
-    do_check_eq(blocklist.getPluginBlocklistURL(PLUGINS[3]), create_blocklistURL('test_bug455906_plugin'));
-    do_check_eq(blocklist.getPluginBlocklistURL(PLUGINS[4]), create_blocklistURL('test_bug455906_plugin'));
+    Assert.equal(Services.blocklist.getPluginBlocklistURL(PLUGINS[0]), create_blocklistURL("test_bug455906_plugin"));
+    Assert.equal(Services.blocklist.getPluginBlocklistURL(PLUGINS[1]), create_blocklistURL("test_bug455906_plugin"));
+    Assert.equal(Services.blocklist.getPluginBlocklistURL(PLUGINS[2]), create_blocklistURL("test_bug455906_plugin"));
+    Assert.equal(Services.blocklist.getPluginBlocklistURL(PLUGINS[3]), create_blocklistURL("test_bug455906_plugin"));
+    Assert.equal(Services.blocklist.getPluginBlocklistURL(PLUGINS[4]), create_blocklistURL("test_bug455906_plugin"));
 
     // Shouldn't be changed
-    do_check_eq(check_addon_state(addons[5]), "false,false,true");
-    do_check_eq(check_addon_state(addons[6]), "false,false,true");
-    do_check_eq(check_plugin_state(PLUGINS[5]), "false,true");
+    Assert.equal(check_addon_state(addons[5]), "false,false,true");
+    Assert.equal(check_addon_state(addons[6]), "false,false,true");
+    Assert.equal(check_plugin_state(PLUGINS[5]), "false,true");
 
     // Back to starting state
     gNotificationCheck = null;
@@ -479,9 +473,9 @@ function check_notification_pt4(args) {
   dump("Checking notification pt 4\n");
 
   // Should be just the dummy add-on to force this notification
-  do_check_eq(args.list.length, 1);
-  do_check_false(args.list[0].item instanceof Ci.nsIPluginTag);
-  do_check_eq(args.list[0].item.id, "dummy_bug455906_2@tests.mozilla.org");
+  Assert.equal(args.list.length, 1);
+  Assert.equal(false, args.list[0].item instanceof Ci.nsIPluginTag);
+  Assert.equal(args.list[0].item.id, "dummy_bug455906_2@tests.mozilla.org");
 }
 
 function check_test_pt4() {
@@ -490,23 +484,23 @@ function check_test_pt4() {
 
   AddonManager.getAddonsByIDs(ADDONS.map(a => a.id), function(addons) {
     // This should have become unblocked
-    do_check_eq(check_addon_state(addons[5]), "false,false,false");
-    do_check_eq(check_plugin_state(PLUGINS[5]), "false,false");
+    Assert.equal(check_addon_state(addons[5]), "false,false,false");
+    Assert.equal(check_plugin_state(PLUGINS[5]), "false,false");
 
     // Should get re-enabled
-    do_check_eq(check_addon_state(addons[3]), "false,false,false");
+    Assert.equal(check_addon_state(addons[3]), "false,false,false");
 
     // No change for anything else
-    do_check_eq(check_addon_state(addons[0]), "true,false,false");
-    do_check_eq(check_addon_state(addons[1]), "false,false,false");
-    do_check_eq(check_addon_state(addons[2]), "false,false,false");
-    do_check_eq(check_addon_state(addons[4]), "false,false,false");
-    do_check_eq(check_addon_state(addons[6]), "false,false,true");
-    do_check_eq(check_plugin_state(PLUGINS[0]), "true,false");
-    do_check_eq(check_plugin_state(PLUGINS[1]), "false,false");
-    do_check_eq(check_plugin_state(PLUGINS[2]), "false,false");
-    do_check_eq(check_plugin_state(PLUGINS[3]), "true,false");
-    do_check_eq(check_plugin_state(PLUGINS[4]), "false,false");
+    Assert.equal(check_addon_state(addons[0]), "true,false,false");
+    Assert.equal(check_addon_state(addons[1]), "false,false,false");
+    Assert.equal(check_addon_state(addons[2]), "false,false,false");
+    Assert.equal(check_addon_state(addons[4]), "false,false,false");
+    Assert.equal(check_addon_state(addons[6]), "false,false,true");
+    Assert.equal(check_plugin_state(PLUGINS[0]), "true,false");
+    Assert.equal(check_plugin_state(PLUGINS[1]), "false,false");
+    Assert.equal(check_plugin_state(PLUGINS[2]), "false,false");
+    Assert.equal(check_plugin_state(PLUGINS[3]), "true,false");
+    Assert.equal(check_plugin_state(PLUGINS[4]), "false,false");
 
     finish();
   });

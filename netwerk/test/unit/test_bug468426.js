@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 var index = 0;
@@ -52,7 +52,7 @@ function triggerNextTest() {
 }
 
 function checkValueAndTrigger(request, data, ctx) {
-    do_check_eq(tests[index].expected, data);
+    Assert.equal(tests[index].expected, data);
 
     if (index < tests.length - 1) {
         index++;

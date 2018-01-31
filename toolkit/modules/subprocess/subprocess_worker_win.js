@@ -6,8 +6,10 @@
 "use strict";
 
 /* exported Process */
-/* globals BaseProcess, BasePipe, win32 */
 
+/* import-globals-from subprocess_shared.js */
+/* import-globals-from subprocess_shared_win.js */
+/* import-globals-from subprocess_worker_common.js */
 importScripts("resource://gre/modules/subprocess/subprocess_shared.js",
               "resource://gre/modules/subprocess/subprocess_shared_win.js",
               "resource://gre/modules/subprocess/subprocess_worker_common.js");
@@ -378,14 +380,20 @@ class Process extends BaseProcess {
         srcHandle = libc.GetStdHandle(win32.STD_ERROR_HANDLE);
       }
 
-      let handle = win32.HANDLE();
+      // If we don't have a valid stderr handle, just pass it along without duplicating.
+      if (String(srcHandle) == win32.INVALID_HANDLE_VALUE ||
+          String(srcHandle) == win32.NULL_HANDLE_VALUE) {
+        their_pipes[2] = srcHandle;
+      } else {
+        let handle = win32.HANDLE();
 
-      let curProc = libc.GetCurrentProcess();
-      let ok = libc.DuplicateHandle(curProc, srcHandle, curProc, handle.address(),
-                                    0, true /* inheritable */,
-                                    win32.DUPLICATE_SAME_ACCESS);
+        let curProc = libc.GetCurrentProcess();
+        let ok = libc.DuplicateHandle(curProc, srcHandle, curProc, handle.address(),
+                                      0, true /* inheritable */,
+                                      win32.DUPLICATE_SAME_ACCESS);
 
-      their_pipes[2] = ok && win32.Handle(handle);
+        their_pipes[2] = ok && win32.Handle(handle);
+      }
     }
 
     if (!their_pipes.every(handle => handle)) {
@@ -440,7 +448,17 @@ class Process extends BaseProcess {
   spawn(options) {
     let {command, arguments: args} = options;
 
-    args = args.map(arg => this.quoteString(arg));
+    if (/\\cmd\.exe$/i.test(command) && args.length == 3 && /^(\/S)?\/C$/i.test(args[1])) {
+      // cmd.exe is insane and requires special treatment.
+      args = [this.quoteString(args[0]), "/S/C", `"${args[2]}"`];
+    } else {
+      args = args.map(arg => this.quoteString(arg));
+    }
+
+    if (/\.(bat|cmd)$/i.test(command)) {
+      command = io.comspec;
+      args = ["cmd.exe", "/s/c", `"${args.join(" ")}"`];
+    }
 
     let envp = this.stringList(options.environment);
 
@@ -490,7 +508,10 @@ class Process extends BaseProcess {
       procInfo.address());
 
     for (let handle of new Set(handles)) {
-      handle.dispose();
+      // If any of our handles are invalid, they don't have finalizers.
+      if (handle && handle.dispose) {
+        handle.dispose();
+      }
     }
 
     if (threadAttrs) {
@@ -499,8 +520,22 @@ class Process extends BaseProcess {
 
     if (ok) {
       this.jobHandle = win32.Handle(libc.CreateJobObjectW(null, null));
+
+      let info = win32.JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+      info.BasicLimitInformation.LimitFlags = win32.JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+
+      ok = libc.SetInformationJobObject(this.jobHandle, win32.JobObjectExtendedLimitInformation,
+                                        ctypes.cast(info.address(), ctypes.voidptr_t),
+                                        info.constructor.size);
+      errorMessage = `Failed to set job limits: 0x${(ctypes.winLastError || 0).toString(16)}`;
+    }
+
+    if (ok) {
       ok = libc.AssignProcessToJobObject(this.jobHandle, procInfo.hProcess);
-      errorMessage = `Failed to attach process to job object: 0x${(ctypes.winLastError || 0).toString(16)}`;
+      if (!ok) {
+        errorMessage = `Failed to attach process to job object: 0x${(ctypes.winLastError || 0).toString(16)}`;
+        libc.TerminateProcess(procInfo.hProcess, TERMINATE_EXIT_CODE);
+      }
     }
 
     if (!ok) {
@@ -582,6 +617,8 @@ io = {
   running: true,
 
   init(details) {
+    this.comspec = details.comspec;
+
     let signalEvent = ctypes.cast(ctypes.uintptr_t(details.signalEvent),
                                   win32.HANDLE);
     this.signal = new Signal(signalEvent);

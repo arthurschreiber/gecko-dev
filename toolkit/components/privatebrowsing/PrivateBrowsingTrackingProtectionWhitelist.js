@@ -5,8 +5,8 @@
 const Ci = Components.interfaces;
 const Cu = Components.utils;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function PrivateBrowsingTrackingProtectionWhitelist() {
   // The list of URIs explicitly excluded from tracking protection.
@@ -58,7 +58,7 @@ PrivateBrowsingTrackingProtectionWhitelist.prototype = {
     return this._allowlist.indexOf(uri.spec) !== -1;
   },
 
-  observe: function (subject, topic, data) {
+  observe(subject, topic, data) {
     if (topic == "last-pb-context-exited") {
       this._allowlist = [];
     }

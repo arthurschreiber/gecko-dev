@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-// vim:cindent:ts=2:et:sw=2:
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -74,20 +74,13 @@ nsQuoteList::Calc(nsQuoteNode* aNode)
 void
 nsQuoteList::RecalcAll()
 {
-  nsQuoteNode *node = FirstNode();
-  if (!node)
-    return;
-
-  do {
+  for (nsQuoteNode* node = FirstNode(); node; node = Next(node)) {
     int32_t oldDepth = node->mDepthBefore;
     Calc(node);
 
     if (node->mDepthBefore != oldDepth && node->mText && node->IsRealQuote())
       node->mText->SetData(*node->Text());
-
-    // Next node
-    node = Next(node);
-  } while (node != FirstNode());
+  }
 }
 
 #ifdef DEBUG
@@ -95,11 +88,7 @@ void
 nsQuoteList::PrintChain()
 {
   printf("Chain: \n");
-  if (!FirstNode()) {
-    return;
-  }
-  nsQuoteNode* node = FirstNode();
-  do {
+  for (nsQuoteNode* node = FirstNode(); node; node = Next(node)) {
     printf("  %p %d - ", static_cast<void*>(node), node->mDepthBefore);
     switch(node->mType) {
         case (eStyleContentType_OpenQuote):
@@ -124,7 +113,6 @@ nsQuoteList::PrintChain()
       printf(" \"%s\",", NS_ConvertUTF16toUTF8(data).get());
     }
     printf("\n");
-    node = Next(node);
-  } while (node != FirstNode());
+  }
 }
 #endif

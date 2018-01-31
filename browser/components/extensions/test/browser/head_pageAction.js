@@ -3,28 +3,39 @@
 "use strict";
 
 /* exported runTests */
-/* globals getListStyleImage */
+// This file is imported into the same scope as head.js.
+/* import-globals-from head.js */
 
-function* runTests(options) {
+{
+  const chromeRegistry = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(Ci.nsIChromeRegistry);
+
+  let localeDir = new URL("locale/", gTestPath).href;
+  let {file} = chromeRegistry.convertChromeURL(Services.io.newURI(localeDir)).QueryInterface(Ci.nsIFileURL);
+
+  Components.manager.addBootstrappedManifestLocation(file);
+  registerCleanupFunction(() => {
+    Components.manager.removeBootstrappedManifestLocation(file);
+  });
+}
+
+async function runTests(options) {
   function background(getTests) {
     let tabs;
     let tests;
 
     // Gets the current details of the page action, and returns a
     // promise that resolves to an object containing them.
-    function getDetails() {
-      return new Promise(resolve => {
-        return browser.tabs.query({active: true, currentWindow: true}, resolve);
-      }).then(([tab]) => {
-        let tabId = tab.id;
-        browser.test.log(`Get details: tab={id: ${tabId}, url: ${JSON.stringify(tab.url)}}`);
-        return Promise.all([
-          browser.pageAction.getTitle({tabId}),
-          browser.pageAction.getPopup({tabId})]);
-      }).then(details => {
-        return Promise.resolve({title: details[0],
-                                popup: details[1]});
-      });
+    async function getDetails() {
+      let [tab] = await browser.tabs.query({active: true, currentWindow: true});
+      let tabId = tab.id;
+
+      browser.test.log(`Get details: tab={id: ${tabId}, url: ${JSON.stringify(tab.url)}}`);
+
+      return {
+        title: await browser.pageAction.getTitle({tabId}),
+        popup: await browser.pageAction.getPopup({tabId}),
+        isShown: await browser.pageAction.isShown({tabId}),
+      };
     }
 
 
@@ -33,40 +44,40 @@ function* runTests(options) {
     function nextTest() {
       let test = tests.shift();
 
-      test(expecting => {
+      test(async expecting => {
         function finish() {
           // Check that the actual icon has the expected values, then
           // run the next test.
           browser.test.sendMessage("nextTest", expecting, tests.length);
         }
 
+        // Check that the API returns the expected values, and then
+        // run the next test.
+        let details = await getDetails();
         if (expecting) {
-          // Check that the API returns the expected values, and then
-          // run the next test.
-          getDetails().then(details => {
-            browser.test.assertEq(expecting.title, details.title,
-                                  "expected value from getTitle");
+          browser.test.assertEq(expecting.title, details.title,
+                                "expected value from getTitle");
 
-            browser.test.assertEq(expecting.popup, details.popup,
-                                  "expected value from getPopup");
-
-            finish();
-          });
-        } else {
-          finish();
+          browser.test.assertEq(expecting.popup, details.popup,
+                                "expected value from getPopup");
         }
+
+        browser.test.assertEq(!!expecting, details.isShown,
+                              "expected value from isShown");
+
+        finish();
       });
     }
 
-    function runTests() {
+    async function runTests() {
       tabs = [];
       tests = getTests(tabs);
 
-      browser.tabs.query({active: true, currentWindow: true}, resultTabs => {
-        tabs[0] = resultTabs[0].id;
+      let resultTabs = await browser.tabs.query({active: true, currentWindow: true});
 
-        nextTest();
-      });
+      tabs[0] = resultTabs[0].id;
+
+      nextTest();
     }
 
     browser.test.onMessage.addListener((msg) => {
@@ -97,7 +108,7 @@ function* runTests(options) {
   function checkDetails(details) {
     let image = currentWindow.document.getElementById(pageActionId);
     if (details == null) {
-      ok(image == null || image.hidden, "image is hidden");
+      ok(image == null || image.getAttribute("disabled") == "true", "image is disabled");
     } else {
       ok(image, "image exists");
 
@@ -113,10 +124,12 @@ function* runTests(options) {
   let testNewWindows = 1;
 
   let awaitFinish = new Promise(resolve => {
-    extension.onMessage("nextTest", (expecting, testsRemaining) => {
+    extension.onMessage("nextTest", async (expecting, testsRemaining) => {
       if (!pageActionId) {
-        pageActionId = `${makeWidgetId(extension.id)}-page-action`;
+        pageActionId = BrowserPageActions.urlbarButtonNodeIDForActionID(makeWidgetId(extension.id));
       }
+
+      await promiseAnimationFrame(currentWindow);
 
       checkDetails(expecting);
 
@@ -138,15 +151,16 @@ function* runTests(options) {
     });
   });
 
-  yield SpecialPowers.pushPrefEnv({set: [["general.useragent.locale", "es-ES"]]});
+  let reqLoc = Services.locale.getRequestedLocales();
+  Services.locale.setRequestedLocales(["es-ES"]);
 
-  yield extension.startup();
+  await extension.startup();
 
-  yield awaitFinish;
+  await awaitFinish;
 
-  yield extension.unload();
+  await extension.unload();
 
-  yield SpecialPowers.popPrefEnv();
+  Services.locale.setRequestedLocales(reqLoc);
 
   let node = document.getElementById(pageActionId);
   is(node, null, "pageAction image removed from document");
@@ -156,7 +170,6 @@ function* runTests(options) {
     node = win.document.getElementById(pageActionId);
     is(node, null, "pageAction image removed from second document");
 
-    yield BrowserTestUtils.closeWindow(win);
+    await BrowserTestUtils.closeWindow(win);
   }
 }
-

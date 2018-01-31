@@ -6,7 +6,7 @@
 
 this.EXPORTED_SYMBOLS = ["TransientPrefs"];
 
-Components.utils.import("resource://gre/modules/Preferences.jsm");
+ChromeUtils.import("resource://gre/modules/Preferences.jsm");
 
 var prefVisibility = new Map;
 
@@ -15,7 +15,7 @@ var prefVisibility = new Map;
    application. */
 
 this.TransientPrefs = {
-  prefShouldBeVisible: function (prefName) {
+  prefShouldBeVisible(prefName) {
     if (Preferences.isSet(prefName))
       prefVisibility.set(prefName, true);
 

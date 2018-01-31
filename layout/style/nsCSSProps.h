@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,6 +21,8 @@
 #include "mozilla/CSSEnabledState.h"
 #include "mozilla/UseCounter.h"
 #include "mozilla/EnumTypeTraits.h"
+#include "mozilla/Preferences.h"
+#include "nsXULAppAPI.h"
 
 // Length of the "--" prefix on custom names (such as custom property names,
 // and, in the future, custom media query names).
@@ -315,6 +318,9 @@ enum nsStyleAnimType {
   // nscolor values
   eStyleAnimType_Color,
 
+  // StyleComplexColor values
+  eStyleAnimType_ComplexColor,
+
   // nsStyleSVGPaint values
   eStyleAnimType_PaintServer,
 
@@ -337,7 +343,7 @@ public:
     // KTableEntry objects can be initialized either with an int16_t value
     // or a value of an enumeration type that can fit within an int16_t.
 
-    KTableEntry(nsCSSKeyword aKeyword, int16_t aValue)
+    constexpr KTableEntry(nsCSSKeyword aKeyword, int16_t aValue)
       : mKeyword(aKeyword)
       , mValue(aValue)
     {
@@ -345,12 +351,17 @@ public:
 
     template<typename T,
              typename = typename std::enable_if<std::is_enum<T>::value>::type>
-    KTableEntry(nsCSSKeyword aKeyword, T aValue)
+    constexpr KTableEntry(nsCSSKeyword aKeyword, T aValue)
       : mKeyword(aKeyword)
       , mValue(static_cast<int16_t>(aValue))
     {
       static_assert(mozilla::EnumTypeFitsWithin<T, int16_t>::value,
                     "aValue must be an enum that fits within mValue");
+    }
+
+    bool IsSentinel() const
+    {
+      return mKeyword == eCSSKeyword_UNKNOWN && mValue == -1;
     }
 
     nsCSSKeyword mKeyword;
@@ -403,14 +414,14 @@ public:
   static bool IsPredefinedCounterStyle(const nsACString& aStyle);
 
   // Given a property enum, get the string value
-  static const nsAFlatCString& GetStringValue(nsCSSPropertyID aProperty);
-  static const nsAFlatCString& GetStringValue(nsCSSFontDesc aFontDesc);
-  static const nsAFlatCString& GetStringValue(nsCSSCounterDesc aCounterDesc);
+  static const nsCString& GetStringValue(nsCSSPropertyID aProperty);
+  static const nsCString& GetStringValue(nsCSSFontDesc aFontDesc);
+  static const nsCString& GetStringValue(nsCSSCounterDesc aCounterDesc);
 
   // Given a CSS Property and a Property Enum Value
   // Return back a const nsString& representation of the
   // value. Return back nullstr if no value is found
-  static const nsAFlatCString& LookupPropertyValue(nsCSSPropertyID aProperty, int32_t aValue);
+  static const nsCString& LookupPropertyValue(nsCSSPropertyID aProperty, int32_t aValue);
 
   // Get a color name for a predefined color value like buttonhighlight or activeborder
   // Sets the aStr param to the name of the propertyID
@@ -440,12 +451,11 @@ public:
     return ValueToKeywordEnum(static_cast<int16_t>(aValue), aTable);
   }
   // Ditto but as a string, return "" when not found.
-  static const nsAFlatCString& ValueToKeyword(int32_t aValue,
-                                              const KTableEntry aTable[]);
+  static const nsCString& ValueToKeyword(int32_t aValue,
+                                         const KTableEntry aTable[]);
   template<typename T,
            typename = typename std::enable_if<std::is_enum<T>::value>::type>
-  static const nsAFlatCString& ValueToKeyword(T aValue,
-                                              const KTableEntry aTable[])
+  static const nsCString& ValueToKeyword(T aValue, const KTableEntry aTable[])
   {
     static_assert(mozilla::EnumTypeFitsWithin<T, int16_t>::value,
                   "aValue must be an enum that fits within KTableEntry::mValue");
@@ -490,7 +500,6 @@ public:
   }
 
 private:
-  // Lives in nsCSSParser.cpp for the macros it depends on.
   static const uint32_t kParserVariantTable[eCSSProperty_COUNT_no_shorthands];
 
 public:
@@ -628,6 +637,10 @@ public:
   static bool IsEnabled(nsCSSPropertyID aProperty) {
     MOZ_ASSERT(0 <= aProperty && aProperty < eCSSProperty_COUNT_with_aliases,
                "out of range");
+    // In the child process, assert that we're not trying to parse stylesheets
+    // before we've gotten all our prefs.
+    MOZ_ASSERT_IF(!XRE_IsParentProcess(),
+                  mozilla::Preferences::AreAllPrefsSetInContentProcess());
     return gPropertyEnabled[aProperty];
   }
 
@@ -689,7 +702,8 @@ public:
   static const KTableEntry kBackfaceVisibilityKTable[];
   static const KTableEntry kTransformStyleKTable[];
   static const KTableEntry kImageLayerAttachmentKTable[];
-  static const KTableEntry kImageLayerOriginKTable[];
+  static const KTableEntry kBackgroundOriginKTable[];
+  static const KTableEntry kMaskOriginKTable[];
   static const KTableEntry kImageLayerPositionKTable[];
   static const KTableEntry kImageLayerRepeatKTable[];
   static const KTableEntry kImageLayerRepeatPartKTable[];
@@ -699,9 +713,9 @@ public:
   // Not const because we modify its entries when the pref
   // "layout.css.background-clip.text" changes:
   static KTableEntry kBackgroundClipKTable[];
+  static const KTableEntry kMaskClipKTable[];
   static const KTableEntry kBlendModeKTable[];
   static const KTableEntry kBorderCollapseKTable[];
-  static const KTableEntry kBorderColorKTable[];
   static const KTableEntry kBorderImageRepeatKTable[];
   static const KTableEntry kBorderImageSliceKTable[];
   static const KTableEntry kBorderStyleKTable[];
@@ -732,6 +746,7 @@ public:
   static const KTableEntry kColorAdjustKTable[];
   static const KTableEntry kColorInterpolationKTable[];
   static const KTableEntry kColumnFillKTable[];
+  static const KTableEntry kColumnSpanKTable[];
   static const KTableEntry kBoxPropSourceKTable[];
   static const KTableEntry kBoxShadowTypeKTable[];
   static const KTableEntry kBoxSizingKTable[];
@@ -744,7 +759,7 @@ public:
   static const KTableEntry kControlCharacterVisibilityKTable[];
   static const KTableEntry kCursorKTable[];
   static const KTableEntry kDirectionKTable[];
-  // Not const because we modify its entries when various 
+  // Not const because we modify its entries when various
   // "layout.css.*.enabled" prefs changes:
   static KTableEntry kDisplayKTable[];
   static const KTableEntry kElevationKTable[];
@@ -755,9 +770,9 @@ public:
   static const KTableEntry kAlignSelfPosition[];     // <self-position>
   static const KTableEntry kAlignLegacy[];           // 'legacy'
   static const KTableEntry kAlignLegacyPosition[];   // 'left/right/center'
-  static const KTableEntry kAlignAutoNormalStretchBaseline[]; // 'auto/normal/stretch/baseline/last-baseline'
-  static const KTableEntry kAlignNormalStretchBaseline[]; // 'normal/stretch/baseline/last-baseline'
-  static const KTableEntry kAlignNormalBaseline[]; // 'normal/baseline/last-baseline'
+  static const KTableEntry kAlignAutoNormalStretchBaseline[]; // 'auto/normal/stretch/baseline'
+  static const KTableEntry kAlignNormalStretchBaseline[]; // 'normal/stretch/baseline'
+  static const KTableEntry kAlignNormalBaseline[]; // 'normal/baseline'
   static const KTableEntry kAlignContentDistribution[]; // <content-distribution>
   static const KTableEntry kAlignContentPosition[]; // <content-position>
   // -- tables for auto-completion of the {align,justify}-{content,items,self} properties --
@@ -797,7 +812,6 @@ public:
   static const KTableEntry kIMEModeKTable[];
   static const KTableEntry kLineHeightKTable[];
   static const KTableEntry kListStylePositionKTable[];
-  static const KTableEntry kListStyleKTable[];
   static const KTableEntry kMaskTypeKTable[];
   static const KTableEntry kMathVariantKTable[];
   static const KTableEntry kMathDisplayKTable[];
@@ -807,7 +821,6 @@ public:
   static const KTableEntry kObjectFitKTable[];
   static const KTableEntry kOrientKTable[];
   static const KTableEntry kOutlineStyleKTable[];
-  static const KTableEntry kOutlineColorKTable[];
   static const KTableEntry kOverflowKTable[];
   static const KTableEntry kOverflowSubKTable[];
   static const KTableEntry kOverflowClipBoxKTable[];
@@ -826,6 +839,7 @@ public:
   static const KTableEntry kRubyAlignKTable[];
   static const KTableEntry kRubyPositionKTable[];
   static const KTableEntry kScrollBehaviorKTable[];
+  static const KTableEntry kOverscrollBehaviorKTable[];
   static const KTableEntry kScrollSnapTypeKTable[];
   static const KTableEntry kSpeakKTable[];
   static const KTableEntry kSpeakHeaderKTable[];
@@ -844,8 +858,10 @@ public:
   static const KTableEntry kTextEmphasisPositionKTable[];
   static const KTableEntry kTextEmphasisStyleFillKTable[];
   static const KTableEntry kTextEmphasisStyleShapeKTable[];
+  static const KTableEntry kTextJustifyKTable[];
   static const KTableEntry kTextOrientationKTable[];
   static const KTableEntry kTextOverflowKTable[];
+  static const KTableEntry kTextSizeAdjustKTable[];
   static const KTableEntry kTextTransformKTable[];
   static const KTableEntry kTouchActionKTable[];
   static const KTableEntry kTopLayerKTable[];

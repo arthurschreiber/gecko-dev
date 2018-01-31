@@ -13,6 +13,7 @@
 #include "mozilla/a11y/PDocAccessible.h"
 #include "OuterDocAccessible.h"
 #include "ProxyAccessible.h"
+#include "DocAccessibleParent.h"
 #include "RootAccessible.h"
 #include "TableAccessible.h"
 #include "TableCellAccessible.h"
@@ -28,7 +29,6 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Sprintf.h"
-#include "nsXPCOMStrings.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIPersistentProperties2.h"
 
@@ -65,8 +65,9 @@ enum MaiInterfaceType {
     MAI_INTERFACE_SELECTION,
     MAI_INTERFACE_TABLE,
     MAI_INTERFACE_TEXT,
-    MAI_INTERFACE_DOCUMENT, 
-    MAI_INTERFACE_IMAGE /* 10 */
+    MAI_INTERFACE_DOCUMENT,
+    MAI_INTERFACE_IMAGE, /* 10 */
+    MAI_INTERFACE_TABLE_CELL
 };
 
 static GType GetAtkTypeForMai(MaiInterfaceType type)
@@ -94,15 +95,20 @@ static GType GetAtkTypeForMai(MaiInterfaceType type)
       return ATK_TYPE_DOCUMENT;
     case MAI_INTERFACE_IMAGE:
       return ATK_TYPE_IMAGE;
+    case MAI_INTERFACE_TABLE_CELL:
+      MOZ_ASSERT(false);
   }
   return G_TYPE_INVALID;
 }
 
 #define NON_USER_EVENT ":system"
-    
+
+// The atk interfaces we can expose without checking what version of ATK we are
+// dealing with.  At the moment AtkTableCell is the only interface we can't
+// always expose.
 static const GInterfaceInfo atk_if_infos[] = {
     {(GInterfaceInitFunc)componentInterfaceInitCB,
-     (GInterfaceFinalizeFunc) nullptr, nullptr}, 
+     (GInterfaceFinalizeFunc) nullptr, nullptr},
     {(GInterfaceInitFunc)actionInterfaceInitCB,
      (GInterfaceFinalizeFunc) nullptr, nullptr},
     {(GInterfaceInitFunc)valueInterfaceInitCB,
@@ -322,7 +328,7 @@ AccessibleWrap::GetAtkObject(Accessible* acc)
 {
     void *atkObjPtr = nullptr;
     acc->GetNativeInterface(&atkObjPtr);
-    return atkObjPtr ? ATK_OBJECT(atkObjPtr) : nullptr;    
+    return atkObjPtr ? ATK_OBJECT(atkObjPtr) : nullptr;
 }
 
 /* private */
@@ -366,7 +372,10 @@ AccessibleWrap::CreateMaiInterfaces(void)
     // Table interface.
     if (AsTable())
       interfacesBits |= 1 << MAI_INTERFACE_TABLE;
- 
+
+    if (AsTableCell())
+      interfacesBits |= 1 << MAI_INTERFACE_TABLE_CELL;
+
     // Selection interface.
     if (IsSelect()) {
       interfacesBits |= 1 << MAI_INTERFACE_SELECTION;
@@ -423,6 +432,15 @@ GetMaiAtkType(uint16_t interfacesBits)
                                     GetAtkTypeForMai((MaiInterfaceType)index),
                                     &atk_if_infos[index]);
       }
+    }
+
+    // Special case AtkTableCell so we can check what version of Atk we are
+    // dealing with.
+    if (IsAtkVersionAtLeast(2, 12) && (interfacesBits & (1 << MAI_INTERFACE_TABLE_CELL))) {
+      const GInterfaceInfo cellInfo = {
+        (GInterfaceInitFunc)tableCellInterfaceInitCB,
+        (GInterfaceFinalizeFunc)nullptr, nullptr};
+      g_type_add_interface_static(type, gAtkTableCellGetTypeFunc(), &cellInfo);
     }
 
     return type;
@@ -595,8 +613,7 @@ static void
 MaybeFireNameChange(AtkObject* aAtkObj, const nsString& aNewName)
 {
   NS_ConvertUTF16toUTF8 newNameUTF8(aNewName);
-  if (aAtkObj->name &&
-      !strncmp(aAtkObj->name, newNameUTF8.get(), newNameUTF8.Length()))
+  if (aAtkObj->name && !strcmp(aAtkObj->name, newNameUTF8.get()))
     return;
 
   // Below we duplicate the functionality of atk_object_set_name(),
@@ -680,6 +697,12 @@ getRoleCB(AtkObject *aAtkObj)
     aAtkObj->role = ATK_ROLE_LIST_ITEM;
   else if (aAtkObj->role == ATK_ROLE_MATH && !IsAtkVersionAtLeast(2, 12))
     aAtkObj->role = ATK_ROLE_SECTION;
+  else if (aAtkObj->role == ATK_ROLE_COMMENT && !IsAtkVersionAtLeast(2, 12))
+    aAtkObj->role = ATK_ROLE_SECTION;
+  else if (aAtkObj->role == ATK_ROLE_LANDMARK && !IsAtkVersionAtLeast(2, 12))
+    aAtkObj->role = ATK_ROLE_SECTION;
+  else if (aAtkObj->role == ATK_ROLE_FOOTNOTE && !IsAtkVersionAtLeast(2, 25, 2))
+    aAtkObj->role = ATK_ROLE_SECTION;
   else if (aAtkObj->role == ATK_ROLE_STATIC && !IsAtkVersionAtLeast(2, 16))
     aAtkObj->role = ATK_ROLE_TEXT;
   else if ((aAtkObj->role == ATK_ROLE_MATH_FRACTION ||
@@ -731,17 +754,8 @@ AtkAttributeSet*
 GetAttributeSet(Accessible* aAccessible)
 {
   nsCOMPtr<nsIPersistentProperties> attributes = aAccessible->Attributes();
-  if (attributes) {
-    // There is no ATK state for haspopup, must use object attribute to expose
-    // the same info.
-    if (aAccessible->State() & states::HASPOPUP) {
-      nsAutoString unused;
-      attributes->SetStringProperty(NS_LITERAL_CSTRING("haspopup"),
-                                    NS_LITERAL_STRING("true"), unused);
-    }
-
+  if (attributes)
     return ConvertToAtkAttributeSet(attributes);
-  }
 
   return nullptr;
 }
@@ -1114,6 +1128,9 @@ GetInterfacesForProxy(ProxyAccessible* aProxy, uint32_t aInterfaces)
 
   if (aInterfaces & Interfaces::TABLE)
     interfaces |= 1 << MAI_INTERFACE_TABLE;
+
+  if (aInterfaces & Interfaces::TABLECELL)
+    interfaces |= 1 << MAI_INTERFACE_TABLE_CELL;
 
   if (aInterfaces & Interfaces::IMAGE)
     interfaces |= 1 << MAI_INTERFACE_IMAGE;

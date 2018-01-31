@@ -14,6 +14,7 @@ SOURCES += [
     'nsGeckoUtils.cpp',
     'NSSBridge.cpp',
     'pbkdf2_sha256.c',
+    'SharedMemNatives.cpp',
     'SQLiteBridge.cpp',
 ]
 
@@ -51,7 +52,13 @@ LOCAL_INCLUDES += [
     '/xpcom/build',
 ]
 
-DISABLE_STL_WRAPPING = True
+DisableStlWrapping()
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
+
+DEFINES['XPCOM_GLUE'] = True
+
+USE_LIBS += [
+    'xpcomglue',
+]

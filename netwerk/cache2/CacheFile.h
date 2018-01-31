@@ -91,6 +91,8 @@ public:
   void Kill() { mKill = true; }
   nsresult   ThrowMemoryCachedData();
 
+  nsresult GetAltDataSize(int64_t *aSize);
+
   // metadata forwarders
   nsresult GetElement(const char *aKey, char **_retval);
   nsresult SetElement(const char *aKey, const char *aValue);
@@ -100,9 +102,13 @@ public:
   nsresult GetExpirationTime(uint32_t *_retval);
   nsresult SetFrecency(uint32_t aFrecency);
   nsresult GetFrecency(uint32_t *_retval);
+  nsresult SetNetworkTimes(uint64_t aOnStartTime, uint64_t aOnStopTime);
+  nsresult GetOnStartTime(uint64_t *_retval);
+  nsresult GetOnStopTime(uint64_t *_retval);
   nsresult GetLastModified(uint32_t *_retval);
   nsresult GetLastFetched(uint32_t *_retval);
   nsresult GetFetchCount(uint32_t *_retval);
+  nsresult GetDiskStorageSizeInKB(uint32_t *aDiskStorageSize);
   // Called by upper layers to indicated the entry has been fetched,
   // i.e. delivered to the consumer.
   nsresult OnFetched();
@@ -183,6 +189,7 @@ private:
   nsresult PadChunkWithZeroes(uint32_t aChunkIdx);
 
   void SetError(nsresult aStatus);
+  nsresult SetAltMetadata(const char* aAltMetadata);
 
   nsresult InitIndexEntry();
 

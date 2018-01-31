@@ -4,14 +4,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# Build mozglue as a shared lib on Windows, OSX and Android.
+# Build mozglue as a shared lib on Windows, OSX and Android. But not for
+# embedders!
 # If this is ever changed, update MOZ_SHARED_MOZGLUE in browser/installer/Makefile.in
-if CONFIG['OS_TARGET'] in ('WINNT', 'Darwin', 'Android'):
+if CONFIG['JS_STANDALONE'] and not CONFIG['MOZ_MEMORY']:
+    Library('mozglue')
+elif CONFIG['OS_TARGET'] in ('WINNT', 'Darwin', 'Android'):
     SharedLibrary('mozglue')
 else:
     Library('mozglue')
-
-SDK_LIBRARY = True
 
 if CONFIG['OS_TARGET'] == 'Android':
     SOURCES += [
@@ -30,14 +31,14 @@ if CONFIG['OS_TARGET'] == 'WINNT':
         'user32.dll',
     ]
 
-if not CONFIG['JS_STANDALONE']:
+if CONFIG['MOZ_WIDGET_TOOLKIT']:
 
-    if CONFIG['MOZ_MEMORY'] and (CONFIG['MOZ_SYSTEM_JEMALLOC'] or FORCE_SHARED_LIB):
+    if CONFIG['MOZ_MEMORY'] and FORCE_SHARED_LIB:
         pass
         # TODO: SHARED_LIBRARY_LIBS go here
     else:
         # Temporary, until bug 662814 lands
-        NO_VISIBILITY_FLAGS = True
+        NoVisibilityFlags()
         SOURCES += [
             'dummy.cpp',
         ]
@@ -49,7 +50,7 @@ if not CONFIG['JS_STANDALONE']:
         SOURCES += [
             'WindowsDllBlocklist.cpp',
         ]
-        DISABLE_STL_WRAPPING = True
+        DisableStlWrapping()
         OS_LIBS += [
             'version',
         ]
@@ -59,6 +60,7 @@ if not CONFIG['JS_STANDALONE']:
         'mips.h',
         'SSE.h',
         'WindowsDllBlocklist.h',
+        'WindowsDllServices.h',
     ]
 
     if CONFIG['CPU_ARCH'].startswith('x86'):
@@ -81,16 +83,12 @@ if not CONFIG['JS_STANDALONE']:
             'zlib',
         ]
 
-    if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-        SOURCES += [
-            'cpuacct.c',
-        ]
-
 USE_LIBS += [
     'mfbt',
 ]
 
 DEFINES['IMPL_MFBT'] = True
+LIBRARY_DEFINES['MOZ_HAS_MOZGLUE'] = True
 
 LDFLAGS += CONFIG['MOZ_GLUE_WRAP_LDFLAGS']
 
@@ -103,5 +101,8 @@ if CONFIG['OS_TARGET'] == 'Darwin':
     # because somehow clang doesn't want to accept the __thread keyword
     # for TLS.
     LDFLAGS += ['-Wl,-bind_at_load']
+
+if CONFIG['MOZ_LINKER'] and CONFIG['TARGET_CPU'] == 'arm':
+    LDFLAGS += ['-Wl,-version-script,%s/arm-eabi-filter' % SRCDIR]
 
 DIST_INSTALL = True

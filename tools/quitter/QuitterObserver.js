@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -21,8 +21,7 @@ QuitterObserver.prototype = {
   _xpcom_categories: [{category: "profile-after-change", service: true }],
   isFrameScriptLoaded: false,
 
-  observe: function(aSubject, aTopic, aData)
-  {
+  observe(aSubject, aTopic, aData) {
     if (aTopic == "profile-after-change") {
       this.init();
     } else if (!this.isFrameScriptLoaded &&
@@ -40,28 +39,25 @@ QuitterObserver.prototype = {
     }
   },
 
-  init: function()
-  {
+  init() {
     var obs = Services.obs;
-    obs.addObserver(this, "xpcom-shutdown", false);
-    obs.addObserver(this, "chrome-document-global-created", false);
+    obs.addObserver(this, "xpcom-shutdown");
+    obs.addObserver(this, "chrome-document-global-created");
   },
 
-  uninit: function()
-  {
+  uninit() {
     var obs = Services.obs;
-    obs.removeObserver(this, "chrome-document-global-created", false);
+    obs.removeObserver(this, "chrome-document-global-created");
   },
 
   /**
    * messageManager callback function
    * This will get requests from our API in the window and process them in chrome for it
    **/
-  receiveMessage: function(aMessage) {
-    switch(aMessage.name) {
+  receiveMessage(aMessage) {
+    switch (aMessage.name) {
       case "Quitter.Quit":
-        let appStartup = Cc["@mozilla.org/toolkit/app-startup;1"].getService(Ci.nsIAppStartup);
-        appStartup.quit(Ci.nsIAppStartup.eForceQuit);
+        Services.startup.quit(Ci.nsIAppStartup.eForceQuit);
         break;
     }
   }

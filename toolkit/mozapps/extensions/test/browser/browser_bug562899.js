@@ -6,10 +6,8 @@
 // the last selected is displayed
 
 var tempScope = {};
-Components.utils.import("resource://gre/modules/LightweightThemeManager.jsm", tempScope);
+ChromeUtils.import("resource://gre/modules/LightweightThemeManager.jsm", tempScope);
 var LightweightThemeManager = tempScope.LightweightThemeManager;
-
-const xpi = "browser/toolkit/mozapps/extensions/test/browser/browser_installssl.xpi";
 
 var gManagerWindow;
 var gCategoryUtilities;

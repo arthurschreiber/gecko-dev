@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
+#include "domstubs.idl"
 
 /**
  * nsIDOMWindowUtils is intended for infrequently-used methods related
@@ -27,15 +28,14 @@ struct nsRect;
 [ref] native nsConstRect(const nsRect);
 native nscolor(nscolor);
 [ptr] native gfxContext(gfxContext);
-typedef unsigned long long nsViewID;
 
+interface nsIArray;
 interface nsICycleCollectorListener;
 interface nsIDOMNode;
 interface nsIDOMNodeList;
 interface nsIDOMElement;
-interface nsIDOMHTMLCanvasElement;
 interface nsIDOMEvent;
-interface nsIDOMStyleSheet;
+interface nsIPreloadedStyleSheet;
 interface nsITransferable;
 interface nsIQueryContentEventResult;
 interface nsIDOMWindow;
@@ -48,8 +48,9 @@ interface nsITranslationNodeList;
 interface nsIJSRAIIHelper;
 interface nsIContentPermissionRequest;
 interface nsIObserver;
+interface nsIDOMStorage;
 
-[scriptable, uuid(46b44e33-13c2-4eb3-bf80-76a4e0857ccc)]
+[scriptable, uuid(4d6732ca-9da7-4176-b8a1-8dde15cd0bf9)]
 interface nsIDOMWindowUtils : nsISupports {
 
   /**
@@ -79,10 +80,9 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute boolean docCharsetIsForced;
 
   /**
-   * Get current cursor type from this window
-   * @return the current value of nsCursor
+   * Return the conversion of a physical millimeter in CSS pixels.
    */
-  short getCursorType();
+  readonly attribute float physicalMillimeterInCSSPixels;
 
   /**
    * Function to get metadata associated with the window's current document
@@ -257,7 +257,7 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   attribute boolean isFirstPaint;
 
-  void getPresShellId(out uint32_t aPresShellId);
+  uint32_t getPresShellId();
 
   /**
    * Following modifiers are for sent*Event() except sendNative*Event().
@@ -280,8 +280,8 @@ interface nsIDOMWindowUtils : nsISupports {
   const long MODIFIER_OS         = 0x1000;
 
   /** Synthesize a mouse event. The event types supported are:
-   *    mousedown, mouseup, mousemove, mouseover, mouseout, contextmenu,
-   *    MozMouseHittest
+   *    mousedown, mouseup, mousemove, mouseover, mouseout, mousecancel,
+   *    contextmenu, MozMouseHittest
    *
    * Events are sent in coordinates offset by aX and aY from the window.
    *
@@ -301,6 +301,11 @@ interface nsIDOMWindowUtils : nsISupports {
    * window under the toplevel window, in some cases it could never reach this
    * window at all.
    *
+   * NOTE: mousecancel is used to represent the vanishing of an input device
+   * such as a pen leaving its digitizer by synthesizing a WidgetMouseEvent,
+   * whose mMessage is eMouseExitFromWidget and mExitFrom is
+   * WidgetMouseEvent::eTopLevel.
+   *
    * @param aType event type
    * @param aX x offset in CSS pixels
    * @param aY y offset in CSS pixels
@@ -317,6 +322,8 @@ interface nsIDOMWindowUtils : nsISupports {
    *                               defaults to true
    * @param aIsWidgetEventSynthesized controls WidgetMouseEvent.mReason value
    *                                  defaults to false (WidgetMouseEvent::eReal)
+   * @param aIdentifier A unique identifier for the pointer causing the event,
+   *                    defaulting to nsIDOMWindowUtils::DEFAULT_MOUSE_POINTER_ID.
    *
    * returns true if the page called prevent default on this event
    */
@@ -332,73 +339,8 @@ interface nsIDOMWindowUtils : nsISupports {
                          [optional] in unsigned short aInputSourceArg,
                          [optional] in boolean aIsDOMEventSynthesized,
                          [optional] in boolean aIsWidgetEventSynthesized,
-                         [optional] in long aButtons);
-
-
-  /** Synthesize a pointer event. The event types supported are:
-   *    pointerdown, pointerup, pointermove, pointerover, pointerout
-   *
-   * Events are sent in coordinates offset by aX and aY from the window.
-   *
-   * Note that additional events may be fired as a result of this call. For
-   * instance, typically a click event will be fired as a result of a
-   * mousedown and mouseup in sequence.
-   *
-   * Normally at this level of events, the pointerover and pointerout events are
-   * only fired when the window is entered or exited. For inter-element
-   * pointerover and pointerout events, a movemove event fired on the new element
-   * should be sufficient to generate the correct over and out events as well.
-   *
-   * Cannot be accessed from unprivileged context (not content-accessible)
-   * Will throw a DOM security error if called without chrome privileges.
-   *
-   * The event is dispatched via the toplevel window, so it could go to any
-   * window under the toplevel window, in some cases it could never reach this
-   * window at all.
-   *
-   * @param aType event type
-   * @param aX x offset in CSS pixels
-   * @param aY y offset in CSS pixels
-   * @param aButton button to synthesize
-   * @param aClickCount number of clicks that have been performed
-   * @param aModifiers modifiers pressed, using constants defined as MODIFIER_*
-   * @param aIgnoreRootScrollFrame whether the event should ignore viewport bounds
-   *                           during dispatch
-   * @param aPressure touch input pressure: 0.0 -> 1.0
-   * @param aInputSourceArg input source, see nsIDOMMouseEvent for values,
-   *        defaults to mouse input.
-   * @param aPointerId A unique identifier for the pointer causing the event. default is 0
-   * @param aWidth The width (magnitude on the X axis), default is 0
-   * @param aHeight The height (magnitude on the Y axis), default is 0
-   * @param aTilt The plane angle between the Y-Z plane
-   *        and the plane containing both the transducer (e.g. pen stylus) axis and the Y axis. default is 0
-   * @param aTiltX The plane angle between the X-Z plane
-   *        and the plane containing both the transducer (e.g. pen stylus) axis and the X axis. default is 0
-   * @param aIsPrimary  Indicates if the pointer represents the primary pointer of this pointer type.
-   * @param aIsSynthesized controls nsIDOMEvent.isSynthesized value
-   *                       that helps identifying test related events,
-   *                       defaults to true
-   *
-   * returns true if the page called prevent default on this event
-   */
-
-  [optional_argc]
-  boolean sendPointerEvent(in AString aType,
-                           in float aX,
-                           in float aY,
-                           in long aButton,
-                           in long aClickCount,
-                           in long aModifiers,
-                           [optional] in boolean aIgnoreRootScrollFrame,
-                           [optional] in float aPressure,
-                           [optional] in unsigned short aInputSourceArg,
-                           [optional] in long aPointerId,
-                           [optional] in long aWidth,
-                           [optional] in long aHeight,
-                           [optional] in long aTiltX,
-                           [optional] in long aTiltY,
-                           [optional] in boolean aIsPrimary,
-                           [optional] in boolean aIsSynthesized);
+                         [optional] in long aButtons,
+                         [optional] in unsigned long aIdentifier);
 
   /** Synthesize a touch event. The event types supported are:
    *    touchstart, touchend, touchmove, and touchcancel
@@ -453,28 +395,8 @@ interface nsIDOMWindowUtils : nsISupports {
                               [optional] in unsigned short aInputSourceArg,
                               [optional] in boolean aIsDOMEventSynthesized,
                               [optional] in boolean aIsWidgetEventSynthesized,
-                              [optional] in long aButtons);
-
-  /** The same as sendPointerEvent but ensures that the event
-   *  is dispatched to this DOM window or one of its children.
-   */
-  [optional_argc]
-  void sendPointerEventToWindow(in AString aType,
-                                in float aX,
-                                in float aY,
-                                in long aButton,
-                                in long aClickCount,
-                                in long aModifiers,
-                                [optional] in boolean aIgnoreRootScrollFrame,
-                                [optional] in float aPressure,
-                                [optional] in unsigned short aInputSourceArg,
-                                [optional] in long aPointerId,
-                                [optional] in long aWidth,
-                                [optional] in long aHeight,
-                                [optional] in long aTiltX,
-                                [optional] in long aTiltY,
-                                [optional] in boolean aIsPrimary,
-                                [optional] in boolean aIsSynthesized);
+                              [optional] in long aButtons,
+                              [optional] in unsigned long aIdentifier);
 
   /** The same as sendTouchEvent but ensures that the event is dispatched to
    *  this DOM window or one of its children.
@@ -519,8 +441,6 @@ interface nsIDOMWindowUtils : nsISupports {
    * @param aOptions           Set following flags.
    */
   const unsigned long WHEEL_EVENT_CAUSED_BY_NO_LINE_OR_PAGE_DELTA_DEVICE = 0x0001;
-  // @deprecated Use WHEEL_EVENT_CAUSED_BY_NO_LINE_OR_PAGE_DELTA_DEVICE.
-  const unsigned long WHEEL_EVENT_CAUSED_BY_PIXEL_ONLY_DEVICE            = 0x0001;
   const unsigned long WHEEL_EVENT_CAUSED_BY_MOMENTUM                     = 0x0002;
   const unsigned long WHEEL_EVENT_CUSTOMIZED_BY_USER_PREFS               = 0x0004;
   // If any of the following flags is specified this method will throw an
@@ -627,6 +547,12 @@ interface nsIDOMWindowUtils : nsISupports {
                            [optional] in nsIObserver aObserver);
 
   /**
+   * Suppress animations that are applied to a window by OS when
+   * resizing, moving, changing size mode, ...
+   */
+  void suppressAnimation(in boolean aSuppress);
+
+  /**
    * The values for sendNativeMouseScrollEvent's aAdditionalFlags.
    */
 
@@ -705,8 +631,7 @@ interface nsIDOMWindowUtils : nsISupports {
    * drag - msg1-n:TOUCH_CONTACT (moving), msgn+1:TOUCH_REMOVE
    * hover drag - msg1-n:TOUCH_HOVER (moving), msgn+1:TOUCH_REMOVE
    *
-   * Widget support: Windows 8.0+, Winrt/Win32. Gonk supports CONTACT, REMOVE,
-   * and CANCEL but no HOVER. Other widgets will throw.
+   * Widget support: Windows 8.0+, Winrt/Win32. Other widgets will throw.
    *
    * NOTE: The synthesized native event will be fired asynchronously, and upon
    * completion the observer, if provided, will be notified with a "touchpoint"
@@ -818,15 +743,8 @@ interface nsIDOMWindowUtils : nsISupports {
    * @param aListener listener that receives information about the CC graph
    *                  (see @mozilla.org/cycle-collector-logger;1 for a logger
    *                   component)
-   * @param aExtraForgetSkippableCalls indicates how many times
-   *                                   nsCycleCollector_forgetSkippable will
-   *                                   be called before running cycle collection.
-   *                                   -1 prevents the default
-   *                                   nsCycleCollector_forgetSkippable call
-   *                                   which happens after garbage collection.
    */
-  void garbageCollect([optional] in nsICycleCollectorListener aListener,
-                      [optional] in long aExtraForgetSkippableCalls);
+  void garbageCollect([optional] in nsICycleCollectorListener aListener);
 
   /**
    * Force a cycle collection without garbage collection.
@@ -837,15 +755,8 @@ interface nsIDOMWindowUtils : nsISupports {
    * @param aListener listener that receives information about the CC graph
    *                  (see @mozilla.org/cycle-collector-logger;1 for a logger
    *                   component)
-   * @param aExtraForgetSkippableCalls indicates how many times
-   *                                   nsCycleCollector_forgetSkippable will
-   *                                   be called before running cycle collection.
-   *                                   -1 prevents the default
-   *                                   nsCycleCollector_forgetSkippable call
-   *                                   which happens after garbage collection.
    */
-  void cycleCollect([optional] in nsICycleCollectorListener aListener,
-                    [optional] in long aExtraForgetSkippableCalls);
+  void cycleCollect([optional] in nsICycleCollectorListener aListener);
 
   /**
    * Trigger whichever GC or CC timer is currently active and waiting to fire.
@@ -909,7 +820,7 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   nsIDOMNodeList nodesFromRect(in float aX,
                                in float aY,
-                               in float aTopSize, 
+                               in float aTopSize,
                                in float aRightSize,
                                in float aBottomSize,
                                in float aLeftSize,
@@ -933,8 +844,8 @@ interface nsIDOMWindowUtils : nsISupports {
    *
    * This method requires chrome privileges.
    */
-  uint32_t compareCanvases(in nsIDOMHTMLCanvasElement aCanvas1,
-                           in nsIDOMHTMLCanvasElement aCanvas2,
+  uint32_t compareCanvases(in nsISupports aCanvas1,
+                           in nsISupports aCanvas2,
                            out unsigned long aMaxDifference);
 
   /**
@@ -951,8 +862,6 @@ interface nsIDOMWindowUtils : nsISupports {
    *        NS_ERROR_FAILURE if window doesn't have a document.
    */
   void suppressEventHandling(in boolean aSuppress);
-
-  void clearMozAfterPaintEvents();
 
   /**
    * Disable or enable non synthetic test mouse events on *all* windows.
@@ -992,6 +901,16 @@ interface nsIDOMWindowUtils : nsISupports {
    * Returns the given element's bounds without flushing pending layout changes.
    */
   nsIDOMClientRect getBoundsWithoutFlushing(in nsIDOMElement aElement);
+
+  const long FLUSH_NONE = -1;
+  const long FLUSH_STYLE = 0;
+  const long FLUSH_LAYOUT = 1;
+  const long FLUSH_DISPLAY = 2;
+
+  /**
+   * Returns true if a flush of the given type is needed.
+   */
+  bool needsFlush(in long aFlushtype);
 
   /**
    * Returns the bounds of the window's currently loaded document. This will
@@ -1399,7 +1318,7 @@ interface nsIDOMWindowUtils : nsISupports {
    * error if there is no widget associated with this window.
    */
   readonly attribute AString layerManagerType;
-  
+
   /**
    * True if the layer manager for the widget associated with this window is
    * forwarding layers to a remote compositor, false otherwise. Throws an
@@ -1408,17 +1327,43 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute boolean layerManagerRemote;
 
   /**
-   * Returns a Promise that will be resolved with a string once the capabilities
-   * of the h264 decoder have been determined.
-   * Success does not mean that all h264 video decoding will be done
-   * in hardware.
+   * True if advanced layers is enabled on this window, false otherwise.
    */
-  readonly attribute jsval supportsHardwareH264Decoding;
+  readonly attribute boolean usingAdvancedLayers;
+
+  /**
+   * True if webrender was requested by the user (via pref or env-var), false
+   * otherwise. Note that this doesn't represent whether or not webrender is
+   * *actually* enabled, just whether or not it was requested.
+   */
+  readonly attribute boolean isWebRenderRequested;
 
   /**
    * Returns the current audio backend as a free-form string.
    */
   readonly attribute AString currentAudioBackend;
+
+  /**
+   * Returns the max channel counts of the current audio device.
+   */
+  readonly attribute unsigned long currentMaxAudioChannels;
+
+  /**
+   * Returns the preferred channel layout of the current audio device.
+   */
+  readonly attribute AString currentPreferredChannelLayout;
+
+  /**
+   * Returns the preferred sample rate of the current audio device.
+   */
+  readonly attribute unsigned long currentPreferredSampleRate;
+
+  /**
+   * Returns all the audio input/output devices.
+   */
+  const unsigned short AUDIO_INPUT   = 0;
+  const unsigned short AUDIO_OUTPUT  = 1;
+  nsIArray audioDevices(in unsigned short aSide);
 
   /**
    * Record (and return) frame-intervals for frames which were presented
@@ -1447,21 +1392,9 @@ interface nsIDOMWindowUtils : nsISupports {
                              [retval, array, size_is(frameCount)] out float frameIntervals);
 
   /**
-   * Signals that we're begining to tab switch. This is used by painting code to
-   * determine total tab switch time.
-   */
-  void beginTabSwitch();
-
-  /**
    * The DPI of the display
    */
   readonly attribute float displayDPI;
-
-  /**
-   * Return the outer window with the given ID, if any.  Can return null.
-   * @deprecated Use nsIWindowMediator.getOuterWindowWithId.  See bug 865664.
-   */
-  nsIDOMWindow getOuterWindowWithId(in unsigned long long aOuterWindowID);
 
   /**
    * Return this window's frame element.
@@ -1556,10 +1489,25 @@ interface nsIDOMWindowUtils : nsISupports {
                                   in AString value2);
 
   /**
-   * Wrap an nsIFile in an DOM File
-   * Returns a File object.
+   * Returns the animation type of the specified property (e.g. 'coord').
+   *
+   * @param aProperty A longhand CSS property (e.g. 'background-color').
    */
-  nsISupports wrapDOMFile(in nsIFile aFile);
+  AString getAnimationTypeForLonghand(in AString aProperty);
+
+  /**
+   * Returns the computed style for the specified property of given pseudo type
+   * on the given element after removing styles from declarative animations.
+   * @param aElement - A target element
+   * @param aPseudoElement - A pseudo type (e.g. '::before' or null)
+   * @param aProperty - A longhand CSS property (e.g. 'background-color')
+   * @param aFlushType - FLUSH_NONE if any pending styles should not happen,
+   *                     FLUSH_STYLE to flush pending styles.
+   */
+  AString getUnanimatedComputedStyle(in nsIDOMElement aElement,
+                                     in AString aPseudoElement,
+                                     in AString aProperty,
+                                     in long aFlushType);
 
   /**
    * Get the type of the currently focused html input, if any.
@@ -1579,12 +1527,18 @@ interface nsIDOMWindowUtils : nsISupports {
    * the bounds of the window. Always returns true in non-DEBUG builds.
    */
   boolean leafLayersPartitionWindow();
- 
+
   /**
    * Check if any PaintedLayer painting has been done for this element,
    * clears the painted flags if they have.
    */
   boolean checkAndClearPaintedState(in nsIDOMElement aElement);
+
+  /**
+   * Check if any display list building has been done for this element,
+   * clears the display list flags if they have.
+   */
+  boolean checkAndClearDisplayListState(in nsIDOMElement aElement);
 
   /**
    * Check whether all display items of the primary frame of aElement have been
@@ -1714,7 +1668,7 @@ interface nsIDOMWindowUtils : nsISupports {
    * Synchronously loads a style sheet from |sheetURI| and adds it to the list
    * of additional style sheets of the document.
    *
-   * These additional style sheets are very much like user/agent sheets loaded 
+   * These additional style sheets are very much like user/agent sheets loaded
    * with loadAndRegisterSheet. The only difference is that they are applied only
    * on the document owned by this window.
    *
@@ -1734,10 +1688,10 @@ interface nsIDOMWindowUtils : nsISupports {
    *
    * Sheets added via this API take effect immediately on the document.
    */
-  void addSheet(in nsIDOMStyleSheet sheet, in unsigned long type);
+  void addSheet(in nsIPreloadedStyleSheet sheet, in unsigned long type);
 
   /**
-   * Remove the document style sheet at |sheetURI| from the list of additional 
+   * Remove the document style sheet at |sheetURI| from the list of additional
    * style sheets of the document.  The removal takes effect immediately.
    */
   void removeSheet(in nsIURI sheetURI, in unsigned long type);
@@ -1753,6 +1707,13 @@ interface nsIDOMWindowUtils : nsISupports {
    * This calls EventStateManager::IsHandlingUserInput().
    */
   readonly attribute boolean isHandlingUserInput;
+
+  /**
+   * Returns milliseconds elapsed since last user input was started
+   *
+   * This relies on EventStateManager::LatestUserInputStart()
+   */
+  readonly attribute double millisSinceLastUserInput;
 
   /**
    * After calling the method, the window for which this DOMWindowUtils
@@ -1798,8 +1759,6 @@ interface nsIDOMWindowUtils : nsISupports {
    * Supported properties:
    *   "overdraw": Report a percentage between 0 and 999 indicate how many times
    *               each pixels on the destination window have been touched.
-   *   "missed_hwc": Report a bool if hardware composer is supported but was
-   *                 not used for the last frame.
    */
   float requestCompositorProperty(in AString aProperty);
 
@@ -1856,15 +1815,11 @@ interface nsIDOMWindowUtils : nsISupports {
   void askPermission(in nsIContentPermissionRequest aRequest);
 
   /**
-   * Number of elements restyled for the curent document.
-   *
-   * Note that during a restyle operation we may restyle an element more
-   * than once (e.g., for an inline that contains blocks).  This also
-   * counts restyling of pseudo-elements and anonymous boxes.
+   * Restyle generation for the current document.
    *
    * May throw NS_ERROR_NOT_AVAILABLE.
    */
-  readonly attribute unsigned long long elementsRestyled;
+  readonly attribute unsigned long long restyleGeneration;
 
   /**
    * Number of frames constructed (excluding breaking) for the curent
@@ -1918,6 +1873,11 @@ interface nsIDOMWindowUtils : nsISupports {
   void leaveChaosMode();
 
   /**
+   * Alerts Gecko of a device reset
+   */
+  void triggerDeviceReset();
+
+  /**
    * Returns whether the document's style set's rule processor for the
    * specified level of the cascade is shared by multiple style sets.
    * (Used by tests to ensure that certain optimizations do not regress.)
@@ -1937,8 +1897,6 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   void forceUseCounterFlush(in nsIDOMNode aNode);
 
-  void setNextPaintSyncId(in long aSyncId);
-
   /**
    * Enable or disable displayport suppression. This is intended to be used by
    * testing code, to provide more deterministic behaviour over the displayport
@@ -1953,6 +1911,92 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   void forceReflowInterrupt();
 
+  /**
+   * Terminate the GPU process. Used for testing GPU process restarts.
+   */
+  void terminateGPUProcess();
+
+  /**
+    * Returns the GPU process pid, or -1 if there is no GPU process.
+    */
+  readonly attribute int32_t gpuProcessPid;
+
+  /**
+   * Returns true if the given timeout ID is in the list of tracking
+   * timeouts.
+   */
+  boolean isTimeoutTracking(in unsigned long timeoutId);
+
+  /**
+   * Adds an EventStates bit to the element.
+   *
+   * The state string must be one of the following:
+   *   * (none yet; but for example "higlighted" for NS_EVENT_STATE_HIGHLIGHTED)
+   *
+   * The supported state strings are defined in kManuallyManagedStates
+   * in nsDOMWindowUtils.cpp.
+   */
+  void addManuallyManagedState(in nsIDOMElement element,
+                               in AString state);
+
+  /**
+   * Removes the specified EventStates bits from the element.
+   *
+   * See above for the strings that can be passed for |state|.
+   */
+  void removeManuallyManagedState(in nsIDOMElement element,
+                                  in AString state);
+
+  /**
+   * Returns usage data for a given storage object.
+   *
+   * @param aStorage
+   *    The storage object to get usage data for.
+   */
+  int64_t getStorageUsage(in nsIDOMStorage aStorage);
+
+  /**
+   * Returns the directionality of a string using the first-strong character
+   * algorithm defined in http://unicode.org/reports/tr9/#P2.
+   *
+   * @param aString the string to retrieve the direction for.
+   * @return one of DIRECTION_LTR, DIRECTION_RTL or DIRECTION_NOT_SET depending
+   *         on the first-strong character found in the string.
+   */
+  long getDirectionFromText(in AString aString);
+
+  /**
+   * Calls FrameNeedsReflow on that root frame so that a layout flush
+   * will be necessary.
+   *
+   * This should only be used for testing.
+   */
+  void ensureDirtyRootFrame();
+
+  /**
+   * Whether the current document is styled by Servo's style engine.
+   *
+   * This calls nsIDocument::IsStyledByServo().
+   */
+  readonly attribute boolean isStyledByServo;
+
+  /**
+   * Capture the contents of the current WebRender frame and
+   * save them to a folder relative to the current working directory.
+   */
+  void wrCapture();
+
+  // These consts are only for testing purposes.
+  const long DEFAULT_MOUSE_POINTER_ID = 0;
+  const long DEFAULT_PEN_POINTER_ID   = 1;
+  const long DEFAULT_TOUCH_POINTER_ID = 2;
+
+  // Match WidgetMouseEventBase::buttonType.
+  const long MOUSE_BUTTON_LEFT_BUTTON   = 0;
+  const long MOUSE_BUTTON_MIDDLE_BUTTON = 1;
+  const long MOUSE_BUTTON_RIGHT_BUTTON  = 2;
+
+  // Match WidgetMouseEventBase::buttonsFlag.
   const long MOUSE_BUTTONS_NO_BUTTON = 0x00;
   const long MOUSE_BUTTONS_LEFT_BUTTON = 0x01;
   const long MOUSE_BUTTONS_RIGHT_BUTTON = 0x02;
@@ -1965,6 +2009,11 @@ interface nsIDOMWindowUtils : nsISupports {
   const long MOUSE_BUTTONS_5TH_BUTTON = 0x10;
   // Buttons are not specified, will be calculated from |aButton|.
   const long MOUSE_BUTTONS_NOT_SPECIFIED = -1;
+
+  // Return values for getDirectionFromText().
+  const long DIRECTION_LTR = 0;
+  const long DIRECTION_RTL = 1;
+  const long DIRECTION_NOT_SET = 2;
 };
 
 [scriptable, uuid(c694e359-7227-4392-a138-33c0cc1f15a6)]

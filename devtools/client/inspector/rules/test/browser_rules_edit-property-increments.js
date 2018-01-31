@@ -7,6 +7,11 @@
 // Test that increasing/decreasing values in rule view using
 // arrow keys works correctly.
 
+// Bug 1275446 - This test happen to hit the default timeout on linux32
+requestLongerTimeout(2);
+
+loader.lazyRequireGetter(this, "system", "devtools/shared/system");
+
 const TEST_URI = `
   <style>
     #test {
@@ -17,6 +22,7 @@ const TEST_URI = `
       background: none;
       transition: initial;
       z-index: 0;
+      opacity: 1;
     }
   </style>
   <div id="test"></div>
@@ -36,6 +42,7 @@ add_task(function* () {
   yield testShorthandIncrements(view);
   yield testOddCases(view);
   yield testZeroValueIncrements(view);
+  yield testOpacityIncrements(view);
 });
 
 function* testMarginIncrements(view) {
@@ -45,10 +52,11 @@ function* testMarginIncrements(view) {
   let marginPropEditor = idRuleEditor.rule.textProps[0].editor;
 
   yield runIncrementTest(marginPropEditor, view, {
-    1: {alt: true, start: "0px", end: "0.1px", selectAll: true},
+    1: { ...getSmallIncrementKey(), start: "0px", end: "0.1px", selectAll: true},
     2: {start: "0px", end: "1px", selectAll: true},
     3: {shift: true, start: "0px", end: "10px", selectAll: true},
-    4: {down: true, alt: true, start: "0.1px", end: "0px", selectAll: true},
+    4: {down: true, ...getSmallIncrementKey(), start: "0.1px",
+        end: "0px", selectAll: true},
     5: {down: true, start: "0px", end: "-1px", selectAll: true},
     6: {down: true, shift: true, start: "0px", end: "-10px", selectAll: true},
     7: {pageUp: true, shift: true, start: "0px", end: "100px", selectAll: true},
@@ -152,7 +160,7 @@ function* testShorthandIncrements(view) {
         end: "-10px 0px 0px 0px", selectAll: true},
     7: {up: true, start: "0.1em .1em 0em 0em", end: "0.1em 1.1em 0em 0em",
         selection: [6, 9]},
-    8: {up: true, alt: true, start: "0.1em .9em 0em 0em",
+    8: {up: true, ...getSmallIncrementKey(), start: "0.1em .9em 0em 0em",
         end: "0.1em 1em 0em 0em", selection: [6, 9]},
     9: {up: true, shift: true, start: "0.2em .2em 0em 0em",
         end: "0.2em 10.2em 0em 0em", selection: [6, 9]}
@@ -167,7 +175,7 @@ function* testOddCases(view) {
 
   yield runIncrementTest(marginPropEditor, view, {
     1: {start: "98.7%", end: "99.7%", selection: [3, 3]},
-    2: {alt: true, start: "98.7%", end: "98.8%", selection: [3, 3]},
+    2: {...getSmallIncrementKey(), start: "98.7%", end: "98.8%", selection: [3, 3]},
     3: {start: "0", end: "1px"},
     4: {down: true, start: "0", end: "-1px"},
     5: {start: "'a=-1'", end: "'a=0'", selection: [4, 4]},
@@ -182,10 +190,10 @@ function* testOddCases(view) {
          selection: [9, 11]},
     12: {start: "url('test1.1.png')", end: "url('test1.2.png')",
          selection: [11, 12]},
-    13: {down: true, alt: true, start: "url('test-0.png')",
+    13: {down: true, ...getSmallIncrementKey(), start: "url('test-0.png')",
          end: "url('test--0.1.png')", selection: [10, 11]},
-    14: {alt: true, start: "url('test--0.1.png')", end: "url('test-0.png')",
-         selection: [10, 14]}
+    14: {...getSmallIncrementKey(), start: "url('test--0.1.png')",
+         end: "url('test-0.png')", selection: [10, 14]}
   });
 }
 
@@ -224,7 +232,30 @@ function* testZeroValueIncrements(view) {
   });
 }
 
+function* testOpacityIncrements(view) {
+  info("Testing keyboard increments on the opacity property");
+
+  let idRuleEditor = getRuleViewRuleEditor(view, 1);
+  let opacityPropEditor = idRuleEditor.rule.textProps[7].editor;
+
+  yield runIncrementTest(opacityPropEditor, view, {
+    1: {...getSmallIncrementKey(), start: "0.5", end: "0.51", selectAll: true},
+    2: {start: "0", end: "0.1", selectAll: true},
+    3: {shift: true, start: "0", end: "1", selectAll: true},
+    4: {down: true, ...getSmallIncrementKey(), start: "0.1",
+        end: "0.09", selectAll: true},
+    5: {down: true, start: "0", end: "-0.1", selectAll: true},
+    6: {down: true, shift: true, start: "0", end: "-1", selectAll: true},
+    7: {pageUp: true, shift: true, start: "0", end: "10", selectAll: true},
+    8: {pageDown: true, shift: true, start: "0", end: "-10",
+        selectAll: true},
+    9: {start: "0.7", end: "0.8", selectAll: true},
+    10: {down: true, start: "0", end: "-0.1", selectAll: true},
+  });
+}
+
 function* runIncrementTest(propertyEditor, view, tests) {
+  propertyEditor.valueSpan.scrollIntoView();
   let editor = yield focusEditableField(view, propertyEditor.valueSpan);
 
   for (let test in tests) {
@@ -235,7 +266,7 @@ function* runIncrementTest(propertyEditor, view, tests) {
   // requests when the test ends).
   let onRuleViewChanged = view.once("ruleview-changed");
   EventUtils.synthesizeKey("VK_ESCAPE", {}, view.styleWindow);
-  view.throttle.flush();
+  view.debounce.flush();
   yield onRuleViewChanged;
 }
 
@@ -262,16 +293,28 @@ function* testIncrement(editor, options, view) {
     key = "VK_PAGE_UP";
   }
 
-  EventUtils.synthesizeKey(key, {altKey: options.alt, shiftKey: options.shift},
+  let smallIncrementKey = {ctrlKey: options.ctrl};
+  if (system.constants.platform === "macosx") {
+    smallIncrementKey = {altKey: options.alt};
+  }
+
+  EventUtils.synthesizeKey(key, {...smallIncrementKey, shiftKey: options.shift},
     view.styleWindow);
 
   yield onKeyUp;
 
   // Only expect a change if the value actually changed!
   if (options.start !== options.end) {
-    view.throttle.flush();
+    view.debounce.flush();
     yield onRuleViewChanged;
   }
 
   is(input.value, options.end, "Value changed to " + options.end);
+}
+
+function getSmallIncrementKey() {
+  if (system.constants.platform === "macosx") {
+    return { alt: true };
+  }
+  return { ctrl: true };
 }

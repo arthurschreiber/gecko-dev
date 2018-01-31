@@ -13,7 +13,7 @@
 #include "nsIStringStream.h"
 #include "nsNetUtil.h"
 #include "nsComponentManagerUtils.h"
-#include "nsNullPrincipal.h"
+#include "NullPrincipal.h"
 
 NS_IMPL_ISUPPORTS(nsIconChannel,
                   nsIRequest,
@@ -115,10 +115,10 @@ moz_icon_to_channel(nsIURI* aURI, const nsACString& aFileExt,
   // nsIconProtocolHandler::NewChannel2 will provide the correct loadInfo for
   // this iconChannel. Use the most restrictive security settings for the
   // temporary loadInfo to make sure the channel can not be openend.
-  nsCOMPtr<nsIPrincipal> nullPrincipal = nsNullPrincipal::Create();
+  nsCOMPtr<nsIPrincipal> nullPrincipal = NullPrincipal::Create();
   return NS_NewInputStreamChannel(aChannel,
                                   aURI,
-                                  stream,
+                                  stream.forget(),
                                   nullPrincipal,
                                   nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED,
                                   nsIContentPolicy::TYPE_INTERNAL_IMAGE,

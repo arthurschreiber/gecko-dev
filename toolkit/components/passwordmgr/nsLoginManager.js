@@ -8,20 +8,20 @@ const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
 
 const PERMISSION_SAVE_LOGINS = "login-saving";
 
-Cu.import("resource://gre/modules/AppConstants.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Timer.jsm");
-Cu.import("resource://gre/modules/LoginManagerContent.jsm"); /*global UserAutoCompleteResult */
+ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/Timer.jsm");
+ChromeUtils.import("resource://gre/modules/LoginManagerContent.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-                                  "resource://gre/modules/Promise.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Task",
-                                  "resource://gre/modules/Task.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "BrowserUtils",
-                                  "resource://gre/modules/BrowserUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "LoginHelper",
-                                  "resource://gre/modules/LoginHelper.jsm");
+ChromeUtils.defineModuleGetter(this, "BrowserUtils",
+                               "resource://gre/modules/BrowserUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "LoginHelper",
+                               "resource://gre/modules/LoginHelper.jsm");
+ChromeUtils.defineModuleGetter(this, "LoginFormFactory",
+                               "resource://gre/modules/LoginManagerContent.jsm");
+ChromeUtils.defineModuleGetter(this, "InsecurePasswordUtils",
+                               "resource://gre/modules/InsecurePasswordUtils.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
   let logger = LoginHelper.createLogger("nsLoginManager");
@@ -87,24 +87,23 @@ LoginManager.prototype = {
 
     // Preferences. Add observer so we get notified of changes.
     this._prefBranch = Services.prefs.getBranch("signon.");
-    this._prefBranch.addObserver("rememberSignons", this._observer, false);
+    this._prefBranch.addObserver("rememberSignons", this._observer);
 
     this._remember = this._prefBranch.getBoolPref("rememberSignons");
     this._autoCompleteLookupPromise = null;
 
     // Form submit observer checks forms for new logins and pw changes.
-    Services.obs.addObserver(this._observer, "xpcom-shutdown", false);
+    Services.obs.addObserver(this._observer, "xpcom-shutdown");
 
     if (Services.appinfo.processType ===
         Services.appinfo.PROCESS_TYPE_DEFAULT) {
-      Services.obs.addObserver(this._observer, "passwordmgr-storage-replace",
-                               false);
+      Services.obs.addObserver(this._observer, "passwordmgr-storage-replace");
 
       // Initialize storage so that asynchronous data loading can start.
       this._initStorage();
     }
 
-    Services.obs.addObserver(this._observer, "gather-telemetry", false);
+    Services.obs.addObserver(this._observer, "gather-telemetry");
   },
 
 
@@ -162,13 +161,13 @@ LoginManager.prototype = {
         delete this._pwmgr._prefBranch;
         this._pwmgr = null;
       } else if (topic == "passwordmgr-storage-replace") {
-        Task.spawn(function* () {
-          yield this._pwmgr._storage.terminate();
+        (async () => {
+          await this._pwmgr._storage.terminate();
           this._pwmgr._initStorage();
-          yield this._pwmgr.initializationPromise;
+          await this._pwmgr.initializationPromise;
           Services.obs.notifyObservers(null,
-                       "passwordmgr-storage-replace-complete", null);
-        }.bind(this));
+                       "passwordmgr-storage-replace-complete");
+        })();
       } else if (topic == "gather-telemetry") {
         // When testing, the "data" parameter is a string containing the
         // reference time in milliseconds for time-based statistics.
@@ -308,6 +307,26 @@ LoginManager.prototype = {
     return this._storage.addLogin(login);
   },
 
+  async addLogins(logins) {
+    let crypto = Cc["@mozilla.org/login-manager/crypto/SDR;1"].
+                 getService(Ci.nsILoginManagerCrypto);
+    let plaintexts = logins.map(l => l.username).concat(logins.map(l => l.password));
+    let ciphertexts = await crypto.encryptMany(plaintexts);
+    let usernames = ciphertexts.slice(0, logins.length);
+    let passwords = ciphertexts.slice(logins.length);
+    for (let i = 0; i < logins.length; i++) {
+      let plaintextUsername = logins[i].username;
+      let plaintextPassword = logins[i].password;
+      logins[i].username = usernames[i];
+      logins[i].password = passwords[i];
+      log.debug("Adding login");
+      this._storage.addLogin(logins[i], true);
+      // Reset the username and password to keep the same guarantees as addLogin
+      logins[i].username = plaintextUsername;
+      logins[i].password = plaintextPassword;
+    }
+  },
+
   /**
    * Remove the specified login from the stored logins.
    */
@@ -363,7 +382,7 @@ LoginManager.prototype = {
     while (enumerator.hasMoreElements()) {
       let perm = enumerator.getNext();
       if (perm.type == PERMISSION_SAVE_LOGINS && perm.capability == Services.perms.DENY_ACTION) {
-        disabledHosts.push(perm.principal.URI.prePath);
+        disabledHosts.push(perm.principal.URI.displayPrePath);
       }
     }
 
@@ -442,7 +461,7 @@ LoginManager.prototype = {
       return false;
     }
 
-    let uri = Services.io.newURI(origin, null, null);
+    let uri = Services.io.newURI(origin);
     return Services.perms.testPermission(uri, PERMISSION_SAVE_LOGINS) != Services.perms.DENY_ACTION;
   },
 
@@ -454,7 +473,7 @@ LoginManager.prototype = {
     // Throws if there are bogus values.
     LoginHelper.checkHostnameValue(origin);
 
-    let uri = Services.io.newURI(origin, null, null);
+    let uri = Services.io.newURI(origin);
     if (enabled) {
       Services.perms.remove(uri, PERMISSION_SAVE_LOGINS);
     } else {
@@ -478,10 +497,36 @@ LoginManager.prototype = {
     // aPreviousResult is an nsIAutoCompleteResult, aElement is
     // nsIDOMHTMLInputElement
 
+    let form = LoginFormFactory.createFromField(aElement);
+    let isSecure = InsecurePasswordUtils.isFormSecure(form);
+    let isPasswordField = aElement.type == "password";
+
+    let completeSearch = (autoCompleteLookupPromise, { logins, messageManager }) => {
+      // If the search was canceled before we got our
+      // results, don't bother reporting them.
+      if (this._autoCompleteLookupPromise !== autoCompleteLookupPromise) {
+        return;
+      }
+
+      this._autoCompleteLookupPromise = null;
+      let results = new UserAutoCompleteResult(aSearchString, logins, {
+        messageManager,
+        isSecure,
+        isPasswordField,
+      });
+      aCallback.onSearchCompletion(results);
+    };
+
+    if (isPasswordField && aSearchString) {
+      // Return empty result on password fields with password already filled.
+      let acLookupPromise = this._autoCompleteLookupPromise = Promise.resolve({ logins: [] });
+      acLookupPromise.then(completeSearch.bind(this, acLookupPromise));
+      return;
+    }
+
     if (!this._remember) {
-      setTimeout(function() {
-        aCallback.onSearchCompletion(new UserAutoCompleteResult(aSearchString, []));
-      }, 0);
+      let acLookupPromise = this._autoCompleteLookupPromise = Promise.resolve({ logins: [] });
+      acLookupPromise.then(completeSearch.bind(this, acLookupPromise));
       return;
     }
 
@@ -496,22 +541,11 @@ LoginManager.prototype = {
     }
 
     let rect = BrowserUtils.getElementBoundingScreenRect(aElement);
-    let autoCompleteLookupPromise = this._autoCompleteLookupPromise =
+    let acLookupPromise = this._autoCompleteLookupPromise =
       LoginManagerContent._autoCompleteSearchAsync(aSearchString, previousResult,
                                                    aElement, rect);
-    autoCompleteLookupPromise.then(({ logins, messageManager }) => {
-                               // If the search was canceled before we got our
-                               // results, don't bother reporting them.
-                               if (this._autoCompleteLookupPromise !== autoCompleteLookupPromise) {
-                                 return;
-                               }
-
-                               this._autoCompleteLookupPromise = null;
-                               let results =
-                                 new UserAutoCompleteResult(aSearchString, logins, messageManager);
-                               aCallback.onSearchCompletion(results);
-                             })
-                            .then(null, Cu.reportError);
+    acLookupPromise.then(completeSearch.bind(this, acLookupPromise))
+                             .catch(Cu.reportError);
   },
 
   stopSearch() {

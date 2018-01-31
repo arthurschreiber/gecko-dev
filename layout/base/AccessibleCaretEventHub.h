@@ -11,6 +11,7 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 #include "nsCOMPtr.h"
+#include "nsDocShell.h"
 #include "nsIFrame.h"
 #include "nsIReflowObserver.h"
 #include "nsIScrollObserver.h"
@@ -19,7 +20,6 @@
 #include "mozilla/RefPtr.h"
 #include "nsWeakReference.h"
 
-class nsDocShell;
 class nsIPresShell;
 class nsITimer;
 
@@ -53,9 +53,9 @@ class WidgetTouchEvent;
 // "layout.accessiblecaret.use_long_tap_injector" for the fake long-tap events.
 //
 // State transition diagram:
-// http://hg.mozilla.org/mozilla-central/raw-file/default/layout/base/doc/AccessibleCaretEventHubStates.png
+// https://hg.mozilla.org/mozilla-central/raw-file/default/layout/base/doc/AccessibleCaretEventHubStates.png
 // Source code of the diagram:
-// http://hg.mozilla.org/mozilla-central/file/default/layout/base/doc/AccessibleCaretEventHubStates.dot
+// https://hg.mozilla.org/mozilla-central/file/default/layout/base/doc/AccessibleCaretEventHubStates.dot
 //
 // Please see the wiki page for more information.
 // https://wiki.mozilla.org/AccessibleCaret
@@ -89,7 +89,7 @@ public:
   State* GetState() const;
 
 protected:
-  virtual ~AccessibleCaretEventHub();
+  virtual ~AccessibleCaretEventHub() = default;
 
 #define MOZ_DECL_STATE_CLASS_GETTER(aClassName)                                \
   class aClassName;                                                            \

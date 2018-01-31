@@ -14,24 +14,23 @@ this.EXPORTED_SYMBOLS = [
   "DownloadsTaskbar",
 ];
 
-////////////////////////////////////////////////////////////////////////////////
-//// Globals
+// Globals
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cu = Components.utils;
 const Cr = Components.results;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "Downloads",
-                                  "resource://gre/modules/Downloads.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "RecentWindow",
-                                  "resource:///modules/RecentWindow.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                  "resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "Downloads",
+                               "resource://gre/modules/Downloads.jsm");
+ChromeUtils.defineModuleGetter(this, "RecentWindow",
+                               "resource:///modules/RecentWindow.jsm");
+ChromeUtils.defineModuleGetter(this, "Services",
+                               "resource://gre/modules/Services.jsm");
 
-XPCOMUtils.defineLazyGetter(this, "gWinTaskbar", function () {
+XPCOMUtils.defineLazyGetter(this, "gWinTaskbar", function() {
   if (!("@mozilla.org/windows-taskbar;1" in Cc)) {
     return null;
   }
@@ -40,14 +39,13 @@ XPCOMUtils.defineLazyGetter(this, "gWinTaskbar", function () {
   return winTaskbar.available && winTaskbar;
 });
 
-XPCOMUtils.defineLazyGetter(this, "gMacTaskbarProgress", function () {
+XPCOMUtils.defineLazyGetter(this, "gMacTaskbarProgress", function() {
   return ("@mozilla.org/widget/macdocksupport;1" in Cc) &&
          Cc["@mozilla.org/widget/macdocksupport;1"]
            .getService(Ci.nsITaskbarProgress);
 });
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadsTaskbar
+// DownloadsTaskbar
 
 /**
  * Handles the download progress indicator in the taskbar.
@@ -91,7 +89,7 @@ this.DownloadsTaskbar = {
         Services.obs.addObserver(() => {
           this._taskbarProgress = null;
           gMacTaskbarProgress = null;
-        }, "quit-application-granted", false);
+        }, "quit-application-granted");
       } else if (gWinTaskbar) {
         // On Windows, the indicator is currently hidden because we have no
         // previous browser window, thus we should attach the indicator now.
@@ -108,11 +106,11 @@ this.DownloadsTaskbar = {
         // In case the method is re-entered, we simply ignore redundant
         // invocations of the callback, instead of keeping separate state.
         if (this._summary) {
-          return;
+          return undefined;
         }
         this._summary = summary;
         return this._summary.addView(this);
-      }).then(null, Cu.reportError);
+      }).catch(Cu.reportError);
     }
   },
 
@@ -147,11 +145,10 @@ this.DownloadsTaskbar = {
         // again on the next browser window that is opened.
         this._taskbarProgress = null;
       }
-    }, false);
+    });
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// DownloadSummary view
+  // DownloadSummary view
 
   onSummaryChanged() {
     // If the last browser window has been closed, we have no indicator any more.

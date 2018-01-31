@@ -4,29 +4,13 @@
 // corresponding Java methods and rerun the build. Manually updating this file
 // will cause your build to fail.
 
+#ifndef MOZ_PREPROCESSOR
 #include "GeneratedJNIWrappers.h"
 #include "mozilla/jni/Accessors.h"
+#endif
 
 namespace mozilla {
 namespace java {
-
-const char ANRReporter::name[] =
-        "org/mozilla/gecko/ANRReporter";
-
-constexpr char ANRReporter::GetNativeStack_t::name[];
-constexpr char ANRReporter::GetNativeStack_t::signature[];
-
-constexpr char ANRReporter::ReleaseNativeStack_t::name[];
-constexpr char ANRReporter::ReleaseNativeStack_t::signature[];
-
-constexpr char ANRReporter::RequestNativeStack_t::name[];
-constexpr char ANRReporter::RequestNativeStack_t::signature[];
-
-const char AlarmReceiver::name[] =
-        "org/mozilla/gecko/AlarmReceiver";
-
-constexpr char AlarmReceiver::NotifyAlarmFired_t::name[];
-constexpr char AlarmReceiver::NotifyAlarmFired_t::signature[];
 
 const char AndroidGamepadManager::name[] =
         "org/mozilla/gecko/AndroidGamepadManager";
@@ -51,48 +35,112 @@ constexpr char AndroidGamepadManager::OnGamepadChange_t::signature[];
 constexpr char AndroidGamepadManager::Start_t::name[];
 constexpr char AndroidGamepadManager::Start_t::signature[];
 
-auto AndroidGamepadManager::Start() -> void
+auto AndroidGamepadManager::Start(mozilla::jni::Object::Param a0) -> void
 {
-    return mozilla::jni::Method<Start_t>::Call(AndroidGamepadManager::Context(), nullptr);
+    return mozilla::jni::Method<Start_t>::Call(AndroidGamepadManager::Context(), nullptr, a0);
 }
 
 constexpr char AndroidGamepadManager::Stop_t::name[];
 constexpr char AndroidGamepadManager::Stop_t::signature[];
 
-auto AndroidGamepadManager::Stop() -> void
+auto AndroidGamepadManager::Stop(mozilla::jni::Object::Param a0) -> void
 {
-    return mozilla::jni::Method<Stop_t>::Call(AndroidGamepadManager::Context(), nullptr);
+    return mozilla::jni::Method<Stop_t>::Call(AndroidGamepadManager::Context(), nullptr, a0);
 }
 
-const char DownloadsIntegration::name[] =
-        "org/mozilla/gecko/DownloadsIntegration";
+const char Clipboard::name[] =
+        "org/mozilla/gecko/Clipboard";
 
-constexpr char DownloadsIntegration::GetTemporaryDownloadDirectory_t::name[];
-constexpr char DownloadsIntegration::GetTemporaryDownloadDirectory_t::signature[];
+constexpr char Clipboard::ClearText_t::name[];
+constexpr char Clipboard::ClearText_t::signature[];
 
-auto DownloadsIntegration::GetTemporaryDownloadDirectory() -> mozilla::jni::String::LocalRef
+auto Clipboard::ClearText(mozilla::jni::Object::Param a0) -> void
 {
-    return mozilla::jni::Method<GetTemporaryDownloadDirectory_t>::Call(DownloadsIntegration::Context(), nullptr);
+    return mozilla::jni::Method<ClearText_t>::Call(Clipboard::Context(), nullptr, a0);
 }
 
-constexpr char DownloadsIntegration::ScanMedia_t::name[];
-constexpr char DownloadsIntegration::ScanMedia_t::signature[];
+constexpr char Clipboard::GetText_t::name[];
+constexpr char Clipboard::GetText_t::signature[];
 
-auto DownloadsIntegration::ScanMedia(mozilla::jni::String::Param a0, mozilla::jni::String::Param a1) -> void
+auto Clipboard::GetText(mozilla::jni::Object::Param a0) -> mozilla::jni::String::LocalRef
 {
-    return mozilla::jni::Method<ScanMedia_t>::Call(DownloadsIntegration::Context(), nullptr, a0, a1);
+    return mozilla::jni::Method<GetText_t>::Call(Clipboard::Context(), nullptr, a0);
 }
+
+constexpr char Clipboard::HasText_t::name[];
+constexpr char Clipboard::HasText_t::signature[];
+
+auto Clipboard::HasText(mozilla::jni::Object::Param a0) -> bool
+{
+    return mozilla::jni::Method<HasText_t>::Call(Clipboard::Context(), nullptr, a0);
+}
+
+constexpr char Clipboard::SetText_t::name[];
+constexpr char Clipboard::SetText_t::signature[];
+
+auto Clipboard::SetText(mozilla::jni::Object::Param a0, mozilla::jni::String::Param a1) -> void
+{
+    return mozilla::jni::Method<SetText_t>::Call(Clipboard::Context(), nullptr, a0, a1);
+}
+
+const char EventDispatcher::name[] =
+        "org/mozilla/gecko/EventDispatcher";
+
+constexpr char EventDispatcher::DispatchToGecko_t::name[];
+constexpr char EventDispatcher::DispatchToGecko_t::signature[];
+
+constexpr char EventDispatcher::DispatchToThreads_t::name[];
+constexpr char EventDispatcher::DispatchToThreads_t::signature[];
+
+auto EventDispatcher::DispatchToThreads(mozilla::jni::String::Param a0, mozilla::jni::Object::Param a1, mozilla::jni::Object::Param a2) const -> bool
+{
+    return mozilla::jni::Method<DispatchToThreads_t>::Call(EventDispatcher::mCtx, nullptr, a0, a1, a2);
+}
+
+constexpr char EventDispatcher::DisposeNative_t::name[];
+constexpr char EventDispatcher::DisposeNative_t::signature[];
+
+constexpr char EventDispatcher::GetInstance_t::name[];
+constexpr char EventDispatcher::GetInstance_t::signature[];
+
+auto EventDispatcher::GetInstance() -> EventDispatcher::LocalRef
+{
+    return mozilla::jni::Method<GetInstance_t>::Call(EventDispatcher::Context(), nullptr);
+}
+
+constexpr char EventDispatcher::HasGeckoListener_t::name[];
+constexpr char EventDispatcher::HasGeckoListener_t::signature[];
+
+constexpr char EventDispatcher::SetAttachedToGecko_t::name[];
+constexpr char EventDispatcher::SetAttachedToGecko_t::signature[];
+
+auto EventDispatcher::SetAttachedToGecko(int32_t a0) const -> void
+{
+    return mozilla::jni::Method<SetAttachedToGecko_t>::Call(EventDispatcher::mCtx, nullptr, a0);
+}
+
+const char EventDispatcher::NativeCallbackDelegate::name[] =
+        "org/mozilla/gecko/EventDispatcher$NativeCallbackDelegate";
+
+constexpr char EventDispatcher::NativeCallbackDelegate::New_t::name[];
+constexpr char EventDispatcher::NativeCallbackDelegate::New_t::signature[];
+
+auto EventDispatcher::NativeCallbackDelegate::New() -> NativeCallbackDelegate::LocalRef
+{
+    return mozilla::jni::Constructor<New_t>::Call(NativeCallbackDelegate::Context(), nullptr);
+}
+
+constexpr char EventDispatcher::NativeCallbackDelegate::Finalize_t::name[];
+constexpr char EventDispatcher::NativeCallbackDelegate::Finalize_t::signature[];
+
+constexpr char EventDispatcher::NativeCallbackDelegate::SendError_t::name[];
+constexpr char EventDispatcher::NativeCallbackDelegate::SendError_t::signature[];
+
+constexpr char EventDispatcher::NativeCallbackDelegate::SendSuccess_t::name[];
+constexpr char EventDispatcher::NativeCallbackDelegate::SendSuccess_t::signature[];
 
 const char GeckoAppShell::name[] =
         "org/mozilla/gecko/GeckoAppShell";
-
-constexpr char GeckoAppShell::AddFullScreenPluginView_t::name[];
-constexpr char GeckoAppShell::AddFullScreenPluginView_t::signature[];
-
-auto GeckoAppShell::AddFullScreenPluginView(mozilla::jni::Object::Param a0) -> void
-{
-    return mozilla::jni::Method<AddFullScreenPluginView_t>::Call(GeckoAppShell::Context(), nullptr, a0);
-}
 
 constexpr char GeckoAppShell::CancelVibrate_t::name[];
 constexpr char GeckoAppShell::CancelVibrate_t::signature[];
@@ -100,14 +148,6 @@ constexpr char GeckoAppShell::CancelVibrate_t::signature[];
 auto GeckoAppShell::CancelVibrate() -> void
 {
     return mozilla::jni::Method<CancelVibrate_t>::Call(GeckoAppShell::Context(), nullptr);
-}
-
-constexpr char GeckoAppShell::CheckURIVisited_t::name[];
-constexpr char GeckoAppShell::CheckURIVisited_t::signature[];
-
-auto GeckoAppShell::CheckURIVisited(mozilla::jni::String::Param a0) -> void
-{
-    return mozilla::jni::Method<CheckURIVisited_t>::Call(GeckoAppShell::Context(), nullptr, a0);
 }
 
 constexpr char GeckoAppShell::CloseCamera_t::name[];
@@ -140,46 +180,6 @@ constexpr char GeckoAppShell::CreateInputStream_t::signature[];
 auto GeckoAppShell::CreateInputStream(mozilla::jni::Object::Param a0) -> mozilla::jni::Object::LocalRef
 {
     return mozilla::jni::Method<CreateInputStream_t>::Call(GeckoAppShell::Context(), nullptr, a0);
-}
-
-constexpr char GeckoAppShell::CreateMessageCursor_t::name[];
-constexpr char GeckoAppShell::CreateMessageCursor_t::signature[];
-
-auto GeckoAppShell::CreateMessageCursor(int64_t a0, int64_t a1, mozilla::jni::ObjectArray::Param a2, int32_t a3, mozilla::jni::String::Param a4, bool a5, bool a6, bool a7, int64_t a8, bool a9, int32_t a10) -> void
-{
-    return mozilla::jni::Method<CreateMessageCursor_t>::Call(GeckoAppShell::Context(), nullptr, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10);
-}
-
-constexpr char GeckoAppShell::CreateShortcut_t::name[];
-constexpr char GeckoAppShell::CreateShortcut_t::signature[];
-
-auto GeckoAppShell::CreateShortcut(mozilla::jni::String::Param a0, mozilla::jni::String::Param a1) -> void
-{
-    return mozilla::jni::Method<CreateShortcut_t>::Call(GeckoAppShell::Context(), nullptr, a0, a1);
-}
-
-constexpr char GeckoAppShell::CreateThreadCursor_t::name[];
-constexpr char GeckoAppShell::CreateThreadCursor_t::signature[];
-
-auto GeckoAppShell::CreateThreadCursor(int32_t a0) -> void
-{
-    return mozilla::jni::Method<CreateThreadCursor_t>::Call(GeckoAppShell::Context(), nullptr, a0);
-}
-
-constexpr char GeckoAppShell::DeleteMessage_t::name[];
-constexpr char GeckoAppShell::DeleteMessage_t::signature[];
-
-auto GeckoAppShell::DeleteMessage(int32_t a0, int32_t a1) -> void
-{
-    return mozilla::jni::Method<DeleteMessage_t>::Call(GeckoAppShell::Context(), nullptr, a0, a1);
-}
-
-constexpr char GeckoAppShell::DisableAlarm_t::name[];
-constexpr char GeckoAppShell::DisableAlarm_t::signature[];
-
-auto GeckoAppShell::DisableAlarm() -> void
-{
-    return mozilla::jni::Method<DisableAlarm_t>::Call(GeckoAppShell::Context(), nullptr);
 }
 
 constexpr char GeckoAppShell::DisableBatteryNotifications_t::name[];
@@ -225,7 +225,7 @@ auto GeckoAppShell::EnableBatteryNotifications() -> void
 constexpr char GeckoAppShell::EnableLocation_t::name[];
 constexpr char GeckoAppShell::EnableLocation_t::signature[];
 
-auto GeckoAppShell::EnableLocation(bool a0) -> void
+auto GeckoAppShell::EnableLocation(bool a0) -> bool
 {
     return mozilla::jni::Method<EnableLocation_t>::Call(GeckoAppShell::Context(), nullptr, a0);
 }
@@ -262,6 +262,14 @@ auto GeckoAppShell::EnableSensor(int32_t a0) -> void
     return mozilla::jni::Method<EnableSensor_t>::Call(GeckoAppShell::Context(), nullptr, a0);
 }
 
+constexpr char GeckoAppShell::GetAppNotes_t::name[];
+constexpr char GeckoAppShell::GetAppNotes_t::signature[];
+
+auto GeckoAppShell::GetAppNotes() -> mozilla::jni::String::LocalRef
+{
+    return mozilla::jni::Method<GetAppNotes_t>::Call(GeckoAppShell::Context(), nullptr);
+}
+
 constexpr char GeckoAppShell::GetApplicationContext_t::name[];
 constexpr char GeckoAppShell::GetApplicationContext_t::signature[];
 
@@ -270,20 +278,28 @@ auto GeckoAppShell::GetApplicationContext() -> mozilla::jni::Object::LocalRef
     return mozilla::jni::Method<GetApplicationContext_t>::Call(GeckoAppShell::Context(), nullptr);
 }
 
+constexpr char GeckoAppShell::GetAudioOutputFramesPerBuffer_t::name[];
+constexpr char GeckoAppShell::GetAudioOutputFramesPerBuffer_t::signature[];
+
+auto GeckoAppShell::GetAudioOutputFramesPerBuffer() -> int32_t
+{
+    return mozilla::jni::Method<GetAudioOutputFramesPerBuffer_t>::Call(GeckoAppShell::Context(), nullptr);
+}
+
+constexpr char GeckoAppShell::GetAudioOutputSampleRate_t::name[];
+constexpr char GeckoAppShell::GetAudioOutputSampleRate_t::signature[];
+
+auto GeckoAppShell::GetAudioOutputSampleRate() -> int32_t
+{
+    return mozilla::jni::Method<GetAudioOutputSampleRate_t>::Call(GeckoAppShell::Context(), nullptr);
+}
+
 constexpr char GeckoAppShell::GetConnection_t::name[];
 constexpr char GeckoAppShell::GetConnection_t::signature[];
 
 auto GeckoAppShell::GetConnection(mozilla::jni::String::Param a0) -> mozilla::jni::Object::LocalRef
 {
     return mozilla::jni::Method<GetConnection_t>::Call(GeckoAppShell::Context(), nullptr, a0);
-}
-
-constexpr char GeckoAppShell::GetContext_t::name[];
-constexpr char GeckoAppShell::GetContext_t::signature[];
-
-auto GeckoAppShell::GetContext() -> mozilla::jni::Object::LocalRef
-{
-    return mozilla::jni::Method<GetContext_t>::Call(GeckoAppShell::Context(), nullptr);
 }
 
 constexpr char GeckoAppShell::GetCurrentBatteryInformation_t::name[];
@@ -300,6 +316,14 @@ constexpr char GeckoAppShell::GetCurrentNetworkInformation_t::signature[];
 auto GeckoAppShell::GetCurrentNetworkInformation() -> mozilla::jni::DoubleArray::LocalRef
 {
     return mozilla::jni::Method<GetCurrentNetworkInformation_t>::Call(GeckoAppShell::Context(), nullptr);
+}
+
+constexpr char GeckoAppShell::GetDefaultLocale_t::name[];
+constexpr char GeckoAppShell::GetDefaultLocale_t::signature[];
+
+auto GeckoAppShell::GetDefaultLocale() -> mozilla::jni::String::LocalRef
+{
+    return mozilla::jni::Method<GetDefaultLocale_t>::Call(GeckoAppShell::Context(), nullptr);
 }
 
 constexpr char GeckoAppShell::GetDensity_t::name[];
@@ -332,14 +356,6 @@ constexpr char GeckoAppShell::GetExtensionFromMimeType_t::signature[];
 auto GeckoAppShell::GetExtensionFromMimeType(mozilla::jni::String::Param a0) -> mozilla::jni::String::LocalRef
 {
     return mozilla::jni::Method<GetExtensionFromMimeType_t>::Call(GeckoAppShell::Context(), nullptr, a0);
-}
-
-constexpr char GeckoAppShell::GetExternalPublicDirectory_t::name[];
-constexpr char GeckoAppShell::GetExternalPublicDirectory_t::signature[];
-
-auto GeckoAppShell::GetExternalPublicDirectory(mozilla::jni::String::Param a0) -> mozilla::jni::String::LocalRef
-{
-    return mozilla::jni::Method<GetExternalPublicDirectory_t>::Call(GeckoAppShell::Context(), nullptr, a0);
 }
 
 constexpr char GeckoAppShell::GetHWDecoderCapability_t::name[];
@@ -390,14 +406,6 @@ auto GeckoAppShell::GetMaxTouchPoints() -> int32_t
     return mozilla::jni::Method<GetMaxTouchPoints_t>::Call(GeckoAppShell::Context(), nullptr);
 }
 
-constexpr char GeckoAppShell::GetMessage_t::name[];
-constexpr char GeckoAppShell::GetMessage_t::signature[];
-
-auto GeckoAppShell::GetMessage(int32_t a0, int32_t a1) -> void
-{
-    return mozilla::jni::Method<GetMessage_t>::Call(GeckoAppShell::Context(), nullptr, a0, a1);
-}
-
 constexpr char GeckoAppShell::GetMimeTypeFromExtensions_t::name[];
 constexpr char GeckoAppShell::GetMimeTypeFromExtensions_t::signature[];
 
@@ -412,22 +420,6 @@ constexpr char GeckoAppShell::GetNetworkLinkType_t::signature[];
 auto GeckoAppShell::GetNetworkLinkType() -> int32_t
 {
     return mozilla::jni::Method<GetNetworkLinkType_t>::Call(GeckoAppShell::Context(), nullptr);
-}
-
-constexpr char GeckoAppShell::GetNextMessage_t::name[];
-constexpr char GeckoAppShell::GetNextMessage_t::signature[];
-
-auto GeckoAppShell::GetNextMessage(int32_t a0) -> void
-{
-    return mozilla::jni::Method<GetNextMessage_t>::Call(GeckoAppShell::Context(), nullptr, a0);
-}
-
-constexpr char GeckoAppShell::GetNextThread_t::name[];
-constexpr char GeckoAppShell::GetNextThread_t::signature[];
-
-auto GeckoAppShell::GetNextThread(int32_t a0) -> void
-{
-    return mozilla::jni::Method<GetNextThread_t>::Call(GeckoAppShell::Context(), nullptr, a0);
 }
 
 constexpr char GeckoAppShell::GetProxyForURI_t::name[];
@@ -486,14 +478,6 @@ auto GeckoAppShell::GetSystemColors() -> mozilla::jni::IntArray::LocalRef
     return mozilla::jni::Method<GetSystemColors_t>::Call(GeckoAppShell::Context(), nullptr);
 }
 
-constexpr char GeckoAppShell::HandleGeckoMessage_t::name[];
-constexpr char GeckoAppShell::HandleGeckoMessage_t::signature[];
-
-auto GeckoAppShell::HandleGeckoMessage(mozilla::jni::Object::Param a0) -> void
-{
-    return mozilla::jni::Method<HandleGeckoMessage_t>::Call(GeckoAppShell::Context(), nullptr, a0);
-}
-
 constexpr char GeckoAppShell::HandleUncaughtException_t::name[];
 constexpr char GeckoAppShell::HandleUncaughtException_t::signature[];
 
@@ -550,36 +534,12 @@ auto GeckoAppShell::KillAnyZombies() -> void
     return mozilla::jni::Method<KillAnyZombies_t>::Call(GeckoAppShell::Context(), nullptr);
 }
 
-constexpr char GeckoAppShell::LoadPluginClass_t::name[];
-constexpr char GeckoAppShell::LoadPluginClass_t::signature[];
-
-auto GeckoAppShell::LoadPluginClass(mozilla::jni::String::Param a0, mozilla::jni::String::Param a1) -> mozilla::jni::Class::LocalRef
-{
-    return mozilla::jni::Method<LoadPluginClass_t>::Call(GeckoAppShell::Context(), nullptr, a0, a1);
-}
-
 constexpr char GeckoAppShell::LockScreenOrientation_t::name[];
 constexpr char GeckoAppShell::LockScreenOrientation_t::signature[];
 
 auto GeckoAppShell::LockScreenOrientation(int32_t a0) -> void
 {
     return mozilla::jni::Method<LockScreenOrientation_t>::Call(GeckoAppShell::Context(), nullptr, a0);
-}
-
-constexpr char GeckoAppShell::MarkMessageRead_t::name[];
-constexpr char GeckoAppShell::MarkMessageRead_t::signature[];
-
-auto GeckoAppShell::MarkMessageRead(int32_t a0, bool a1, bool a2, int32_t a3) -> void
-{
-    return mozilla::jni::Method<MarkMessageRead_t>::Call(GeckoAppShell::Context(), nullptr, a0, a1, a2, a3);
-}
-
-constexpr char GeckoAppShell::MarkURIVisited_t::name[];
-constexpr char GeckoAppShell::MarkURIVisited_t::signature[];
-
-auto GeckoAppShell::MarkURIVisited(mozilla::jni::String::Param a0) -> void
-{
-    return mozilla::jni::Method<MarkURIVisited_t>::Call(GeckoAppShell::Context(), nullptr, a0);
 }
 
 constexpr char GeckoAppShell::MoveTaskToBack_t::name[];
@@ -607,9 +567,6 @@ auto GeckoAppShell::NotifyWakeLockChanged(mozilla::jni::String::Param a0, mozill
     return mozilla::jni::Method<NotifyWakeLockChanged_t>::Call(GeckoAppShell::Context(), nullptr, a0, a1);
 }
 
-constexpr char GeckoAppShell::OnFullScreenPluginHidden_t::name[];
-constexpr char GeckoAppShell::OnFullScreenPluginHidden_t::signature[];
-
 constexpr char GeckoAppShell::OnLocationChanged_t::name[];
 constexpr char GeckoAppShell::OnLocationChanged_t::signature[];
 
@@ -632,56 +589,8 @@ auto GeckoAppShell::PerformHapticFeedback(bool a0) -> void
     return mozilla::jni::Method<PerformHapticFeedback_t>::Call(GeckoAppShell::Context(), nullptr, a0);
 }
 
-constexpr char GeckoAppShell::RemoveFullScreenPluginView_t::name[];
-constexpr char GeckoAppShell::RemoveFullScreenPluginView_t::signature[];
-
-auto GeckoAppShell::RemoveFullScreenPluginView(mozilla::jni::Object::Param a0) -> void
-{
-    return mozilla::jni::Method<RemoveFullScreenPluginView_t>::Call(GeckoAppShell::Context(), nullptr, a0);
-}
-
 constexpr char GeckoAppShell::ReportJavaCrash_t::name[];
 constexpr char GeckoAppShell::ReportJavaCrash_t::signature[];
-
-constexpr char GeckoAppShell::ScheduleRestart_t::name[];
-constexpr char GeckoAppShell::ScheduleRestart_t::signature[];
-
-auto GeckoAppShell::ScheduleRestart() -> void
-{
-    return mozilla::jni::Method<ScheduleRestart_t>::Call(GeckoAppShell::Context(), nullptr);
-}
-
-constexpr char GeckoAppShell::SendMessage_t::name[];
-constexpr char GeckoAppShell::SendMessage_t::signature[];
-
-auto GeckoAppShell::SendMessage(mozilla::jni::String::Param a0, mozilla::jni::String::Param a1, int32_t a2) -> void
-{
-    return mozilla::jni::Method<SendMessage_t>::Call(GeckoAppShell::Context(), nullptr, a0, a1, a2);
-}
-
-constexpr char GeckoAppShell::SetAlarm_t::name[];
-constexpr char GeckoAppShell::SetAlarm_t::signature[];
-
-auto GeckoAppShell::SetAlarm(int32_t a0, int32_t a1) -> bool
-{
-    return mozilla::jni::Method<SetAlarm_t>::Call(GeckoAppShell::Context(), nullptr, a0, a1);
-}
-
-constexpr char GeckoAppShell::SetFullScreen_t::name[];
-constexpr char GeckoAppShell::SetFullScreen_t::signature[];
-
-auto GeckoAppShell::SetFullScreen(bool a0) -> void
-{
-    return mozilla::jni::Method<SetFullScreen_t>::Call(GeckoAppShell::Context(), nullptr, a0);
-}
-
-constexpr char GeckoAppShell::SetKeepScreenOn_t::name[];
-constexpr char GeckoAppShell::SetKeepScreenOn_t::signature[];
-
-auto GeckoAppShell::SetKeepScreenOn(bool a0) -> void
-{
-    return mozilla::jni::Method<SetKeepScreenOn_t>::Call(GeckoAppShell::Context(), nullptr, a0);
-}
 
 constexpr char GeckoAppShell::SetScreenDepthOverride_t::name[];
 constexpr char GeckoAppShell::SetScreenDepthOverride_t::signature[];
@@ -691,24 +600,13 @@ auto GeckoAppShell::SetScreenDepthOverride(int32_t a0) -> void
     return mozilla::jni::Method<SetScreenDepthOverride_t>::Call(GeckoAppShell::Context(), nullptr, a0);
 }
 
-constexpr char GeckoAppShell::SetURITitle_t::name[];
-constexpr char GeckoAppShell::SetURITitle_t::signature[];
+constexpr char GeckoAppShell::ShowNotification_t::name[];
+constexpr char GeckoAppShell::ShowNotification_t::signature[];
 
-auto GeckoAppShell::SetURITitle(mozilla::jni::String::Param a0, mozilla::jni::String::Param a1) -> void
+auto GeckoAppShell::ShowNotification(mozilla::jni::String::Param a0, mozilla::jni::String::Param a1, mozilla::jni::String::Param a2, mozilla::jni::String::Param a3, mozilla::jni::String::Param a4, mozilla::jni::String::Param a5, mozilla::jni::String::Param a6) -> void
 {
-    return mozilla::jni::Method<SetURITitle_t>::Call(GeckoAppShell::Context(), nullptr, a0, a1);
+    return mozilla::jni::Method<ShowNotification_t>::Call(GeckoAppShell::Context(), nullptr, a0, a1, a2, a3, a4, a5, a6);
 }
-
-constexpr char GeckoAppShell::ShowAlertNotification_t::name[];
-constexpr char GeckoAppShell::ShowAlertNotification_t::signature[];
-
-auto GeckoAppShell::ShowAlertNotification(mozilla::jni::String::Param a0, mozilla::jni::String::Param a1, mozilla::jni::String::Param a2, mozilla::jni::String::Param a3, mozilla::jni::String::Param a4, mozilla::jni::String::Param a5, mozilla::jni::String::Param a6) -> void
-{
-    return mozilla::jni::Method<ShowAlertNotification_t>::Call(GeckoAppShell::Context(), nullptr, a0, a1, a2, a3, a4, a5, a6);
-}
-
-constexpr char GeckoAppShell::SyncNotifyObservers_t::name[];
-constexpr char GeckoAppShell::SyncNotifyObservers_t::signature[];
 
 constexpr char GeckoAppShell::UnlockProfile_t::name[];
 constexpr char GeckoAppShell::UnlockProfile_t::signature[];
@@ -754,160 +652,81 @@ const char GeckoBatteryManager::name[] =
 constexpr char GeckoBatteryManager::OnBatteryChange_t::name[];
 constexpr char GeckoBatteryManager::OnBatteryChange_t::signature[];
 
-const char GeckoEditable::name[] =
-        "org/mozilla/gecko/GeckoEditable";
+const char GeckoEditableChild::name[] =
+        "org/mozilla/gecko/GeckoEditableChild";
 
-constexpr char GeckoEditable::New_t::name[];
-constexpr char GeckoEditable::New_t::signature[];
+constexpr char GeckoEditableChild::New_t::name[];
+constexpr char GeckoEditableChild::New_t::signature[];
 
-auto GeckoEditable::New(mozilla::jni::Object::Param a0) -> GeckoEditable::LocalRef
+auto GeckoEditableChild::New(mozilla::jni::Object::Param a0) -> GeckoEditableChild::LocalRef
 {
-    return mozilla::jni::Constructor<New_t>::Call(GeckoEditable::Context(), nullptr, a0);
+    return mozilla::jni::Constructor<New_t>::Call(GeckoEditableChild::Context(), nullptr, a0);
 }
 
-constexpr char GeckoEditable::DisposeNative_t::name[];
-constexpr char GeckoEditable::DisposeNative_t::signature[];
+constexpr char GeckoEditableChild::NotifyIME_t::name[];
+constexpr char GeckoEditableChild::NotifyIME_t::signature[];
 
-constexpr char GeckoEditable::NotifyIME_t::name[];
-constexpr char GeckoEditable::NotifyIME_t::signature[];
-
-auto GeckoEditable::NotifyIME(int32_t a0) const -> void
+auto GeckoEditableChild::NotifyIME(int32_t a0) const -> void
 {
-    return mozilla::jni::Method<NotifyIME_t>::Call(GeckoEditable::mCtx, nullptr, a0);
+    return mozilla::jni::Method<NotifyIME_t>::Call(GeckoEditableChild::mCtx, nullptr, a0);
 }
 
-constexpr char GeckoEditable::NotifyIMEContext_t::name[];
-constexpr char GeckoEditable::NotifyIMEContext_t::signature[];
+constexpr char GeckoEditableChild::NotifyIMEContext_t::name[];
+constexpr char GeckoEditableChild::NotifyIMEContext_t::signature[];
 
-auto GeckoEditable::NotifyIMEContext(int32_t a0, mozilla::jni::String::Param a1, mozilla::jni::String::Param a2, mozilla::jni::String::Param a3) const -> void
+auto GeckoEditableChild::NotifyIMEContext(int32_t a0, mozilla::jni::String::Param a1, mozilla::jni::String::Param a2, mozilla::jni::String::Param a3, int32_t a4) const -> void
 {
-    return mozilla::jni::Method<NotifyIMEContext_t>::Call(GeckoEditable::mCtx, nullptr, a0, a1, a2, a3);
+    return mozilla::jni::Method<NotifyIMEContext_t>::Call(GeckoEditableChild::mCtx, nullptr, a0, a1, a2, a3, a4);
 }
 
-constexpr char GeckoEditable::OnDefaultKeyEvent_t::name[];
-constexpr char GeckoEditable::OnDefaultKeyEvent_t::signature[];
+constexpr char GeckoEditableChild::OnDefaultKeyEvent_t::name[];
+constexpr char GeckoEditableChild::OnDefaultKeyEvent_t::signature[];
 
-auto GeckoEditable::OnDefaultKeyEvent(mozilla::jni::Object::Param a0) const -> void
+auto GeckoEditableChild::OnDefaultKeyEvent(mozilla::jni::Object::Param a0) const -> void
 {
-    return mozilla::jni::Method<OnDefaultKeyEvent_t>::Call(GeckoEditable::mCtx, nullptr, a0);
+    return mozilla::jni::Method<OnDefaultKeyEvent_t>::Call(GeckoEditableChild::mCtx, nullptr, a0);
 }
 
-constexpr char GeckoEditable::OnImeAcknowledgeFocus_t::name[];
-constexpr char GeckoEditable::OnImeAcknowledgeFocus_t::signature[];
+constexpr char GeckoEditableChild::OnImeAddCompositionRange_t::name[];
+constexpr char GeckoEditableChild::OnImeAddCompositionRange_t::signature[];
 
-constexpr char GeckoEditable::OnImeAddCompositionRange_t::name[];
-constexpr char GeckoEditable::OnImeAddCompositionRange_t::signature[];
+constexpr char GeckoEditableChild::OnImeReplaceText_t::name[];
+constexpr char GeckoEditableChild::OnImeReplaceText_t::signature[];
 
-constexpr char GeckoEditable::OnImeReplaceText_t::name[];
-constexpr char GeckoEditable::OnImeReplaceText_t::signature[];
+constexpr char GeckoEditableChild::OnImeRequestCursorUpdates_t::name[];
+constexpr char GeckoEditableChild::OnImeRequestCursorUpdates_t::signature[];
 
-constexpr char GeckoEditable::OnImeRequestCursorUpdates_t::name[];
-constexpr char GeckoEditable::OnImeRequestCursorUpdates_t::signature[];
+constexpr char GeckoEditableChild::OnImeSynchronize_t::name[];
+constexpr char GeckoEditableChild::OnImeSynchronize_t::signature[];
 
-constexpr char GeckoEditable::OnImeSynchronize_t::name[];
-constexpr char GeckoEditable::OnImeSynchronize_t::signature[];
+constexpr char GeckoEditableChild::OnImeUpdateComposition_t::name[];
+constexpr char GeckoEditableChild::OnImeUpdateComposition_t::signature[];
 
-constexpr char GeckoEditable::OnImeUpdateComposition_t::name[];
-constexpr char GeckoEditable::OnImeUpdateComposition_t::signature[];
+constexpr char GeckoEditableChild::OnKeyEvent_t::name[];
+constexpr char GeckoEditableChild::OnKeyEvent_t::signature[];
 
-constexpr char GeckoEditable::OnKeyEvent_t::name[];
-constexpr char GeckoEditable::OnKeyEvent_t::signature[];
+constexpr char GeckoEditableChild::OnSelectionChange_t::name[];
+constexpr char GeckoEditableChild::OnSelectionChange_t::signature[];
 
-constexpr char GeckoEditable::OnSelectionChange_t::name[];
-constexpr char GeckoEditable::OnSelectionChange_t::signature[];
-
-auto GeckoEditable::OnSelectionChange(int32_t a0, int32_t a1) const -> void
+auto GeckoEditableChild::OnSelectionChange(int32_t a0, int32_t a1) const -> void
 {
-    return mozilla::jni::Method<OnSelectionChange_t>::Call(GeckoEditable::mCtx, nullptr, a0, a1);
+    return mozilla::jni::Method<OnSelectionChange_t>::Call(GeckoEditableChild::mCtx, nullptr, a0, a1);
 }
 
-constexpr char GeckoEditable::OnTextChange_t::name[];
-constexpr char GeckoEditable::OnTextChange_t::signature[];
+constexpr char GeckoEditableChild::OnTextChange_t::name[];
+constexpr char GeckoEditableChild::OnTextChange_t::signature[];
 
-auto GeckoEditable::OnTextChange(mozilla::jni::String::Param a0, int32_t a1, int32_t a2, int32_t a3) const -> void
+auto GeckoEditableChild::OnTextChange(mozilla::jni::String::Param a0, int32_t a1, int32_t a2, int32_t a3) const -> void
 {
-    return mozilla::jni::Method<OnTextChange_t>::Call(GeckoEditable::mCtx, nullptr, a0, a1, a2, a3);
+    return mozilla::jni::Method<OnTextChange_t>::Call(GeckoEditableChild::mCtx, nullptr, a0, a1, a2, a3);
 }
 
-constexpr char GeckoEditable::OnViewChange_t::name[];
-constexpr char GeckoEditable::OnViewChange_t::signature[];
+constexpr char GeckoEditableChild::UpdateCompositionRects_t::name[];
+constexpr char GeckoEditableChild::UpdateCompositionRects_t::signature[];
 
-auto GeckoEditable::OnViewChange(mozilla::jni::Object::Param a0) const -> void
+auto GeckoEditableChild::UpdateCompositionRects(mozilla::jni::ObjectArray::Param a0) const -> void
 {
-    return mozilla::jni::Method<OnViewChange_t>::Call(GeckoEditable::mCtx, nullptr, a0);
-}
-
-constexpr char GeckoEditable::UpdateCompositionRects_t::name[];
-constexpr char GeckoEditable::UpdateCompositionRects_t::signature[];
-
-auto GeckoEditable::UpdateCompositionRects(mozilla::jni::ObjectArray::Param a0) const -> void
-{
-    return mozilla::jni::Method<UpdateCompositionRects_t>::Call(GeckoEditable::mCtx, nullptr, a0);
-}
-
-const char GeckoEditableListener::name[] =
-        "org/mozilla/gecko/GeckoEditableListener";
-
-const char GeckoJavaSampler::name[] =
-        "org/mozilla/gecko/GeckoJavaSampler";
-
-constexpr char GeckoJavaSampler::GetFrameName_t::name[];
-constexpr char GeckoJavaSampler::GetFrameName_t::signature[];
-
-auto GeckoJavaSampler::GetFrameName(int32_t a0, int32_t a1, int32_t a2) -> mozilla::jni::String::LocalRef
-{
-    return mozilla::jni::Method<GetFrameName_t>::Call(GeckoJavaSampler::Context(), nullptr, a0, a1, a2);
-}
-
-constexpr char GeckoJavaSampler::GetProfilerTime_t::name[];
-constexpr char GeckoJavaSampler::GetProfilerTime_t::signature[];
-
-constexpr char GeckoJavaSampler::GetSampleTime_t::name[];
-constexpr char GeckoJavaSampler::GetSampleTime_t::signature[];
-
-auto GeckoJavaSampler::GetSampleTime(int32_t a0, int32_t a1) -> double
-{
-    return mozilla::jni::Method<GetSampleTime_t>::Call(GeckoJavaSampler::Context(), nullptr, a0, a1);
-}
-
-constexpr char GeckoJavaSampler::GetThreadName_t::name[];
-constexpr char GeckoJavaSampler::GetThreadName_t::signature[];
-
-auto GeckoJavaSampler::GetThreadName(int32_t a0) -> mozilla::jni::String::LocalRef
-{
-    return mozilla::jni::Method<GetThreadName_t>::Call(GeckoJavaSampler::Context(), nullptr, a0);
-}
-
-constexpr char GeckoJavaSampler::Pause_t::name[];
-constexpr char GeckoJavaSampler::Pause_t::signature[];
-
-auto GeckoJavaSampler::Pause() -> void
-{
-    return mozilla::jni::Method<Pause_t>::Call(GeckoJavaSampler::Context(), nullptr);
-}
-
-constexpr char GeckoJavaSampler::Start_t::name[];
-constexpr char GeckoJavaSampler::Start_t::signature[];
-
-auto GeckoJavaSampler::Start(int32_t a0, int32_t a1) -> void
-{
-    return mozilla::jni::Method<Start_t>::Call(GeckoJavaSampler::Context(), nullptr, a0, a1);
-}
-
-constexpr char GeckoJavaSampler::Stop_t::name[];
-constexpr char GeckoJavaSampler::Stop_t::signature[];
-
-auto GeckoJavaSampler::Stop() -> void
-{
-    return mozilla::jni::Method<Stop_t>::Call(GeckoJavaSampler::Context(), nullptr);
-}
-
-constexpr char GeckoJavaSampler::Unpause_t::name[];
-constexpr char GeckoJavaSampler::Unpause_t::signature[];
-
-auto GeckoJavaSampler::Unpause() -> void
-{
-    return mozilla::jni::Method<Unpause_t>::Call(GeckoJavaSampler::Context(), nullptr);
+    return mozilla::jni::Method<UpdateCompositionRects_t>::Call(GeckoEditableChild::mCtx, nullptr, a0);
 }
 
 const char GeckoNetworkManager::name[] =
@@ -925,50 +744,42 @@ const char GeckoScreenOrientation::name[] =
 constexpr char GeckoScreenOrientation::OnOrientationChange_t::name[];
 constexpr char GeckoScreenOrientation::OnOrientationChange_t::signature[];
 
-const char GeckoSmsManager::name[] =
-        "org/mozilla/gecko/GeckoSmsManager";
+const char GeckoSession::name[] =
+        "org/mozilla/gecko/GeckoSession";
 
-constexpr char GeckoSmsManager::NotifyCursorDone_t::name[];
-constexpr char GeckoSmsManager::NotifyCursorDone_t::signature[];
+const char GeckoSession::Window::name[] =
+        "org/mozilla/gecko/GeckoSession$Window";
 
-constexpr char GeckoSmsManager::NotifyCursorError_t::name[];
-constexpr char GeckoSmsManager::NotifyCursorError_t::signature[];
+constexpr char GeckoSession::Window::AttachEditable_t::name[];
+constexpr char GeckoSession::Window::AttachEditable_t::signature[];
 
-constexpr char GeckoSmsManager::NotifyGetSms_t::name[];
-constexpr char GeckoSmsManager::NotifyGetSms_t::signature[];
+constexpr char GeckoSession::Window::Close_t::name[];
+constexpr char GeckoSession::Window::Close_t::signature[];
 
-constexpr char GeckoSmsManager::NotifyGetSmsFailed_t::name[];
-constexpr char GeckoSmsManager::NotifyGetSmsFailed_t::signature[];
+constexpr char GeckoSession::Window::DisposeNative_t::name[];
+constexpr char GeckoSession::Window::DisposeNative_t::signature[];
 
-constexpr char GeckoSmsManager::NotifyMessageCursorResult_t::name[];
-constexpr char GeckoSmsManager::NotifyMessageCursorResult_t::signature[];
+constexpr char GeckoSession::Window::OnReady_t::name[];
+constexpr char GeckoSession::Window::OnReady_t::signature[];
 
-constexpr char GeckoSmsManager::NotifySmsDeleteFailed_t::name[];
-constexpr char GeckoSmsManager::NotifySmsDeleteFailed_t::signature[];
+auto GeckoSession::Window::OnReady() const -> void
+{
+    return mozilla::jni::Method<OnReady_t>::Call(Window::mCtx, nullptr);
+}
 
-constexpr char GeckoSmsManager::NotifySmsDeleted_t::name[];
-constexpr char GeckoSmsManager::NotifySmsDeleted_t::signature[];
+constexpr char GeckoSession::Window::OnTransfer_t::name[];
+constexpr char GeckoSession::Window::OnTransfer_t::signature[];
 
-constexpr char GeckoSmsManager::NotifySmsDelivery_t::name[];
-constexpr char GeckoSmsManager::NotifySmsDelivery_t::signature[];
+auto GeckoSession::Window::OnTransfer(mozilla::jni::Object::Param a0) const -> void
+{
+    return mozilla::jni::Method<OnTransfer_t>::Call(Window::mCtx, nullptr, a0);
+}
 
-constexpr char GeckoSmsManager::NotifySmsMarkAsReadFailed_t::name[];
-constexpr char GeckoSmsManager::NotifySmsMarkAsReadFailed_t::signature[];
+constexpr char GeckoSession::Window::Open_t::name[];
+constexpr char GeckoSession::Window::Open_t::signature[];
 
-constexpr char GeckoSmsManager::NotifySmsMarkedAsRead_t::name[];
-constexpr char GeckoSmsManager::NotifySmsMarkedAsRead_t::signature[];
-
-constexpr char GeckoSmsManager::NotifySmsReceived_t::name[];
-constexpr char GeckoSmsManager::NotifySmsReceived_t::signature[];
-
-constexpr char GeckoSmsManager::NotifySmsSendFailed_t::name[];
-constexpr char GeckoSmsManager::NotifySmsSendFailed_t::signature[];
-
-constexpr char GeckoSmsManager::NotifySmsSent_t::name[];
-constexpr char GeckoSmsManager::NotifySmsSent_t::signature[];
-
-constexpr char GeckoSmsManager::NotifyThreadCursorResult_t::name[];
-constexpr char GeckoSmsManager::NotifyThreadCursorResult_t::signature[];
+constexpr char GeckoSession::Window::Transfer_t::name[];
+constexpr char GeckoSession::Window::Transfer_t::signature[];
 
 const char GeckoThread::name[] =
         "org/mozilla/gecko/GeckoThread";
@@ -979,6 +790,17 @@ constexpr char GeckoThread::CheckAndSetState_t::signature[];
 auto GeckoThread::CheckAndSetState(mozilla::jni::Object::Param a0, mozilla::jni::Object::Param a1) -> bool
 {
     return mozilla::jni::Method<CheckAndSetState_t>::Call(GeckoThread::Context(), nullptr, a0, a1);
+}
+
+constexpr char GeckoThread::ForceQuit_t::name[];
+constexpr char GeckoThread::ForceQuit_t::signature[];
+
+constexpr char GeckoThread::IsChildProcess_t::name[];
+constexpr char GeckoThread::IsChildProcess_t::signature[];
+
+auto GeckoThread::IsChildProcess() -> bool
+{
+    return mozilla::jni::Method<IsChildProcess_t>::Call(GeckoThread::Context(), nullptr);
 }
 
 constexpr char GeckoThread::CreateServices_t::name[];
@@ -1042,6 +864,19 @@ auto GeckoThread::MsgQueue() -> mozilla::jni::Object::LocalRef
 auto GeckoThread::MsgQueue(mozilla::jni::Object::Param a0) -> void
 {
     return mozilla::jni::Field<MsgQueue_t>::Set(GeckoThread::Context(), nullptr, a0);
+}
+
+constexpr char GeckoThread::UiThreadId_t::name[];
+constexpr char GeckoThread::UiThreadId_t::signature[];
+
+auto GeckoThread::UiThreadId() -> int32_t
+{
+    return mozilla::jni::Field<UiThreadId_t>::Get(GeckoThread::Context(), nullptr);
+}
+
+auto GeckoThread::UiThreadId(int32_t a0) -> void
+{
+    return mozilla::jni::Field<UiThreadId_t>::Set(GeckoThread::Context(), nullptr, a0);
 }
 
 const char GeckoThread::State::name[] =
@@ -1111,6 +946,14 @@ auto GeckoThread::State::PROFILE_READY() -> State::LocalRef
     return mozilla::jni::Field<PROFILE_READY_t>::Get(State::Context(), nullptr);
 }
 
+constexpr char GeckoThread::State::RESTARTING_t::name[];
+constexpr char GeckoThread::State::RESTARTING_t::signature[];
+
+auto GeckoThread::State::RESTARTING() -> State::LocalRef
+{
+    return mozilla::jni::Field<RESTARTING_t>::Get(State::Context(), nullptr);
+}
+
 constexpr char GeckoThread::State::RUNNING_t::name[];
 constexpr char GeckoThread::State::RUNNING_t::signature[];
 
@@ -1119,32 +962,57 @@ auto GeckoThread::State::RUNNING() -> State::LocalRef
     return mozilla::jni::Field<RUNNING_t>::Get(State::Context(), nullptr);
 }
 
-const char GeckoView::name[] =
-        "org/mozilla/gecko/GeckoView";
+const char GeckoVRManager::name[] =
+        "org/mozilla/gecko/GeckoVRManager";
 
-const char GeckoView::Window::name[] =
-        "org/mozilla/gecko/GeckoView$Window";
+constexpr char GeckoVRManager::CleanupGVRNonPresentingContext_t::name[];
+constexpr char GeckoVRManager::CleanupGVRNonPresentingContext_t::signature[];
 
-constexpr char GeckoView::Window::Close_t::name[];
-constexpr char GeckoView::Window::Close_t::signature[];
+constexpr char GeckoVRManager::CreateGVRNonPresentingContext_t::name[];
+constexpr char GeckoVRManager::CreateGVRNonPresentingContext_t::signature[];
 
-constexpr char GeckoView::Window::DisposeNative_t::name[];
-constexpr char GeckoView::Window::DisposeNative_t::signature[];
+auto GeckoVRManager::CreateGVRNonPresentingContext() -> int64_t
+{
+    return mozilla::jni::Method<CreateGVRNonPresentingContext_t>::Call(GeckoVRManager::Context(), nullptr);
+}
 
-constexpr char GeckoView::Window::LoadUri_t::name[];
-constexpr char GeckoView::Window::LoadUri_t::signature[];
+constexpr char GeckoVRManager::DestroyGVRNonPresentingContext_t::name[];
+constexpr char GeckoVRManager::DestroyGVRNonPresentingContext_t::signature[];
 
-constexpr char GeckoView::Window::Open_t::name[];
-constexpr char GeckoView::Window::Open_t::signature[];
+auto GeckoVRManager::DestroyGVRNonPresentingContext() -> void
+{
+    return mozilla::jni::Method<DestroyGVRNonPresentingContext_t>::Call(GeckoVRManager::Context(), nullptr);
+}
 
-constexpr char GeckoView::Window::Reattach_t::name[];
-constexpr char GeckoView::Window::Reattach_t::signature[];
+constexpr char GeckoVRManager::DisableVRMode_t::name[];
+constexpr char GeckoVRManager::DisableVRMode_t::signature[];
 
-const char MemoryMonitor::name[] =
-        "org/mozilla/gecko/MemoryMonitor";
+auto GeckoVRManager::DisableVRMode() -> void
+{
+    return mozilla::jni::Method<DisableVRMode_t>::Call(GeckoVRManager::Context(), nullptr);
+}
 
-constexpr char MemoryMonitor::DispatchMemoryPressure_t::name[];
-constexpr char MemoryMonitor::DispatchMemoryPressure_t::signature[];
+constexpr char GeckoVRManager::EnableVRMode_t::name[];
+constexpr char GeckoVRManager::EnableVRMode_t::signature[];
+
+auto GeckoVRManager::EnableVRMode() -> void
+{
+    return mozilla::jni::Method<EnableVRMode_t>::Call(GeckoVRManager::Context(), nullptr);
+}
+
+constexpr char GeckoVRManager::IsGVRPresent_t::name[];
+constexpr char GeckoVRManager::IsGVRPresent_t::signature[];
+
+auto GeckoVRManager::IsGVRPresent() -> bool
+{
+    return mozilla::jni::Method<IsGVRPresent_t>::Call(GeckoVRManager::Context(), nullptr);
+}
+
+constexpr char GeckoVRManager::SetGVRPaused_t::name[];
+constexpr char GeckoVRManager::SetGVRPaused_t::signature[];
+
+constexpr char GeckoVRManager::SetGVRPresentingContext_t::name[];
+constexpr char GeckoVRManager::SetGVRPresentingContext_t::signature[];
 
 const char PrefsHelper::name[] =
         "org/mozilla/gecko/PrefsHelper";
@@ -1177,17 +1045,14 @@ auto PrefsHelper::OnPrefChange(mozilla::jni::String::Param a0, int32_t a1, bool 
     return mozilla::jni::Method<OnPrefChange_t>::Call(PrefsHelper::Context(), nullptr, a0, a1, a2, a3, a4);
 }
 
-const char PresentationMediaPlayerManager::name[] =
-        "org/mozilla/gecko/PresentationMediaPlayerManager";
+const char ScreenManagerHelper::name[] =
+        "org/mozilla/gecko/ScreenManagerHelper";
 
-constexpr char PresentationMediaPlayerManager::AddPresentationSurface_t::name[];
-constexpr char PresentationMediaPlayerManager::AddPresentationSurface_t::signature[];
+constexpr char ScreenManagerHelper::AddDisplay_t::name[];
+constexpr char ScreenManagerHelper::AddDisplay_t::signature[];
 
-constexpr char PresentationMediaPlayerManager::InvalidateAndScheduleComposite_t::name[];
-constexpr char PresentationMediaPlayerManager::InvalidateAndScheduleComposite_t::signature[];
-
-constexpr char PresentationMediaPlayerManager::RemovePresentationSurface_t::name[];
-constexpr char PresentationMediaPlayerManager::RemovePresentationSurface_t::signature[];
+constexpr char ScreenManagerHelper::RemoveDisplay_t::name[];
+constexpr char ScreenManagerHelper::RemoveDisplay_t::signature[];
 
 const char SurfaceTextureListener::name[] =
         "org/mozilla/gecko/SurfaceTextureListener";
@@ -1200,308 +1065,295 @@ auto SurfaceTextureListener::New() -> SurfaceTextureListener::LocalRef
     return mozilla::jni::Constructor<New_t>::Call(SurfaceTextureListener::Context(), nullptr);
 }
 
+constexpr char SurfaceTextureListener::DisposeNative_t::name[];
+constexpr char SurfaceTextureListener::DisposeNative_t::signature[];
+
 constexpr char SurfaceTextureListener::OnFrameAvailable_t::name[];
 constexpr char SurfaceTextureListener::OnFrameAvailable_t::signature[];
 
-const char Telemetry::name[] =
-        "org/mozilla/gecko/Telemetry";
+const char TextInputController::name[] =
+        "org/mozilla/gecko/TextInputController";
 
-constexpr char Telemetry::AddHistogram_t::name[];
-constexpr char Telemetry::AddHistogram_t::signature[];
+const char TextInputController::EditableClient::name[] =
+        "org/mozilla/gecko/TextInputController$EditableClient";
 
-constexpr char Telemetry::AddKeyedHistogram_t::name[];
-constexpr char Telemetry::AddKeyedHistogram_t::signature[];
+const char TextInputController::EditableListener::name[] =
+        "org/mozilla/gecko/TextInputController$EditableListener";
 
-constexpr char Telemetry::AddUIEvent_t::name[];
-constexpr char Telemetry::AddUIEvent_t::signature[];
+const char GeckoSurface::name[] =
+        "org/mozilla/gecko/gfx/GeckoSurface";
 
-constexpr char Telemetry::StartUISession_t::name[];
-constexpr char Telemetry::StartUISession_t::signature[];
+constexpr char GeckoSurface::New_t::name[];
+constexpr char GeckoSurface::New_t::signature[];
 
-constexpr char Telemetry::StopUISession_t::name[];
-constexpr char Telemetry::StopUISession_t::signature[];
-
-const char ThumbnailHelper::name[] =
-        "org/mozilla/gecko/ThumbnailHelper";
-
-constexpr char ThumbnailHelper::SendThumbnail_t::name[];
-constexpr char ThumbnailHelper::SendThumbnail_t::signature[];
-
-auto ThumbnailHelper::SendThumbnail(mozilla::jni::ByteBuffer::Param a0, int32_t a1, bool a2, bool a3) -> void
+auto GeckoSurface::New(mozilla::jni::Object::Param a0, GeckoSurface::LocalRef* a1) -> nsresult
 {
-    return mozilla::jni::Method<SendThumbnail_t>::Call(ThumbnailHelper::Context(), nullptr, a0, a1, a2, a3);
+    MOZ_ASSERT(a1);
+    nsresult rv = NS_OK;
+    *a1 = mozilla::jni::Constructor<New_t>::Call(GeckoSurface::Context(), &rv, a0);
+    return rv;
 }
 
-constexpr char ThumbnailHelper::RequestThumbnail_t::name[];
-constexpr char ThumbnailHelper::RequestThumbnail_t::signature[];
+constexpr char GeckoSurface::GetAvailable_t::name[];
+constexpr char GeckoSurface::GetAvailable_t::signature[];
 
-const char ZoomedView::name[] =
-        "org/mozilla/gecko/ZoomedView";
-
-constexpr char ZoomedView::RequestZoomedViewData_t::name[];
-constexpr char ZoomedView::RequestZoomedViewData_t::signature[];
-
-const char Distribution::name[] =
-        "org/mozilla/gecko/distribution/Distribution";
-
-constexpr char Distribution::GetDistributionDirectories_t::name[];
-constexpr char Distribution::GetDistributionDirectories_t::signature[];
-
-auto Distribution::GetDistributionDirectories() -> mozilla::jni::ObjectArray::LocalRef
+auto GeckoSurface::GetAvailable() const -> bool
 {
-    return mozilla::jni::Method<GetDistributionDirectories_t>::Call(Distribution::Context(), nullptr);
+    return mozilla::jni::Method<GetAvailable_t>::Call(GeckoSurface::mCtx, nullptr);
 }
 
-const char DisplayPortMetrics::name[] =
-        "org/mozilla/gecko/gfx/DisplayPortMetrics";
+constexpr char GeckoSurface::GetHandle_t::name[];
+constexpr char GeckoSurface::GetHandle_t::signature[];
 
-constexpr char DisplayPortMetrics::New_t::name[];
-constexpr char DisplayPortMetrics::New_t::signature[];
-
-auto DisplayPortMetrics::New(float a0, float a1, float a2, float a3, float a4) -> DisplayPortMetrics::LocalRef
+auto GeckoSurface::GetHandle() const -> int32_t
 {
-    return mozilla::jni::Constructor<New_t>::Call(DisplayPortMetrics::Context(), nullptr, a0, a1, a2, a3, a4);
+    return mozilla::jni::Method<GetHandle_t>::Call(GeckoSurface::mCtx, nullptr);
 }
 
-constexpr char DisplayPortMetrics::MPosition_t::name[];
-constexpr char DisplayPortMetrics::MPosition_t::signature[];
+constexpr char GeckoSurface::SetAvailable_t::name[];
+constexpr char GeckoSurface::SetAvailable_t::signature[];
 
-auto DisplayPortMetrics::MPosition() const -> mozilla::jni::Object::LocalRef
+auto GeckoSurface::SetAvailable(bool a0) const -> void
 {
-    return mozilla::jni::Field<MPosition_t>::Get(DisplayPortMetrics::mCtx, nullptr);
+    return mozilla::jni::Method<SetAvailable_t>::Call(GeckoSurface::mCtx, nullptr, a0);
 }
 
-constexpr char DisplayPortMetrics::Resolution_t::name[];
-constexpr char DisplayPortMetrics::Resolution_t::signature[];
+const char GeckoSurfaceTexture::name[] =
+        "org/mozilla/gecko/gfx/GeckoSurfaceTexture";
 
-auto DisplayPortMetrics::Resolution() const -> float
+constexpr char GeckoSurfaceTexture::AttachToGLContext_t::name[];
+constexpr char GeckoSurfaceTexture::AttachToGLContext_t::signature[];
+
+auto GeckoSurfaceTexture::AttachToGLContext(int64_t a0, int32_t a1) const -> nsresult
 {
-    return mozilla::jni::Field<Resolution_t>::Get(DisplayPortMetrics::mCtx, nullptr);
+    nsresult rv = NS_OK;
+    mozilla::jni::Method<AttachToGLContext_t>::Call(GeckoSurfaceTexture::mCtx, &rv, a0, a1);
+    return rv;
 }
 
-const char GeckoLayerClient::name[] =
-        "org/mozilla/gecko/gfx/GeckoLayerClient";
+constexpr char GeckoSurfaceTexture::DecrementUse_t::name[];
+constexpr char GeckoSurfaceTexture::DecrementUse_t::signature[];
 
-constexpr char GeckoLayerClient::ContentDocumentChanged_t::name[];
-constexpr char GeckoLayerClient::ContentDocumentChanged_t::signature[];
-
-auto GeckoLayerClient::ContentDocumentChanged() const -> void
+auto GeckoSurfaceTexture::DecrementUse() const -> void
 {
-    return mozilla::jni::Method<ContentDocumentChanged_t>::Call(GeckoLayerClient::mCtx, nullptr);
+    return mozilla::jni::Method<DecrementUse_t>::Call(GeckoSurfaceTexture::mCtx, nullptr);
 }
 
-constexpr char GeckoLayerClient::CreateFrame_t::name[];
-constexpr char GeckoLayerClient::CreateFrame_t::signature[];
+constexpr char GeckoSurfaceTexture::DestroyUnused_t::name[];
+constexpr char GeckoSurfaceTexture::DestroyUnused_t::signature[];
 
-auto GeckoLayerClient::CreateFrame() const -> mozilla::jni::Object::LocalRef
+auto GeckoSurfaceTexture::DestroyUnused(int64_t a0) -> void
 {
-    return mozilla::jni::Method<CreateFrame_t>::Call(GeckoLayerClient::mCtx, nullptr);
+    return mozilla::jni::Method<DestroyUnused_t>::Call(GeckoSurfaceTexture::Context(), nullptr, a0);
 }
 
-constexpr char GeckoLayerClient::IsContentDocumentDisplayed_t::name[];
-constexpr char GeckoLayerClient::IsContentDocumentDisplayed_t::signature[];
+constexpr char GeckoSurfaceTexture::DetachFromGLContext_t::name[];
+constexpr char GeckoSurfaceTexture::DetachFromGLContext_t::signature[];
 
-auto GeckoLayerClient::IsContentDocumentDisplayed() const -> bool
+auto GeckoSurfaceTexture::DetachFromGLContext() const -> nsresult
 {
-    return mozilla::jni::Method<IsContentDocumentDisplayed_t>::Call(GeckoLayerClient::mCtx, nullptr);
+    nsresult rv = NS_OK;
+    mozilla::jni::Method<DetachFromGLContext_t>::Call(GeckoSurfaceTexture::mCtx, &rv);
+    return rv;
 }
 
-constexpr char GeckoLayerClient::OnGeckoReady_t::name[];
-constexpr char GeckoLayerClient::OnGeckoReady_t::signature[];
+constexpr char GeckoSurfaceTexture::GetHandle_t::name[];
+constexpr char GeckoSurfaceTexture::GetHandle_t::signature[];
 
-auto GeckoLayerClient::OnGeckoReady() const -> void
+auto GeckoSurfaceTexture::GetHandle() const -> int32_t
 {
-    return mozilla::jni::Method<OnGeckoReady_t>::Call(GeckoLayerClient::mCtx, nullptr);
+    return mozilla::jni::Method<GetHandle_t>::Call(GeckoSurfaceTexture::mCtx, nullptr);
 }
 
-constexpr char GeckoLayerClient::SetFirstPaintViewport_t::name[];
-constexpr char GeckoLayerClient::SetFirstPaintViewport_t::signature[];
+constexpr char GeckoSurfaceTexture::GetTexName_t::name[];
+constexpr char GeckoSurfaceTexture::GetTexName_t::signature[];
 
-auto GeckoLayerClient::SetFirstPaintViewport(float a0, float a1, float a2, float a3, float a4, float a5, float a6) const -> void
+auto GeckoSurfaceTexture::GetTexName() const -> int32_t
 {
-    return mozilla::jni::Method<SetFirstPaintViewport_t>::Call(GeckoLayerClient::mCtx, nullptr, a0, a1, a2, a3, a4, a5, a6);
+    return mozilla::jni::Method<GetTexName_t>::Call(GeckoSurfaceTexture::mCtx, nullptr);
 }
 
-constexpr char GeckoLayerClient::SetPageRect_t::name[];
-constexpr char GeckoLayerClient::SetPageRect_t::signature[];
+constexpr char GeckoSurfaceTexture::IncrementUse_t::name[];
+constexpr char GeckoSurfaceTexture::IncrementUse_t::signature[];
 
-auto GeckoLayerClient::SetPageRect(float a0, float a1, float a2, float a3) const -> void
+auto GeckoSurfaceTexture::IncrementUse() const -> void
 {
-    return mozilla::jni::Method<SetPageRect_t>::Call(GeckoLayerClient::mCtx, nullptr, a0, a1, a2, a3);
+    return mozilla::jni::Method<IncrementUse_t>::Call(GeckoSurfaceTexture::mCtx, nullptr);
 }
 
-constexpr char GeckoLayerClient::SyncFrameMetrics_t::name[];
-constexpr char GeckoLayerClient::SyncFrameMetrics_t::signature[];
+constexpr char GeckoSurfaceTexture::IsAttachedToGLContext_t::name[];
+constexpr char GeckoSurfaceTexture::IsAttachedToGLContext_t::signature[];
 
-auto GeckoLayerClient::SyncFrameMetrics(float a0, float a1, float a2, float a3, float a4, float a5, float a6, int32_t a7, int32_t a8, int32_t a9, int32_t a10, float a11, bool a12, int32_t a13) const -> mozilla::jni::Object::LocalRef
+auto GeckoSurfaceTexture::IsAttachedToGLContext(int64_t a0) const -> bool
 {
-    return mozilla::jni::Method<SyncFrameMetrics_t>::Call(GeckoLayerClient::mCtx, nullptr, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13);
+    return mozilla::jni::Method<IsAttachedToGLContext_t>::Call(GeckoSurfaceTexture::mCtx, nullptr, a0);
 }
 
-constexpr char GeckoLayerClient::SyncViewportInfo_t::name[];
-constexpr char GeckoLayerClient::SyncViewportInfo_t::signature[];
+constexpr char GeckoSurfaceTexture::IsSingleBuffer_t::name[];
+constexpr char GeckoSurfaceTexture::IsSingleBuffer_t::signature[];
 
-auto GeckoLayerClient::SyncViewportInfo(int32_t a0, int32_t a1, int32_t a2, int32_t a3, float a4, bool a5, int32_t a6) const -> mozilla::jni::Object::LocalRef
+auto GeckoSurfaceTexture::IsSingleBuffer() const -> bool
 {
-    return mozilla::jni::Method<SyncViewportInfo_t>::Call(GeckoLayerClient::mCtx, nullptr, a0, a1, a2, a3, a4, a5, a6);
+    return mozilla::jni::Method<IsSingleBuffer_t>::Call(GeckoSurfaceTexture::mCtx, nullptr);
 }
 
-constexpr char GeckoLayerClient::SynthesizeNativeMouseEvent_t::name[];
-constexpr char GeckoLayerClient::SynthesizeNativeMouseEvent_t::signature[];
+constexpr char GeckoSurfaceTexture::IsSingleBufferSupported_t::name[];
+constexpr char GeckoSurfaceTexture::IsSingleBufferSupported_t::signature[];
 
-auto GeckoLayerClient::SynthesizeNativeMouseEvent(int32_t a0, int32_t a1, int32_t a2) const -> void
+auto GeckoSurfaceTexture::IsSingleBufferSupported() -> bool
 {
-    return mozilla::jni::Method<SynthesizeNativeMouseEvent_t>::Call(GeckoLayerClient::mCtx, nullptr, a0, a1, a2);
+    return mozilla::jni::Method<IsSingleBufferSupported_t>::Call(GeckoSurfaceTexture::Context(), nullptr);
 }
 
-constexpr char GeckoLayerClient::SynthesizeNativeTouchPoint_t::name[];
-constexpr char GeckoLayerClient::SynthesizeNativeTouchPoint_t::signature[];
+constexpr char GeckoSurfaceTexture::Lookup_t::name[];
+constexpr char GeckoSurfaceTexture::Lookup_t::signature[];
 
-auto GeckoLayerClient::SynthesizeNativeTouchPoint(int32_t a0, int32_t a1, int32_t a2, int32_t a3, double a4, int32_t a5) const -> void
+auto GeckoSurfaceTexture::Lookup(int32_t a0) -> GeckoSurfaceTexture::LocalRef
 {
-    return mozilla::jni::Method<SynthesizeNativeTouchPoint_t>::Call(GeckoLayerClient::mCtx, nullptr, a0, a1, a2, a3, a4, a5);
+    return mozilla::jni::Method<Lookup_t>::Call(GeckoSurfaceTexture::Context(), nullptr, a0);
 }
 
-constexpr char GeckoLayerClient::ClearColor_t::name[];
-constexpr char GeckoLayerClient::ClearColor_t::signature[];
+constexpr char GeckoSurfaceTexture::ReleaseTexImage_t::name[];
+constexpr char GeckoSurfaceTexture::ReleaseTexImage_t::signature[];
 
-auto GeckoLayerClient::ClearColor() const -> int32_t
+auto GeckoSurfaceTexture::ReleaseTexImage() const -> void
 {
-    return mozilla::jni::Field<ClearColor_t>::Get(GeckoLayerClient::mCtx, nullptr);
+    return mozilla::jni::Method<ReleaseTexImage_t>::Call(GeckoSurfaceTexture::mCtx, nullptr);
 }
 
-auto GeckoLayerClient::ClearColor(int32_t a0) const -> void
+constexpr char GeckoSurfaceTexture::UpdateTexImage_t::name[];
+constexpr char GeckoSurfaceTexture::UpdateTexImage_t::signature[];
+
+auto GeckoSurfaceTexture::UpdateTexImage() const -> void
 {
-    return mozilla::jni::Field<ClearColor_t>::Set(GeckoLayerClient::mCtx, nullptr, a0);
+    return mozilla::jni::Method<UpdateTexImage_t>::Call(GeckoSurfaceTexture::mCtx, nullptr);
 }
 
-const char ImmutableViewportMetrics::name[] =
-        "org/mozilla/gecko/gfx/ImmutableViewportMetrics";
+const char LayerSession::name[] =
+        "org/mozilla/gecko/gfx/LayerSession";
 
-constexpr char ImmutableViewportMetrics::New_t::name[];
-constexpr char ImmutableViewportMetrics::New_t::signature[];
+constexpr char LayerSession::GetCompositor_t::name[];
+constexpr char LayerSession::GetCompositor_t::signature[];
 
-auto ImmutableViewportMetrics::New(float a0, float a1, float a2, float a3, float a4, float a5, float a6, float a7, float a8, float a9, int32_t a10, int32_t a11, float a12) -> ImmutableViewportMetrics::LocalRef
+auto LayerSession::GetCompositor() const -> mozilla::jni::Object::LocalRef
 {
-    return mozilla::jni::Constructor<New_t>::Call(ImmutableViewportMetrics::Context(), nullptr, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12);
+    return mozilla::jni::Method<GetCompositor_t>::Call(LayerSession::mCtx, nullptr);
 }
 
-const char LayerRenderer::name[] =
-        "org/mozilla/gecko/gfx/LayerRenderer";
+const char LayerSession::Compositor::name[] =
+        "org/mozilla/gecko/gfx/LayerSession$Compositor";
 
-const char LayerRenderer::Frame::name[] =
-        "org/mozilla/gecko/gfx/LayerRenderer$Frame";
+constexpr char LayerSession::Compositor::AttachNPZC_t::name[];
+constexpr char LayerSession::Compositor::AttachNPZC_t::signature[];
 
-constexpr char LayerRenderer::Frame::BeginDrawing_t::name[];
-constexpr char LayerRenderer::Frame::BeginDrawing_t::signature[];
+constexpr char LayerSession::Compositor::CreateCompositor_t::name[];
+constexpr char LayerSession::Compositor::CreateCompositor_t::signature[];
 
-auto LayerRenderer::Frame::BeginDrawing() const -> void
+constexpr char LayerSession::Compositor::DisposeNative_t::name[];
+constexpr char LayerSession::Compositor::DisposeNative_t::signature[];
+
+constexpr char LayerSession::Compositor::EnableLayerUpdateNotifications_t::name[];
+constexpr char LayerSession::Compositor::EnableLayerUpdateNotifications_t::signature[];
+
+constexpr char LayerSession::Compositor::OnBoundsChanged_t::name[];
+constexpr char LayerSession::Compositor::OnBoundsChanged_t::signature[];
+
+constexpr char LayerSession::Compositor::OnCompositorAttached_t::name[];
+constexpr char LayerSession::Compositor::OnCompositorAttached_t::signature[];
+
+auto LayerSession::Compositor::OnCompositorAttached() const -> void
 {
-    return mozilla::jni::Method<BeginDrawing_t>::Call(Frame::mCtx, nullptr);
+    return mozilla::jni::Method<OnCompositorAttached_t>::Call(Compositor::mCtx, nullptr);
 }
 
-constexpr char LayerRenderer::Frame::EndDrawing_t::name[];
-constexpr char LayerRenderer::Frame::EndDrawing_t::signature[];
+constexpr char LayerSession::Compositor::OnCompositorDetached_t::name[];
+constexpr char LayerSession::Compositor::OnCompositorDetached_t::signature[];
 
-auto LayerRenderer::Frame::EndDrawing() const -> void
+auto LayerSession::Compositor::OnCompositorDetached() const -> void
 {
-    return mozilla::jni::Method<EndDrawing_t>::Call(Frame::mCtx, nullptr);
+    return mozilla::jni::Method<OnCompositorDetached_t>::Call(Compositor::mCtx, nullptr);
 }
 
-const char LayerView::name[] =
-        "org/mozilla/gecko/gfx/LayerView";
+constexpr char LayerSession::Compositor::OnSelectionCaretDrag_t::name[];
+constexpr char LayerSession::Compositor::OnSelectionCaretDrag_t::signature[];
 
-constexpr char LayerView::GetCompositor_t::name[];
-constexpr char LayerView::GetCompositor_t::signature[];
-
-auto LayerView::GetCompositor() const -> mozilla::jni::Object::LocalRef
+auto LayerSession::Compositor::OnSelectionCaretDrag(bool a0) const -> void
 {
-    return mozilla::jni::Method<GetCompositor_t>::Call(LayerView::mCtx, nullptr);
+    return mozilla::jni::Method<OnSelectionCaretDrag_t>::Call(Compositor::mCtx, nullptr, a0);
 }
 
-constexpr char LayerView::UpdateZoomedView_t::name[];
-constexpr char LayerView::UpdateZoomedView_t::signature[];
+constexpr char LayerSession::Compositor::RecvScreenPixels_t::name[];
+constexpr char LayerSession::Compositor::RecvScreenPixels_t::signature[];
 
-auto LayerView::UpdateZoomedView(mozilla::jni::ByteBuffer::Param a0) -> void
+auto LayerSession::Compositor::RecvScreenPixels(int32_t a0, int32_t a1, mozilla::jni::IntArray::Param a2) const -> void
 {
-    return mozilla::jni::Method<UpdateZoomedView_t>::Call(LayerView::Context(), nullptr, a0);
+    return mozilla::jni::Method<RecvScreenPixels_t>::Call(Compositor::mCtx, nullptr, a0, a1, a2);
 }
 
-constexpr char LayerView::CompositorCreated_t::name[];
-constexpr char LayerView::CompositorCreated_t::signature[];
+constexpr char LayerSession::Compositor::RecvToolbarAnimatorMessage_t::name[];
+constexpr char LayerSession::Compositor::RecvToolbarAnimatorMessage_t::signature[];
 
-auto LayerView::CompositorCreated() const -> bool
+auto LayerSession::Compositor::RecvToolbarAnimatorMessage(int32_t a0) const -> void
 {
-    return mozilla::jni::Field<CompositorCreated_t>::Get(LayerView::mCtx, nullptr);
+    return mozilla::jni::Method<RecvToolbarAnimatorMessage_t>::Call(Compositor::mCtx, nullptr, a0);
 }
 
-auto LayerView::CompositorCreated(bool a0) const -> void
+constexpr char LayerSession::Compositor::RequestScreenPixels_t::name[];
+constexpr char LayerSession::Compositor::RequestScreenPixels_t::signature[];
+
+constexpr char LayerSession::Compositor::SendToolbarAnimatorMessage_t::name[];
+constexpr char LayerSession::Compositor::SendToolbarAnimatorMessage_t::signature[];
+
+constexpr char LayerSession::Compositor::SendToolbarPixelsToCompositor_t::name[];
+constexpr char LayerSession::Compositor::SendToolbarPixelsToCompositor_t::signature[];
+
+constexpr char LayerSession::Compositor::SetDefaultClearColor_t::name[];
+constexpr char LayerSession::Compositor::SetDefaultClearColor_t::signature[];
+
+constexpr char LayerSession::Compositor::SetMaxToolbarHeight_t::name[];
+constexpr char LayerSession::Compositor::SetMaxToolbarHeight_t::signature[];
+
+constexpr char LayerSession::Compositor::SetPinned_t::name[];
+constexpr char LayerSession::Compositor::SetPinned_t::signature[];
+
+constexpr char LayerSession::Compositor::SyncPauseCompositor_t::name[];
+constexpr char LayerSession::Compositor::SyncPauseCompositor_t::signature[];
+
+constexpr char LayerSession::Compositor::SyncResumeResizeCompositor_t::name[];
+constexpr char LayerSession::Compositor::SyncResumeResizeCompositor_t::signature[];
+
+constexpr char LayerSession::Compositor::UpdateOverscrollOffset_t::name[];
+constexpr char LayerSession::Compositor::UpdateOverscrollOffset_t::signature[];
+
+auto LayerSession::Compositor::UpdateOverscrollOffset(float a0, float a1) const -> void
 {
-    return mozilla::jni::Field<CompositorCreated_t>::Set(LayerView::mCtx, nullptr, a0);
+    return mozilla::jni::Method<UpdateOverscrollOffset_t>::Call(Compositor::mCtx, nullptr, a0, a1);
 }
 
-const char LayerView::Compositor::name[] =
-        "org/mozilla/gecko/gfx/LayerView$Compositor";
+constexpr char LayerSession::Compositor::UpdateOverscrollVelocity_t::name[];
+constexpr char LayerSession::Compositor::UpdateOverscrollVelocity_t::signature[];
 
-constexpr char LayerView::Compositor::AttachToJava_t::name[];
-constexpr char LayerView::Compositor::AttachToJava_t::signature[];
-
-constexpr char LayerView::Compositor::CreateCompositor_t::name[];
-constexpr char LayerView::Compositor::CreateCompositor_t::signature[];
-
-constexpr char LayerView::Compositor::Destroy_t::name[];
-constexpr char LayerView::Compositor::Destroy_t::signature[];
-
-auto LayerView::Compositor::Destroy() const -> void
+auto LayerSession::Compositor::UpdateOverscrollVelocity(float a0, float a1) const -> void
 {
-    return mozilla::jni::Method<Destroy_t>::Call(Compositor::mCtx, nullptr);
+    return mozilla::jni::Method<UpdateOverscrollVelocity_t>::Call(Compositor::mCtx, nullptr, a0, a1);
 }
 
-constexpr char LayerView::Compositor::DisposeNative_t::name[];
-constexpr char LayerView::Compositor::DisposeNative_t::signature[];
+constexpr char LayerSession::Compositor::UpdateRootFrameMetrics_t::name[];
+constexpr char LayerSession::Compositor::UpdateRootFrameMetrics_t::signature[];
 
-constexpr char LayerView::Compositor::OnSizeChanged_t::name[];
-constexpr char LayerView::Compositor::OnSizeChanged_t::signature[];
-
-constexpr char LayerView::Compositor::Reattach_t::name[];
-constexpr char LayerView::Compositor::Reattach_t::signature[];
-
-auto LayerView::Compositor::Reattach() const -> void
+auto LayerSession::Compositor::UpdateRootFrameMetrics(float a0, float a1, float a2) const -> void
 {
-    return mozilla::jni::Method<Reattach_t>::Call(Compositor::mCtx, nullptr);
+    return mozilla::jni::Method<UpdateRootFrameMetrics_t>::Call(Compositor::mCtx, nullptr, a0, a1, a2);
 }
-
-constexpr char LayerView::Compositor::SyncInvalidateAndScheduleComposite_t::name[];
-constexpr char LayerView::Compositor::SyncInvalidateAndScheduleComposite_t::signature[];
-
-constexpr char LayerView::Compositor::SyncPauseCompositor_t::name[];
-constexpr char LayerView::Compositor::SyncPauseCompositor_t::signature[];
-
-constexpr char LayerView::Compositor::SyncResumeResizeCompositor_t::name[];
-constexpr char LayerView::Compositor::SyncResumeResizeCompositor_t::signature[];
 
 const char NativePanZoomController::name[] =
         "org/mozilla/gecko/gfx/NativePanZoomController";
-
-constexpr char NativePanZoomController::AdjustScrollForSurfaceShift_t::name[];
-constexpr char NativePanZoomController::AdjustScrollForSurfaceShift_t::signature[];
-
-constexpr char NativePanZoomController::Destroy_t::name[];
-constexpr char NativePanZoomController::Destroy_t::signature[];
-
-auto NativePanZoomController::Destroy() const -> void
-{
-    return mozilla::jni::Method<Destroy_t>::Call(NativePanZoomController::mCtx, nullptr);
-}
 
 constexpr char NativePanZoomController::DisposeNative_t::name[];
 constexpr char NativePanZoomController::DisposeNative_t::signature[];
 
 constexpr char NativePanZoomController::HandleMotionEvent_t::name[];
 constexpr char NativePanZoomController::HandleMotionEvent_t::signature[];
-
-constexpr char NativePanZoomController::HandleMotionEventVelocity_t::name[];
-constexpr char NativePanZoomController::HandleMotionEventVelocity_t::signature[];
 
 constexpr char NativePanZoomController::HandleMouseEvent_t::name[];
 constexpr char NativePanZoomController::HandleMouseEvent_t::signature[];
@@ -1512,107 +1364,28 @@ constexpr char NativePanZoomController::HandleScrollEvent_t::signature[];
 constexpr char NativePanZoomController::SetIsLongpressEnabled_t::name[];
 constexpr char NativePanZoomController::SetIsLongpressEnabled_t::signature[];
 
-constexpr char NativePanZoomController::OnSelectionDragState_t::name[];
-constexpr char NativePanZoomController::OnSelectionDragState_t::signature[];
+constexpr char NativePanZoomController::SetAttached_t::name[];
+constexpr char NativePanZoomController::SetAttached_t::signature[];
 
-auto NativePanZoomController::OnSelectionDragState(bool a0) const -> void
+auto NativePanZoomController::SetAttached(bool a0) const -> void
 {
-    return mozilla::jni::Method<OnSelectionDragState_t>::Call(NativePanZoomController::mCtx, nullptr, a0);
+    return mozilla::jni::Method<SetAttached_t>::Call(NativePanZoomController::mCtx, nullptr, a0);
 }
 
-constexpr char NativePanZoomController::SetScrollingRootContent_t::name[];
-constexpr char NativePanZoomController::SetScrollingRootContent_t::signature[];
+constexpr char NativePanZoomController::SynthesizeNativeMouseEvent_t::name[];
+constexpr char NativePanZoomController::SynthesizeNativeMouseEvent_t::signature[];
 
-auto NativePanZoomController::SetScrollingRootContent(bool a0) const -> void
+auto NativePanZoomController::SynthesizeNativeMouseEvent(int32_t a0, int32_t a1, int32_t a2) const -> void
 {
-    return mozilla::jni::Method<SetScrollingRootContent_t>::Call(NativePanZoomController::mCtx, nullptr, a0);
+    return mozilla::jni::Method<SynthesizeNativeMouseEvent_t>::Call(NativePanZoomController::mCtx, nullptr, a0, a1, a2);
 }
 
-constexpr char NativePanZoomController::UpdateOverscrollOffset_t::name[];
-constexpr char NativePanZoomController::UpdateOverscrollOffset_t::signature[];
+constexpr char NativePanZoomController::SynthesizeNativeTouchPoint_t::name[];
+constexpr char NativePanZoomController::SynthesizeNativeTouchPoint_t::signature[];
 
-auto NativePanZoomController::UpdateOverscrollOffset(float a0, float a1) const -> void
+auto NativePanZoomController::SynthesizeNativeTouchPoint(int32_t a0, int32_t a1, int32_t a2, int32_t a3, double a4, int32_t a5) const -> void
 {
-    return mozilla::jni::Method<UpdateOverscrollOffset_t>::Call(NativePanZoomController::mCtx, nullptr, a0, a1);
-}
-
-constexpr char NativePanZoomController::UpdateOverscrollVelocity_t::name[];
-constexpr char NativePanZoomController::UpdateOverscrollVelocity_t::signature[];
-
-auto NativePanZoomController::UpdateOverscrollVelocity(float a0, float a1) const -> void
-{
-    return mozilla::jni::Method<UpdateOverscrollVelocity_t>::Call(NativePanZoomController::mCtx, nullptr, a0, a1);
-}
-
-const char ProgressiveUpdateData::name[] =
-        "org/mozilla/gecko/gfx/ProgressiveUpdateData";
-
-constexpr char ProgressiveUpdateData::New_t::name[];
-constexpr char ProgressiveUpdateData::New_t::signature[];
-
-auto ProgressiveUpdateData::New() -> ProgressiveUpdateData::LocalRef
-{
-    return mozilla::jni::Constructor<New_t>::Call(ProgressiveUpdateData::Context(), nullptr);
-}
-
-constexpr char ProgressiveUpdateData::SetViewport_t::name[];
-constexpr char ProgressiveUpdateData::SetViewport_t::signature[];
-
-auto ProgressiveUpdateData::SetViewport(mozilla::jni::Object::Param a0) const -> void
-{
-    return mozilla::jni::Method<SetViewport_t>::Call(ProgressiveUpdateData::mCtx, nullptr, a0);
-}
-
-constexpr char ProgressiveUpdateData::Abort_t::name[];
-constexpr char ProgressiveUpdateData::Abort_t::signature[];
-
-auto ProgressiveUpdateData::Abort() const -> bool
-{
-    return mozilla::jni::Field<Abort_t>::Get(ProgressiveUpdateData::mCtx, nullptr);
-}
-
-auto ProgressiveUpdateData::Abort(bool a0) const -> void
-{
-    return mozilla::jni::Field<Abort_t>::Set(ProgressiveUpdateData::mCtx, nullptr, a0);
-}
-
-constexpr char ProgressiveUpdateData::Scale_t::name[];
-constexpr char ProgressiveUpdateData::Scale_t::signature[];
-
-auto ProgressiveUpdateData::Scale() const -> float
-{
-    return mozilla::jni::Field<Scale_t>::Get(ProgressiveUpdateData::mCtx, nullptr);
-}
-
-auto ProgressiveUpdateData::Scale(float a0) const -> void
-{
-    return mozilla::jni::Field<Scale_t>::Set(ProgressiveUpdateData::mCtx, nullptr, a0);
-}
-
-constexpr char ProgressiveUpdateData::X_t::name[];
-constexpr char ProgressiveUpdateData::X_t::signature[];
-
-auto ProgressiveUpdateData::X() const -> float
-{
-    return mozilla::jni::Field<X_t>::Get(ProgressiveUpdateData::mCtx, nullptr);
-}
-
-auto ProgressiveUpdateData::X(float a0) const -> void
-{
-    return mozilla::jni::Field<X_t>::Set(ProgressiveUpdateData::mCtx, nullptr, a0);
-}
-
-constexpr char ProgressiveUpdateData::Y_t::name[];
-constexpr char ProgressiveUpdateData::Y_t::signature[];
-
-auto ProgressiveUpdateData::Y() const -> float
-{
-    return mozilla::jni::Field<Y_t>::Get(ProgressiveUpdateData::mCtx, nullptr);
-}
-
-auto ProgressiveUpdateData::Y(float a0) const -> void
-{
-    return mozilla::jni::Field<Y_t>::Set(ProgressiveUpdateData::mCtx, nullptr, a0);
+    return mozilla::jni::Method<SynthesizeNativeTouchPoint_t>::Call(NativePanZoomController::mCtx, nullptr, a0, a1, a2, a3, a4, a5);
 }
 
 const char StackScroller::name[] =
@@ -1886,151 +1659,53 @@ auto StackScroller::SViscousFluidScale(float a0) -> nsresult
     return rv;
 }
 
-const char ViewTransform::name[] =
-        "org/mozilla/gecko/gfx/ViewTransform";
+const char SurfaceAllocator::name[] =
+        "org/mozilla/gecko/gfx/SurfaceAllocator";
 
-constexpr char ViewTransform::New_t::name[];
-constexpr char ViewTransform::New_t::signature[];
+constexpr char SurfaceAllocator::AcquireSurface_t::name[];
+constexpr char SurfaceAllocator::AcquireSurface_t::signature[];
 
-auto ViewTransform::New(float a0, float a1, float a2) -> ViewTransform::LocalRef
+auto SurfaceAllocator::AcquireSurface(int32_t a0, int32_t a1, bool a2) -> mozilla::jni::Object::LocalRef
 {
-    return mozilla::jni::Constructor<New_t>::Call(ViewTransform::Context(), nullptr, a0, a1, a2);
+    return mozilla::jni::Method<AcquireSurface_t>::Call(SurfaceAllocator::Context(), nullptr, a0, a1, a2);
 }
 
-constexpr char ViewTransform::FixedLayerMarginBottom_t::name[];
-constexpr char ViewTransform::FixedLayerMarginBottom_t::signature[];
+constexpr char SurfaceAllocator::DisposeSurface_t::name[];
+constexpr char SurfaceAllocator::DisposeSurface_t::signature[];
 
-auto ViewTransform::FixedLayerMarginBottom() const -> float
+auto SurfaceAllocator::DisposeSurface(mozilla::jni::Object::Param a0) -> void
 {
-    return mozilla::jni::Field<FixedLayerMarginBottom_t>::Get(ViewTransform::mCtx, nullptr);
+    return mozilla::jni::Method<DisposeSurface_t>::Call(SurfaceAllocator::Context(), nullptr, a0);
 }
 
-auto ViewTransform::FixedLayerMarginBottom(float a0) const -> void
+const char VsyncSource::name[] =
+        "org/mozilla/gecko/gfx/VsyncSource";
+
+constexpr char VsyncSource::GetRefreshRate_t::name[];
+constexpr char VsyncSource::GetRefreshRate_t::signature[];
+
+auto VsyncSource::GetRefreshRate() const -> float
 {
-    return mozilla::jni::Field<FixedLayerMarginBottom_t>::Set(ViewTransform::mCtx, nullptr, a0);
+    return mozilla::jni::Method<GetRefreshRate_t>::Call(VsyncSource::mCtx, nullptr);
 }
 
-constexpr char ViewTransform::FixedLayerMarginLeft_t::name[];
-constexpr char ViewTransform::FixedLayerMarginLeft_t::signature[];
+constexpr char VsyncSource::NotifyVsync_t::name[];
+constexpr char VsyncSource::NotifyVsync_t::signature[];
 
-auto ViewTransform::FixedLayerMarginLeft() const -> float
+constexpr char VsyncSource::ObserveVsync_t::name[];
+constexpr char VsyncSource::ObserveVsync_t::signature[];
+
+auto VsyncSource::ObserveVsync(bool a0) const -> bool
 {
-    return mozilla::jni::Field<FixedLayerMarginLeft_t>::Get(ViewTransform::mCtx, nullptr);
+    return mozilla::jni::Method<ObserveVsync_t>::Call(VsyncSource::mCtx, nullptr, a0);
 }
 
-auto ViewTransform::FixedLayerMarginLeft(float a0) const -> void
+constexpr char VsyncSource::INSTANCE_t::name[];
+constexpr char VsyncSource::INSTANCE_t::signature[];
+
+auto VsyncSource::INSTANCE() -> VsyncSource::LocalRef
 {
-    return mozilla::jni::Field<FixedLayerMarginLeft_t>::Set(ViewTransform::mCtx, nullptr, a0);
-}
-
-constexpr char ViewTransform::FixedLayerMarginRight_t::name[];
-constexpr char ViewTransform::FixedLayerMarginRight_t::signature[];
-
-auto ViewTransform::FixedLayerMarginRight() const -> float
-{
-    return mozilla::jni::Field<FixedLayerMarginRight_t>::Get(ViewTransform::mCtx, nullptr);
-}
-
-auto ViewTransform::FixedLayerMarginRight(float a0) const -> void
-{
-    return mozilla::jni::Field<FixedLayerMarginRight_t>::Set(ViewTransform::mCtx, nullptr, a0);
-}
-
-constexpr char ViewTransform::FixedLayerMarginTop_t::name[];
-constexpr char ViewTransform::FixedLayerMarginTop_t::signature[];
-
-auto ViewTransform::FixedLayerMarginTop() const -> float
-{
-    return mozilla::jni::Field<FixedLayerMarginTop_t>::Get(ViewTransform::mCtx, nullptr);
-}
-
-auto ViewTransform::FixedLayerMarginTop(float a0) const -> void
-{
-    return mozilla::jni::Field<FixedLayerMarginTop_t>::Set(ViewTransform::mCtx, nullptr, a0);
-}
-
-constexpr char ViewTransform::Height_t::name[];
-constexpr char ViewTransform::Height_t::signature[];
-
-auto ViewTransform::Height() const -> float
-{
-    return mozilla::jni::Field<Height_t>::Get(ViewTransform::mCtx, nullptr);
-}
-
-auto ViewTransform::Height(float a0) const -> void
-{
-    return mozilla::jni::Field<Height_t>::Set(ViewTransform::mCtx, nullptr, a0);
-}
-
-constexpr char ViewTransform::Scale_t::name[];
-constexpr char ViewTransform::Scale_t::signature[];
-
-auto ViewTransform::Scale() const -> float
-{
-    return mozilla::jni::Field<Scale_t>::Get(ViewTransform::mCtx, nullptr);
-}
-
-auto ViewTransform::Scale(float a0) const -> void
-{
-    return mozilla::jni::Field<Scale_t>::Set(ViewTransform::mCtx, nullptr, a0);
-}
-
-constexpr char ViewTransform::Width_t::name[];
-constexpr char ViewTransform::Width_t::signature[];
-
-auto ViewTransform::Width() const -> float
-{
-    return mozilla::jni::Field<Width_t>::Get(ViewTransform::mCtx, nullptr);
-}
-
-auto ViewTransform::Width(float a0) const -> void
-{
-    return mozilla::jni::Field<Width_t>::Set(ViewTransform::mCtx, nullptr, a0);
-}
-
-constexpr char ViewTransform::X_t::name[];
-constexpr char ViewTransform::X_t::signature[];
-
-auto ViewTransform::X() const -> float
-{
-    return mozilla::jni::Field<X_t>::Get(ViewTransform::mCtx, nullptr);
-}
-
-auto ViewTransform::X(float a0) const -> void
-{
-    return mozilla::jni::Field<X_t>::Set(ViewTransform::mCtx, nullptr, a0);
-}
-
-constexpr char ViewTransform::Y_t::name[];
-constexpr char ViewTransform::Y_t::signature[];
-
-auto ViewTransform::Y() const -> float
-{
-    return mozilla::jni::Field<Y_t>::Get(ViewTransform::mCtx, nullptr);
-}
-
-auto ViewTransform::Y(float a0) const -> void
-{
-    return mozilla::jni::Field<Y_t>::Set(ViewTransform::mCtx, nullptr, a0);
-}
-
-const char AudioFocusAgent::name[] =
-        "org/mozilla/gecko/media/AudioFocusAgent";
-
-constexpr char AudioFocusAgent::NotifyStartedPlaying_t::name[];
-constexpr char AudioFocusAgent::NotifyStartedPlaying_t::signature[];
-
-auto AudioFocusAgent::NotifyStartedPlaying() -> void
-{
-    return mozilla::jni::Method<NotifyStartedPlaying_t>::Call(AudioFocusAgent::Context(), nullptr);
-}
-
-constexpr char AudioFocusAgent::NotifyStoppedPlaying_t::name[];
-constexpr char AudioFocusAgent::NotifyStoppedPlaying_t::signature[];
-
-auto AudioFocusAgent::NotifyStoppedPlaying() -> void
-{
-    return mozilla::jni::Method<NotifyStoppedPlaying_t>::Call(AudioFocusAgent::Context(), nullptr);
+    return mozilla::jni::Field<INSTANCE_t>::Get(VsyncSource::Context(), nullptr);
 }
 
 const char CodecProxy::name[] =
@@ -2039,9 +1714,9 @@ const char CodecProxy::name[] =
 constexpr char CodecProxy::Create_t::name[];
 constexpr char CodecProxy::Create_t::signature[];
 
-auto CodecProxy::Create(mozilla::jni::Object::Param a0, mozilla::jni::Object::Param a1, mozilla::jni::Object::Param a2) -> CodecProxy::LocalRef
+auto CodecProxy::Create(bool a0, mozilla::jni::Object::Param a1, mozilla::jni::Object::Param a2, mozilla::jni::Object::Param a3, mozilla::jni::String::Param a4) -> CodecProxy::LocalRef
 {
-    return mozilla::jni::Method<Create_t>::Call(CodecProxy::Context(), nullptr, a0, a1, a2);
+    return mozilla::jni::Method<Create_t>::Call(CodecProxy::Context(), nullptr, a0, a1, a2, a3, a4);
 }
 
 constexpr char CodecProxy::Flush_t::name[];
@@ -2055,9 +1730,25 @@ auto CodecProxy::Flush() const -> bool
 constexpr char CodecProxy::Input_t::name[];
 constexpr char CodecProxy::Input_t::signature[];
 
-auto CodecProxy::Input(mozilla::jni::ByteArray::Param a0, mozilla::jni::Object::Param a1) const -> bool
+auto CodecProxy::Input(mozilla::jni::ByteBuffer::Param a0, mozilla::jni::Object::Param a1, mozilla::jni::Object::Param a2) const -> bool
 {
-    return mozilla::jni::Method<Input_t>::Call(CodecProxy::mCtx, nullptr, a0, a1);
+    return mozilla::jni::Method<Input_t>::Call(CodecProxy::mCtx, nullptr, a0, a1, a2);
+}
+
+constexpr char CodecProxy::IsAdaptivePlaybackSupported_t::name[];
+constexpr char CodecProxy::IsAdaptivePlaybackSupported_t::signature[];
+
+auto CodecProxy::IsAdaptivePlaybackSupported() const -> bool
+{
+    return mozilla::jni::Method<IsAdaptivePlaybackSupported_t>::Call(CodecProxy::mCtx, nullptr);
+}
+
+constexpr char CodecProxy::IsTunneledPlaybackSupported_t::name[];
+constexpr char CodecProxy::IsTunneledPlaybackSupported_t::signature[];
+
+auto CodecProxy::IsTunneledPlaybackSupported() const -> bool
+{
+    return mozilla::jni::Method<IsTunneledPlaybackSupported_t>::Call(CodecProxy::mCtx, nullptr);
 }
 
 constexpr char CodecProxy::Release_t::name[];
@@ -2066,6 +1757,22 @@ constexpr char CodecProxy::Release_t::signature[];
 auto CodecProxy::Release() const -> bool
 {
     return mozilla::jni::Method<Release_t>::Call(CodecProxy::mCtx, nullptr);
+}
+
+constexpr char CodecProxy::ReleaseOutput_t::name[];
+constexpr char CodecProxy::ReleaseOutput_t::signature[];
+
+auto CodecProxy::ReleaseOutput(mozilla::jni::Object::Param a0, bool a1) const -> bool
+{
+    return mozilla::jni::Method<ReleaseOutput_t>::Call(CodecProxy::mCtx, nullptr, a0, a1);
+}
+
+constexpr char CodecProxy::SetRates_t::name[];
+constexpr char CodecProxy::SetRates_t::signature[];
+
+auto CodecProxy::SetRates(int32_t a0) const -> bool
+{
+    return mozilla::jni::Method<SetRates_t>::Call(CodecProxy::mCtx, nullptr, a0);
 }
 
 const char CodecProxy::NativeCallbacks::name[] =
@@ -2082,11 +1789,16 @@ auto CodecProxy::NativeCallbacks::New() -> NativeCallbacks::LocalRef
 constexpr char CodecProxy::NativeCallbacks::DisposeNative_t::name[];
 constexpr char CodecProxy::NativeCallbacks::DisposeNative_t::signature[];
 
+auto CodecProxy::NativeCallbacks::DisposeNative() const -> void
+{
+    return mozilla::jni::Method<DisposeNative_t>::Call(NativeCallbacks::mCtx, nullptr);
+}
+
 constexpr char CodecProxy::NativeCallbacks::OnError_t::name[];
 constexpr char CodecProxy::NativeCallbacks::OnError_t::signature[];
 
-constexpr char CodecProxy::NativeCallbacks::OnInputExhausted_t::name[];
-constexpr char CodecProxy::NativeCallbacks::OnInputExhausted_t::signature[];
+constexpr char CodecProxy::NativeCallbacks::OnInputStatus_t::name[];
+constexpr char CodecProxy::NativeCallbacks::OnInputStatus_t::signature[];
 
 constexpr char CodecProxy::NativeCallbacks::OnOutput_t::name[];
 constexpr char CodecProxy::NativeCallbacks::OnOutput_t::signature[];
@@ -2094,62 +1806,745 @@ constexpr char CodecProxy::NativeCallbacks::OnOutput_t::signature[];
 constexpr char CodecProxy::NativeCallbacks::OnOutputFormatChanged_t::name[];
 constexpr char CodecProxy::NativeCallbacks::OnOutputFormatChanged_t::signature[];
 
-const char Restrictions::name[] =
-        "org/mozilla/gecko/restrictions/Restrictions";
+const char GeckoAudioInfo::name[] =
+        "org/mozilla/gecko/media/GeckoAudioInfo";
 
-constexpr char Restrictions::IsAllowed_t::name[];
-constexpr char Restrictions::IsAllowed_t::signature[];
+constexpr char GeckoAudioInfo::New_t::name[];
+constexpr char GeckoAudioInfo::New_t::signature[];
 
-auto Restrictions::IsAllowed(int32_t a0, mozilla::jni::String::Param a1) -> bool
+auto GeckoAudioInfo::New(int32_t a0, int32_t a1, int32_t a2, int32_t a3, int64_t a4, mozilla::jni::String::Param a5, mozilla::jni::ByteArray::Param a6) -> GeckoAudioInfo::LocalRef
 {
-    return mozilla::jni::Method<IsAllowed_t>::Call(Restrictions::Context(), nullptr, a0, a1);
+    return mozilla::jni::Constructor<New_t>::Call(GeckoAudioInfo::Context(), nullptr, a0, a1, a2, a3, a4, a5, a6);
 }
 
-constexpr char Restrictions::IsUserRestricted_t::name[];
-constexpr char Restrictions::IsUserRestricted_t::signature[];
+constexpr char GeckoAudioInfo::BitDepth_t::name[];
+constexpr char GeckoAudioInfo::BitDepth_t::signature[];
 
-auto Restrictions::IsUserRestricted() -> bool
+auto GeckoAudioInfo::BitDepth() const -> int32_t
 {
-    return mozilla::jni::Method<IsUserRestricted_t>::Call(Restrictions::Context(), nullptr);
+    return mozilla::jni::Field<BitDepth_t>::Get(GeckoAudioInfo::mCtx, nullptr);
 }
 
-const char Clipboard::name[] =
-        "org/mozilla/gecko/util/Clipboard";
+constexpr char GeckoAudioInfo::Channels_t::name[];
+constexpr char GeckoAudioInfo::Channels_t::signature[];
 
-constexpr char Clipboard::ClearText_t::name[];
-constexpr char Clipboard::ClearText_t::signature[];
-
-auto Clipboard::ClearText() -> void
+auto GeckoAudioInfo::Channels() const -> int32_t
 {
-    return mozilla::jni::Method<ClearText_t>::Call(Clipboard::Context(), nullptr);
+    return mozilla::jni::Field<Channels_t>::Get(GeckoAudioInfo::mCtx, nullptr);
 }
 
-constexpr char Clipboard::GetText_t::name[];
-constexpr char Clipboard::GetText_t::signature[];
+constexpr char GeckoAudioInfo::CodecSpecificData_t::name[];
+constexpr char GeckoAudioInfo::CodecSpecificData_t::signature[];
 
-auto Clipboard::GetText() -> mozilla::jni::String::LocalRef
+auto GeckoAudioInfo::CodecSpecificData() const -> mozilla::jni::ByteArray::LocalRef
 {
-    return mozilla::jni::Method<GetText_t>::Call(Clipboard::Context(), nullptr);
+    return mozilla::jni::Field<CodecSpecificData_t>::Get(GeckoAudioInfo::mCtx, nullptr);
 }
 
-constexpr char Clipboard::HasText_t::name[];
-constexpr char Clipboard::HasText_t::signature[];
+constexpr char GeckoAudioInfo::Duration_t::name[];
+constexpr char GeckoAudioInfo::Duration_t::signature[];
 
-auto Clipboard::HasText() -> bool
+auto GeckoAudioInfo::Duration() const -> int64_t
 {
-    return mozilla::jni::Method<HasText_t>::Call(Clipboard::Context(), nullptr);
+    return mozilla::jni::Field<Duration_t>::Get(GeckoAudioInfo::mCtx, nullptr);
 }
 
-constexpr char Clipboard::SetText_t::name[];
-constexpr char Clipboard::SetText_t::signature[];
+constexpr char GeckoAudioInfo::MimeType_t::name[];
+constexpr char GeckoAudioInfo::MimeType_t::signature[];
 
-auto Clipboard::SetText(mozilla::jni::String::Param a0) -> void
+auto GeckoAudioInfo::MimeType() const -> mozilla::jni::String::LocalRef
 {
-    return mozilla::jni::Method<SetText_t>::Call(Clipboard::Context(), nullptr, a0);
+    return mozilla::jni::Field<MimeType_t>::Get(GeckoAudioInfo::mCtx, nullptr);
+}
+
+constexpr char GeckoAudioInfo::Profile_t::name[];
+constexpr char GeckoAudioInfo::Profile_t::signature[];
+
+auto GeckoAudioInfo::Profile() const -> int32_t
+{
+    return mozilla::jni::Field<Profile_t>::Get(GeckoAudioInfo::mCtx, nullptr);
+}
+
+constexpr char GeckoAudioInfo::Rate_t::name[];
+constexpr char GeckoAudioInfo::Rate_t::signature[];
+
+auto GeckoAudioInfo::Rate() const -> int32_t
+{
+    return mozilla::jni::Field<Rate_t>::Get(GeckoAudioInfo::mCtx, nullptr);
+}
+
+const char GeckoHLSDemuxerWrapper::name[] =
+        "org/mozilla/gecko/media/GeckoHLSDemuxerWrapper";
+
+constexpr char GeckoHLSDemuxerWrapper::Create_t::name[];
+constexpr char GeckoHLSDemuxerWrapper::Create_t::signature[];
+
+auto GeckoHLSDemuxerWrapper::Create(int32_t a0, mozilla::jni::Object::Param a1) -> GeckoHLSDemuxerWrapper::LocalRef
+{
+    return mozilla::jni::Method<Create_t>::Call(GeckoHLSDemuxerWrapper::Context(), nullptr, a0, a1);
+}
+
+constexpr char GeckoHLSDemuxerWrapper::Destroy_t::name[];
+constexpr char GeckoHLSDemuxerWrapper::Destroy_t::signature[];
+
+auto GeckoHLSDemuxerWrapper::Destroy() const -> void
+{
+    return mozilla::jni::Method<Destroy_t>::Call(GeckoHLSDemuxerWrapper::mCtx, nullptr);
+}
+
+constexpr char GeckoHLSDemuxerWrapper::GetAudioInfo_t::name[];
+constexpr char GeckoHLSDemuxerWrapper::GetAudioInfo_t::signature[];
+
+auto GeckoHLSDemuxerWrapper::GetAudioInfo(int32_t a0) const -> mozilla::jni::Object::LocalRef
+{
+    return mozilla::jni::Method<GetAudioInfo_t>::Call(GeckoHLSDemuxerWrapper::mCtx, nullptr, a0);
+}
+
+constexpr char GeckoHLSDemuxerWrapper::GetBuffered_t::name[];
+constexpr char GeckoHLSDemuxerWrapper::GetBuffered_t::signature[];
+
+auto GeckoHLSDemuxerWrapper::GetBuffered() const -> int64_t
+{
+    return mozilla::jni::Method<GetBuffered_t>::Call(GeckoHLSDemuxerWrapper::mCtx, nullptr);
+}
+
+constexpr char GeckoHLSDemuxerWrapper::GetNextKeyFrameTime_t::name[];
+constexpr char GeckoHLSDemuxerWrapper::GetNextKeyFrameTime_t::signature[];
+
+auto GeckoHLSDemuxerWrapper::GetNextKeyFrameTime() const -> int64_t
+{
+    return mozilla::jni::Method<GetNextKeyFrameTime_t>::Call(GeckoHLSDemuxerWrapper::mCtx, nullptr);
+}
+
+constexpr char GeckoHLSDemuxerWrapper::GetNumberOfTracks_t::name[];
+constexpr char GeckoHLSDemuxerWrapper::GetNumberOfTracks_t::signature[];
+
+auto GeckoHLSDemuxerWrapper::GetNumberOfTracks(int32_t a0) const -> int32_t
+{
+    return mozilla::jni::Method<GetNumberOfTracks_t>::Call(GeckoHLSDemuxerWrapper::mCtx, nullptr, a0);
+}
+
+constexpr char GeckoHLSDemuxerWrapper::GetSamples_t::name[];
+constexpr char GeckoHLSDemuxerWrapper::GetSamples_t::signature[];
+
+auto GeckoHLSDemuxerWrapper::GetSamples(int32_t a0, int32_t a1) const -> mozilla::jni::ObjectArray::LocalRef
+{
+    return mozilla::jni::Method<GetSamples_t>::Call(GeckoHLSDemuxerWrapper::mCtx, nullptr, a0, a1);
+}
+
+constexpr char GeckoHLSDemuxerWrapper::GetVideoInfo_t::name[];
+constexpr char GeckoHLSDemuxerWrapper::GetVideoInfo_t::signature[];
+
+auto GeckoHLSDemuxerWrapper::GetVideoInfo(int32_t a0) const -> mozilla::jni::Object::LocalRef
+{
+    return mozilla::jni::Method<GetVideoInfo_t>::Call(GeckoHLSDemuxerWrapper::mCtx, nullptr, a0);
+}
+
+constexpr char GeckoHLSDemuxerWrapper::IsLiveStream_t::name[];
+constexpr char GeckoHLSDemuxerWrapper::IsLiveStream_t::signature[];
+
+auto GeckoHLSDemuxerWrapper::IsLiveStream() const -> bool
+{
+    return mozilla::jni::Method<IsLiveStream_t>::Call(GeckoHLSDemuxerWrapper::mCtx, nullptr);
+}
+
+constexpr char GeckoHLSDemuxerWrapper::Seek_t::name[];
+constexpr char GeckoHLSDemuxerWrapper::Seek_t::signature[];
+
+auto GeckoHLSDemuxerWrapper::Seek(int64_t a0) const -> bool
+{
+    return mozilla::jni::Method<Seek_t>::Call(GeckoHLSDemuxerWrapper::mCtx, nullptr, a0);
+}
+
+const char GeckoHLSDemuxerWrapper::Callbacks::name[] =
+        "org/mozilla/gecko/media/GeckoHLSDemuxerWrapper$Callbacks";
+
+constexpr char GeckoHLSDemuxerWrapper::Callbacks::New_t::name[];
+constexpr char GeckoHLSDemuxerWrapper::Callbacks::New_t::signature[];
+
+auto GeckoHLSDemuxerWrapper::Callbacks::New() -> Callbacks::LocalRef
+{
+    return mozilla::jni::Constructor<New_t>::Call(Callbacks::Context(), nullptr);
+}
+
+constexpr char GeckoHLSDemuxerWrapper::Callbacks::OnError_t::name[];
+constexpr char GeckoHLSDemuxerWrapper::Callbacks::OnError_t::signature[];
+
+constexpr char GeckoHLSDemuxerWrapper::Callbacks::OnInitialized_t::name[];
+constexpr char GeckoHLSDemuxerWrapper::Callbacks::OnInitialized_t::signature[];
+
+const char GeckoHLSResourceWrapper::name[] =
+        "org/mozilla/gecko/media/GeckoHLSResourceWrapper";
+
+constexpr char GeckoHLSResourceWrapper::Create_t::name[];
+constexpr char GeckoHLSResourceWrapper::Create_t::signature[];
+
+auto GeckoHLSResourceWrapper::Create(mozilla::jni::String::Param a0, mozilla::jni::Object::Param a1) -> GeckoHLSResourceWrapper::LocalRef
+{
+    return mozilla::jni::Method<Create_t>::Call(GeckoHLSResourceWrapper::Context(), nullptr, a0, a1);
+}
+
+constexpr char GeckoHLSResourceWrapper::Destroy_t::name[];
+constexpr char GeckoHLSResourceWrapper::Destroy_t::signature[];
+
+auto GeckoHLSResourceWrapper::Destroy() const -> void
+{
+    return mozilla::jni::Method<Destroy_t>::Call(GeckoHLSResourceWrapper::mCtx, nullptr);
+}
+
+constexpr char GeckoHLSResourceWrapper::GetPlayerId_t::name[];
+constexpr char GeckoHLSResourceWrapper::GetPlayerId_t::signature[];
+
+auto GeckoHLSResourceWrapper::GetPlayerId() const -> int32_t
+{
+    return mozilla::jni::Method<GetPlayerId_t>::Call(GeckoHLSResourceWrapper::mCtx, nullptr);
+}
+
+constexpr char GeckoHLSResourceWrapper::Pause_t::name[];
+constexpr char GeckoHLSResourceWrapper::Pause_t::signature[];
+
+auto GeckoHLSResourceWrapper::Pause() const -> void
+{
+    return mozilla::jni::Method<Pause_t>::Call(GeckoHLSResourceWrapper::mCtx, nullptr);
+}
+
+constexpr char GeckoHLSResourceWrapper::Play_t::name[];
+constexpr char GeckoHLSResourceWrapper::Play_t::signature[];
+
+auto GeckoHLSResourceWrapper::Play() const -> void
+{
+    return mozilla::jni::Method<Play_t>::Call(GeckoHLSResourceWrapper::mCtx, nullptr);
+}
+
+constexpr char GeckoHLSResourceWrapper::Resume_t::name[];
+constexpr char GeckoHLSResourceWrapper::Resume_t::signature[];
+
+auto GeckoHLSResourceWrapper::Resume() const -> void
+{
+    return mozilla::jni::Method<Resume_t>::Call(GeckoHLSResourceWrapper::mCtx, nullptr);
+}
+
+constexpr char GeckoHLSResourceWrapper::Suspend_t::name[];
+constexpr char GeckoHLSResourceWrapper::Suspend_t::signature[];
+
+auto GeckoHLSResourceWrapper::Suspend() const -> void
+{
+    return mozilla::jni::Method<Suspend_t>::Call(GeckoHLSResourceWrapper::mCtx, nullptr);
+}
+
+const char GeckoHLSResourceWrapper::Callbacks::name[] =
+        "org/mozilla/gecko/media/GeckoHLSResourceWrapper$Callbacks";
+
+constexpr char GeckoHLSResourceWrapper::Callbacks::New_t::name[];
+constexpr char GeckoHLSResourceWrapper::Callbacks::New_t::signature[];
+
+auto GeckoHLSResourceWrapper::Callbacks::New() -> Callbacks::LocalRef
+{
+    return mozilla::jni::Constructor<New_t>::Call(Callbacks::Context(), nullptr);
+}
+
+constexpr char GeckoHLSResourceWrapper::Callbacks::OnDataArrived_t::name[];
+constexpr char GeckoHLSResourceWrapper::Callbacks::OnDataArrived_t::signature[];
+
+constexpr char GeckoHLSResourceWrapper::Callbacks::OnError_t::name[];
+constexpr char GeckoHLSResourceWrapper::Callbacks::OnError_t::signature[];
+
+const char GeckoHLSSample::name[] =
+        "org/mozilla/gecko/media/GeckoHLSSample";
+
+constexpr char GeckoHLSSample::IsEOS_t::name[];
+constexpr char GeckoHLSSample::IsEOS_t::signature[];
+
+auto GeckoHLSSample::IsEOS() const -> bool
+{
+    return mozilla::jni::Method<IsEOS_t>::Call(GeckoHLSSample::mCtx, nullptr);
+}
+
+constexpr char GeckoHLSSample::IsKeyFrame_t::name[];
+constexpr char GeckoHLSSample::IsKeyFrame_t::signature[];
+
+auto GeckoHLSSample::IsKeyFrame() const -> bool
+{
+    return mozilla::jni::Method<IsKeyFrame_t>::Call(GeckoHLSSample::mCtx, nullptr);
+}
+
+constexpr char GeckoHLSSample::WriteToByteBuffer_t::name[];
+constexpr char GeckoHLSSample::WriteToByteBuffer_t::signature[];
+
+auto GeckoHLSSample::WriteToByteBuffer(mozilla::jni::ByteBuffer::Param a0) const -> void
+{
+    return mozilla::jni::Method<WriteToByteBuffer_t>::Call(GeckoHLSSample::mCtx, nullptr, a0);
+}
+
+constexpr char GeckoHLSSample::CryptoInfo_t::name[];
+constexpr char GeckoHLSSample::CryptoInfo_t::signature[];
+
+auto GeckoHLSSample::CryptoInfo() const -> mozilla::jni::Object::LocalRef
+{
+    return mozilla::jni::Field<CryptoInfo_t>::Get(GeckoHLSSample::mCtx, nullptr);
+}
+
+constexpr char GeckoHLSSample::Duration_t::name[];
+constexpr char GeckoHLSSample::Duration_t::signature[];
+
+auto GeckoHLSSample::Duration() const -> int64_t
+{
+    return mozilla::jni::Field<Duration_t>::Get(GeckoHLSSample::mCtx, nullptr);
+}
+
+auto GeckoHLSSample::Duration(int64_t a0) const -> void
+{
+    return mozilla::jni::Field<Duration_t>::Set(GeckoHLSSample::mCtx, nullptr, a0);
+}
+
+constexpr char GeckoHLSSample::FormatIndex_t::name[];
+constexpr char GeckoHLSSample::FormatIndex_t::signature[];
+
+auto GeckoHLSSample::FormatIndex() const -> int32_t
+{
+    return mozilla::jni::Field<FormatIndex_t>::Get(GeckoHLSSample::mCtx, nullptr);
+}
+
+constexpr char GeckoHLSSample::Info_t::name[];
+constexpr char GeckoHLSSample::Info_t::signature[];
+
+auto GeckoHLSSample::Info() const -> mozilla::jni::Object::LocalRef
+{
+    return mozilla::jni::Field<Info_t>::Get(GeckoHLSSample::mCtx, nullptr);
+}
+
+const char GeckoVideoInfo::name[] =
+        "org/mozilla/gecko/media/GeckoVideoInfo";
+
+constexpr char GeckoVideoInfo::New_t::name[];
+constexpr char GeckoVideoInfo::New_t::signature[];
+
+auto GeckoVideoInfo::New(int32_t a0, int32_t a1, int32_t a2, int32_t a3, int32_t a4, int32_t a5, int64_t a6, mozilla::jni::String::Param a7, mozilla::jni::ByteArray::Param a8, mozilla::jni::ByteArray::Param a9) -> GeckoVideoInfo::LocalRef
+{
+    return mozilla::jni::Constructor<New_t>::Call(GeckoVideoInfo::Context(), nullptr, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9);
+}
+
+constexpr char GeckoVideoInfo::CodecSpecificData_t::name[];
+constexpr char GeckoVideoInfo::CodecSpecificData_t::signature[];
+
+auto GeckoVideoInfo::CodecSpecificData() const -> mozilla::jni::ByteArray::LocalRef
+{
+    return mozilla::jni::Field<CodecSpecificData_t>::Get(GeckoVideoInfo::mCtx, nullptr);
+}
+
+constexpr char GeckoVideoInfo::DisplayHeight_t::name[];
+constexpr char GeckoVideoInfo::DisplayHeight_t::signature[];
+
+auto GeckoVideoInfo::DisplayHeight() const -> int32_t
+{
+    return mozilla::jni::Field<DisplayHeight_t>::Get(GeckoVideoInfo::mCtx, nullptr);
+}
+
+constexpr char GeckoVideoInfo::DisplayWidth_t::name[];
+constexpr char GeckoVideoInfo::DisplayWidth_t::signature[];
+
+auto GeckoVideoInfo::DisplayWidth() const -> int32_t
+{
+    return mozilla::jni::Field<DisplayWidth_t>::Get(GeckoVideoInfo::mCtx, nullptr);
+}
+
+constexpr char GeckoVideoInfo::Duration_t::name[];
+constexpr char GeckoVideoInfo::Duration_t::signature[];
+
+auto GeckoVideoInfo::Duration() const -> int64_t
+{
+    return mozilla::jni::Field<Duration_t>::Get(GeckoVideoInfo::mCtx, nullptr);
+}
+
+constexpr char GeckoVideoInfo::ExtraData_t::name[];
+constexpr char GeckoVideoInfo::ExtraData_t::signature[];
+
+auto GeckoVideoInfo::ExtraData() const -> mozilla::jni::ByteArray::LocalRef
+{
+    return mozilla::jni::Field<ExtraData_t>::Get(GeckoVideoInfo::mCtx, nullptr);
+}
+
+constexpr char GeckoVideoInfo::MimeType_t::name[];
+constexpr char GeckoVideoInfo::MimeType_t::signature[];
+
+auto GeckoVideoInfo::MimeType() const -> mozilla::jni::String::LocalRef
+{
+    return mozilla::jni::Field<MimeType_t>::Get(GeckoVideoInfo::mCtx, nullptr);
+}
+
+constexpr char GeckoVideoInfo::PictureHeight_t::name[];
+constexpr char GeckoVideoInfo::PictureHeight_t::signature[];
+
+auto GeckoVideoInfo::PictureHeight() const -> int32_t
+{
+    return mozilla::jni::Field<PictureHeight_t>::Get(GeckoVideoInfo::mCtx, nullptr);
+}
+
+constexpr char GeckoVideoInfo::PictureWidth_t::name[];
+constexpr char GeckoVideoInfo::PictureWidth_t::signature[];
+
+auto GeckoVideoInfo::PictureWidth() const -> int32_t
+{
+    return mozilla::jni::Field<PictureWidth_t>::Get(GeckoVideoInfo::mCtx, nullptr);
+}
+
+constexpr char GeckoVideoInfo::Rotation_t::name[];
+constexpr char GeckoVideoInfo::Rotation_t::signature[];
+
+auto GeckoVideoInfo::Rotation() const -> int32_t
+{
+    return mozilla::jni::Field<Rotation_t>::Get(GeckoVideoInfo::mCtx, nullptr);
+}
+
+constexpr char GeckoVideoInfo::StereoMode_t::name[];
+constexpr char GeckoVideoInfo::StereoMode_t::signature[];
+
+auto GeckoVideoInfo::StereoMode() const -> int32_t
+{
+    return mozilla::jni::Field<StereoMode_t>::Get(GeckoVideoInfo::mCtx, nullptr);
+}
+
+const char MediaDrmProxy::name[] =
+        "org/mozilla/gecko/media/MediaDrmProxy";
+
+constexpr char MediaDrmProxy::CanDecode_t::name[];
+constexpr char MediaDrmProxy::CanDecode_t::signature[];
+
+auto MediaDrmProxy::CanDecode(mozilla::jni::String::Param a0) -> bool
+{
+    return mozilla::jni::Method<CanDecode_t>::Call(MediaDrmProxy::Context(), nullptr, a0);
+}
+
+constexpr char MediaDrmProxy::IsCryptoSchemeSupported_t::name[];
+constexpr char MediaDrmProxy::IsCryptoSchemeSupported_t::signature[];
+
+auto MediaDrmProxy::IsCryptoSchemeSupported(mozilla::jni::String::Param a0, mozilla::jni::String::Param a1) -> bool
+{
+    return mozilla::jni::Method<IsCryptoSchemeSupported_t>::Call(MediaDrmProxy::Context(), nullptr, a0, a1);
+}
+
+constexpr char MediaDrmProxy::CloseSession_t::name[];
+constexpr char MediaDrmProxy::CloseSession_t::signature[];
+
+auto MediaDrmProxy::CloseSession(int32_t a0, mozilla::jni::String::Param a1) const -> void
+{
+    return mozilla::jni::Method<CloseSession_t>::Call(MediaDrmProxy::mCtx, nullptr, a0, a1);
+}
+
+constexpr char MediaDrmProxy::Create_t::name[];
+constexpr char MediaDrmProxy::Create_t::signature[];
+
+auto MediaDrmProxy::Create(mozilla::jni::String::Param a0, mozilla::jni::Object::Param a1) -> MediaDrmProxy::LocalRef
+{
+    return mozilla::jni::Method<Create_t>::Call(MediaDrmProxy::Context(), nullptr, a0, a1);
+}
+
+constexpr char MediaDrmProxy::CreateSession_t::name[];
+constexpr char MediaDrmProxy::CreateSession_t::signature[];
+
+auto MediaDrmProxy::CreateSession(int32_t a0, int32_t a1, mozilla::jni::String::Param a2, mozilla::jni::ByteArray::Param a3) const -> void
+{
+    return mozilla::jni::Method<CreateSession_t>::Call(MediaDrmProxy::mCtx, nullptr, a0, a1, a2, a3);
+}
+
+constexpr char MediaDrmProxy::Destroy_t::name[];
+constexpr char MediaDrmProxy::Destroy_t::signature[];
+
+auto MediaDrmProxy::Destroy() const -> void
+{
+    return mozilla::jni::Method<Destroy_t>::Call(MediaDrmProxy::mCtx, nullptr);
+}
+
+constexpr char MediaDrmProxy::GetMediaCrypto_t::name[];
+constexpr char MediaDrmProxy::GetMediaCrypto_t::signature[];
+
+auto MediaDrmProxy::GetMediaCrypto(mozilla::jni::String::Param a0) -> mozilla::jni::Object::LocalRef
+{
+    return mozilla::jni::Method<GetMediaCrypto_t>::Call(MediaDrmProxy::Context(), nullptr, a0);
+}
+
+constexpr char MediaDrmProxy::GetStubId_t::name[];
+constexpr char MediaDrmProxy::GetStubId_t::signature[];
+
+auto MediaDrmProxy::GetStubId() const -> mozilla::jni::String::LocalRef
+{
+    return mozilla::jni::Method<GetStubId_t>::Call(MediaDrmProxy::mCtx, nullptr);
+}
+
+constexpr char MediaDrmProxy::IsSchemeSupported_t::name[];
+constexpr char MediaDrmProxy::IsSchemeSupported_t::signature[];
+
+auto MediaDrmProxy::IsSchemeSupported(mozilla::jni::String::Param a0) -> bool
+{
+    return mozilla::jni::Method<IsSchemeSupported_t>::Call(MediaDrmProxy::Context(), nullptr, a0);
+}
+
+constexpr char MediaDrmProxy::UpdateSession_t::name[];
+constexpr char MediaDrmProxy::UpdateSession_t::signature[];
+
+auto MediaDrmProxy::UpdateSession(int32_t a0, mozilla::jni::String::Param a1, mozilla::jni::ByteArray::Param a2) const -> void
+{
+    return mozilla::jni::Method<UpdateSession_t>::Call(MediaDrmProxy::mCtx, nullptr, a0, a1, a2);
+}
+
+const char16_t MediaDrmProxy::AAC[] = u"audio/mp4a-latm";
+
+const char16_t MediaDrmProxy::AVC[] = u"video/avc";
+
+const char16_t MediaDrmProxy::OPUS[] = u"audio/opus";
+
+const char16_t MediaDrmProxy::VORBIS[] = u"audio/vorbis";
+
+const char16_t MediaDrmProxy::VP8[] = u"video/x-vnd.on2.vp8";
+
+const char16_t MediaDrmProxy::VP9[] = u"video/x-vnd.on2.vp9";
+
+const char MediaDrmProxy::NativeMediaDrmProxyCallbacks::name[] =
+        "org/mozilla/gecko/media/MediaDrmProxy$NativeMediaDrmProxyCallbacks";
+
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::New_t::name[];
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::New_t::signature[];
+
+auto MediaDrmProxy::NativeMediaDrmProxyCallbacks::New() -> NativeMediaDrmProxyCallbacks::LocalRef
+{
+    return mozilla::jni::Constructor<New_t>::Call(NativeMediaDrmProxyCallbacks::Context(), nullptr);
+}
+
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::OnRejectPromise_t::name[];
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::OnRejectPromise_t::signature[];
+
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::OnSessionBatchedKeyChanged_t::name[];
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::OnSessionBatchedKeyChanged_t::signature[];
+
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::OnSessionClosed_t::name[];
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::OnSessionClosed_t::signature[];
+
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::OnSessionCreated_t::name[];
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::OnSessionCreated_t::signature[];
+
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::OnSessionError_t::name[];
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::OnSessionError_t::signature[];
+
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::OnSessionMessage_t::name[];
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::OnSessionMessage_t::signature[];
+
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::OnSessionUpdated_t::name[];
+constexpr char MediaDrmProxy::NativeMediaDrmProxyCallbacks::OnSessionUpdated_t::signature[];
+
+const char Sample::name[] =
+        "org/mozilla/gecko/media/Sample";
+
+constexpr char Sample::WriteToByteBuffer_t::name[];
+constexpr char Sample::WriteToByteBuffer_t::signature[];
+
+auto Sample::WriteToByteBuffer(mozilla::jni::ByteBuffer::Param a0) const -> void
+{
+    return mozilla::jni::Method<WriteToByteBuffer_t>::Call(Sample::mCtx, nullptr, a0);
+}
+
+constexpr char Sample::Info_t::name[];
+constexpr char Sample::Info_t::signature[];
+
+auto Sample::Info() const -> mozilla::jni::Object::LocalRef
+{
+    return mozilla::jni::Field<Info_t>::Get(Sample::mCtx, nullptr);
+}
+
+auto Sample::Info(mozilla::jni::Object::Param a0) const -> void
+{
+    return mozilla::jni::Field<Info_t>::Set(Sample::mCtx, nullptr, a0);
+}
+
+const char SessionKeyInfo::name[] =
+        "org/mozilla/gecko/media/SessionKeyInfo";
+
+constexpr char SessionKeyInfo::New_t::name[];
+constexpr char SessionKeyInfo::New_t::signature[];
+
+auto SessionKeyInfo::New(mozilla::jni::ByteArray::Param a0, int32_t a1) -> SessionKeyInfo::LocalRef
+{
+    return mozilla::jni::Constructor<New_t>::Call(SessionKeyInfo::Context(), nullptr, a0, a1);
+}
+
+constexpr char SessionKeyInfo::KeyId_t::name[];
+constexpr char SessionKeyInfo::KeyId_t::signature[];
+
+auto SessionKeyInfo::KeyId() const -> mozilla::jni::ByteArray::LocalRef
+{
+    return mozilla::jni::Field<KeyId_t>::Get(SessionKeyInfo::mCtx, nullptr);
+}
+
+auto SessionKeyInfo::KeyId(mozilla::jni::ByteArray::Param a0) const -> void
+{
+    return mozilla::jni::Field<KeyId_t>::Set(SessionKeyInfo::mCtx, nullptr, a0);
+}
+
+constexpr char SessionKeyInfo::Status_t::name[];
+constexpr char SessionKeyInfo::Status_t::signature[];
+
+auto SessionKeyInfo::Status() const -> int32_t
+{
+    return mozilla::jni::Field<Status_t>::Get(SessionKeyInfo::mCtx, nullptr);
+}
+
+auto SessionKeyInfo::Status(int32_t a0) const -> void
+{
+    return mozilla::jni::Field<Status_t>::Set(SessionKeyInfo::mCtx, nullptr, a0);
+}
+
+const char GeckoProcessManager::name[] =
+        "org/mozilla/gecko/process/GeckoProcessManager";
+
+constexpr char GeckoProcessManager::GetEditableParent_t::name[];
+constexpr char GeckoProcessManager::GetEditableParent_t::signature[];
+
+constexpr char GeckoProcessManager::Start_t::name[];
+constexpr char GeckoProcessManager::Start_t::signature[];
+
+auto GeckoProcessManager::Start(mozilla::jni::String::Param a0, mozilla::jni::ObjectArray::Param a1, int32_t a2, int32_t a3) -> int32_t
+{
+    return mozilla::jni::Method<Start_t>::Call(GeckoProcessManager::Context(), nullptr, a0, a1, a2, a3);
+}
+
+const char GeckoServiceChildProcess::name[] =
+        "org/mozilla/gecko/process/GeckoServiceChildProcess";
+
+constexpr char GeckoServiceChildProcess::GetEditableParent_t::name[];
+constexpr char GeckoServiceChildProcess::GetEditableParent_t::signature[];
+
+auto GeckoServiceChildProcess::GetEditableParent(int64_t a0, int64_t a1) -> mozilla::jni::Object::LocalRef
+{
+    return mozilla::jni::Method<GetEditableParent_t>::Call(GeckoServiceChildProcess::Context(), nullptr, a0, a1);
+}
+
+const char EventCallback::name[] =
+        "org/mozilla/gecko/util/EventCallback";
+
+constexpr char EventCallback::SendError_t::name[];
+constexpr char EventCallback::SendError_t::signature[];
+
+auto EventCallback::SendError(mozilla::jni::Object::Param a0) const -> void
+{
+    return mozilla::jni::Method<SendError_t>::Call(EventCallback::mCtx, nullptr, a0);
+}
+
+constexpr char EventCallback::SendSuccess_t::name[];
+constexpr char EventCallback::SendSuccess_t::signature[];
+
+auto EventCallback::SendSuccess(mozilla::jni::Object::Param a0) const -> void
+{
+    return mozilla::jni::Method<SendSuccess_t>::Call(EventCallback::mCtx, nullptr, a0);
+}
+
+const char GeckoBundle::name[] =
+        "org/mozilla/gecko/util/GeckoBundle";
+
+constexpr char GeckoBundle::New_t::name[];
+constexpr char GeckoBundle::New_t::signature[];
+
+auto GeckoBundle::New(mozilla::jni::ObjectArray::Param a0, mozilla::jni::ObjectArray::Param a1) -> GeckoBundle::LocalRef
+{
+    return mozilla::jni::Constructor<New_t>::Call(GeckoBundle::Context(), nullptr, a0, a1);
+}
+
+constexpr char GeckoBundle::Box_t::name[];
+constexpr char GeckoBundle::Box_t::signature[];
+
+auto GeckoBundle::Box(double a0) -> mozilla::jni::Object::LocalRef
+{
+    return mozilla::jni::Method<Box_t>::Call(GeckoBundle::Context(), nullptr, a0);
+}
+
+constexpr char GeckoBundle::Box2_t::name[];
+constexpr char GeckoBundle::Box2_t::signature[];
+
+auto GeckoBundle::Box(int32_t a0) -> mozilla::jni::Object::LocalRef
+{
+    return mozilla::jni::Method<Box2_t>::Call(GeckoBundle::Context(), nullptr, a0);
+}
+
+constexpr char GeckoBundle::Box3_t::name[];
+constexpr char GeckoBundle::Box3_t::signature[];
+
+auto GeckoBundle::Box(bool a0) -> mozilla::jni::Object::LocalRef
+{
+    return mozilla::jni::Method<Box3_t>::Call(GeckoBundle::Context(), nullptr, a0);
+}
+
+constexpr char GeckoBundle::Keys_t::name[];
+constexpr char GeckoBundle::Keys_t::signature[];
+
+auto GeckoBundle::Keys() const -> mozilla::jni::ObjectArray::LocalRef
+{
+    return mozilla::jni::Method<Keys_t>::Call(GeckoBundle::mCtx, nullptr);
+}
+
+constexpr char GeckoBundle::UnboxBoolean_t::name[];
+constexpr char GeckoBundle::UnboxBoolean_t::signature[];
+
+auto GeckoBundle::UnboxBoolean(mozilla::jni::Object::Param a0) -> bool
+{
+    return mozilla::jni::Method<UnboxBoolean_t>::Call(GeckoBundle::Context(), nullptr, a0);
+}
+
+constexpr char GeckoBundle::UnboxDouble_t::name[];
+constexpr char GeckoBundle::UnboxDouble_t::signature[];
+
+auto GeckoBundle::UnboxDouble(mozilla::jni::Object::Param a0) -> double
+{
+    return mozilla::jni::Method<UnboxDouble_t>::Call(GeckoBundle::Context(), nullptr, a0);
+}
+
+constexpr char GeckoBundle::UnboxInteger_t::name[];
+constexpr char GeckoBundle::UnboxInteger_t::signature[];
+
+auto GeckoBundle::UnboxInteger(mozilla::jni::Object::Param a0) -> int32_t
+{
+    return mozilla::jni::Method<UnboxInteger_t>::Call(GeckoBundle::Context(), nullptr, a0);
+}
+
+constexpr char GeckoBundle::UnboxString_t::name[];
+constexpr char GeckoBundle::UnboxString_t::signature[];
+
+auto GeckoBundle::UnboxString(mozilla::jni::Object::Param a0) -> mozilla::jni::String::LocalRef
+{
+    return mozilla::jni::Method<UnboxString_t>::Call(GeckoBundle::Context(), nullptr, a0);
+}
+
+constexpr char GeckoBundle::Values_t::name[];
+constexpr char GeckoBundle::Values_t::signature[];
+
+auto GeckoBundle::Values() const -> mozilla::jni::ObjectArray::LocalRef
+{
+    return mozilla::jni::Method<Values_t>::Call(GeckoBundle::mCtx, nullptr);
+}
+
+constexpr char GeckoBundle::EMPTY_BOOLEAN_ARRAY_t::name[];
+constexpr char GeckoBundle::EMPTY_BOOLEAN_ARRAY_t::signature[];
+
+auto GeckoBundle::EMPTY_BOOLEAN_ARRAY() -> mozilla::jni::BooleanArray::LocalRef
+{
+    return mozilla::jni::Field<EMPTY_BOOLEAN_ARRAY_t>::Get(GeckoBundle::Context(), nullptr);
 }
 
 const char HardwareCodecCapabilityUtils::name[] =
         "org/mozilla/gecko/util/HardwareCodecCapabilityUtils";
+
+constexpr char HardwareCodecCapabilityUtils::HasHWVP9_t::name[];
+constexpr char HardwareCodecCapabilityUtils::HasHWVP9_t::signature[];
+
+auto HardwareCodecCapabilityUtils::HasHWVP9() -> bool
+{
+    return mozilla::jni::Method<HasHWVP9_t>::Call(HardwareCodecCapabilityUtils::Context(), nullptr);
+}
+
+constexpr char HardwareCodecCapabilityUtils::CheckSupportsAdaptivePlayback_t::name[];
+constexpr char HardwareCodecCapabilityUtils::CheckSupportsAdaptivePlayback_t::signature[];
+
+auto HardwareCodecCapabilityUtils::CheckSupportsAdaptivePlayback(mozilla::jni::Object::Param a0, mozilla::jni::String::Param a1) -> bool
+{
+    return mozilla::jni::Method<CheckSupportsAdaptivePlayback_t>::Call(HardwareCodecCapabilityUtils::Context(), nullptr, a0, a1);
+}
 
 constexpr char HardwareCodecCapabilityUtils::FindDecoderCodecInfoForMimeType_t::name[];
 constexpr char HardwareCodecCapabilityUtils::FindDecoderCodecInfoForMimeType_t::signature[];
@@ -2158,123 +2553,6 @@ auto HardwareCodecCapabilityUtils::FindDecoderCodecInfoForMimeType(mozilla::jni:
 {
     return mozilla::jni::Method<FindDecoderCodecInfoForMimeType_t>::Call(HardwareCodecCapabilityUtils::Context(), nullptr, a0);
 }
-
-const char NativeJSContainer::name[] =
-        "org/mozilla/gecko/util/NativeJSContainer";
-
-constexpr char NativeJSContainer::New_t::name[];
-constexpr char NativeJSContainer::New_t::signature[];
-
-auto NativeJSContainer::New() -> NativeJSContainer::LocalRef
-{
-    return mozilla::jni::Constructor<New_t>::Call(NativeJSContainer::Context(), nullptr);
-}
-
-constexpr char NativeJSContainer::Clone2_t::name[];
-constexpr char NativeJSContainer::Clone2_t::signature[];
-
-constexpr char NativeJSContainer::DisposeNative_t::name[];
-constexpr char NativeJSContainer::DisposeNative_t::signature[];
-
-const char NativeJSObject::name[] =
-        "org/mozilla/gecko/util/NativeJSObject";
-
-constexpr char NativeJSObject::New_t::name[];
-constexpr char NativeJSObject::New_t::signature[];
-
-auto NativeJSObject::New() -> NativeJSObject::LocalRef
-{
-    return mozilla::jni::Constructor<New_t>::Call(NativeJSObject::Context(), nullptr);
-}
-
-constexpr char NativeJSObject::DisposeNative_t::name[];
-constexpr char NativeJSObject::DisposeNative_t::signature[];
-
-auto NativeJSObject::DisposeNative() const -> void
-{
-    return mozilla::jni::Method<DisposeNative_t>::Call(NativeJSObject::mCtx, nullptr);
-}
-
-constexpr char NativeJSObject::GetBoolean_t::name[];
-constexpr char NativeJSObject::GetBoolean_t::signature[];
-
-constexpr char NativeJSObject::GetBooleanArray_t::name[];
-constexpr char NativeJSObject::GetBooleanArray_t::signature[];
-
-constexpr char NativeJSObject::GetBundle_t::name[];
-constexpr char NativeJSObject::GetBundle_t::signature[];
-
-constexpr char NativeJSObject::GetBundleArray_t::name[];
-constexpr char NativeJSObject::GetBundleArray_t::signature[];
-
-constexpr char NativeJSObject::GetDouble_t::name[];
-constexpr char NativeJSObject::GetDouble_t::signature[];
-
-constexpr char NativeJSObject::GetDoubleArray_t::name[];
-constexpr char NativeJSObject::GetDoubleArray_t::signature[];
-
-constexpr char NativeJSObject::GetInt_t::name[];
-constexpr char NativeJSObject::GetInt_t::signature[];
-
-constexpr char NativeJSObject::GetIntArray_t::name[];
-constexpr char NativeJSObject::GetIntArray_t::signature[];
-
-constexpr char NativeJSObject::GetObject_t::name[];
-constexpr char NativeJSObject::GetObject_t::signature[];
-
-constexpr char NativeJSObject::GetObjectArray_t::name[];
-constexpr char NativeJSObject::GetObjectArray_t::signature[];
-
-constexpr char NativeJSObject::GetString_t::name[];
-constexpr char NativeJSObject::GetString_t::signature[];
-
-constexpr char NativeJSObject::GetStringArray_t::name[];
-constexpr char NativeJSObject::GetStringArray_t::signature[];
-
-constexpr char NativeJSObject::Has_t::name[];
-constexpr char NativeJSObject::Has_t::signature[];
-
-constexpr char NativeJSObject::OptBoolean_t::name[];
-constexpr char NativeJSObject::OptBoolean_t::signature[];
-
-constexpr char NativeJSObject::OptBooleanArray_t::name[];
-constexpr char NativeJSObject::OptBooleanArray_t::signature[];
-
-constexpr char NativeJSObject::OptBundle_t::name[];
-constexpr char NativeJSObject::OptBundle_t::signature[];
-
-constexpr char NativeJSObject::OptBundleArray_t::name[];
-constexpr char NativeJSObject::OptBundleArray_t::signature[];
-
-constexpr char NativeJSObject::OptDouble_t::name[];
-constexpr char NativeJSObject::OptDouble_t::signature[];
-
-constexpr char NativeJSObject::OptDoubleArray_t::name[];
-constexpr char NativeJSObject::OptDoubleArray_t::signature[];
-
-constexpr char NativeJSObject::OptInt_t::name[];
-constexpr char NativeJSObject::OptInt_t::signature[];
-
-constexpr char NativeJSObject::OptIntArray_t::name[];
-constexpr char NativeJSObject::OptIntArray_t::signature[];
-
-constexpr char NativeJSObject::OptObject_t::name[];
-constexpr char NativeJSObject::OptObject_t::signature[];
-
-constexpr char NativeJSObject::OptObjectArray_t::name[];
-constexpr char NativeJSObject::OptObjectArray_t::signature[];
-
-constexpr char NativeJSObject::OptString_t::name[];
-constexpr char NativeJSObject::OptString_t::signature[];
-
-constexpr char NativeJSObject::OptStringArray_t::name[];
-constexpr char NativeJSObject::OptStringArray_t::signature[];
-
-constexpr char NativeJSObject::ToBundle_t::name[];
-constexpr char NativeJSObject::ToBundle_t::signature[];
-
-constexpr char NativeJSObject::ToString_t::name[];
-constexpr char NativeJSObject::ToString_t::signature[];
 
 } /* java */
 } /* mozilla */

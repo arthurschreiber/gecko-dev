@@ -15,29 +15,17 @@ const SERVICE_WORKER = SCOPE + "empty-sw.js";
 const TAB_URL = SCOPE + "empty-sw.html";
 
 add_task(function* () {
-  info("Turn on workers via mochitest http.");
-  yield new Promise(done => {
-    let options = { "set": [
-      // Accept workers from mochitest's http.
-      ["dom.serviceWorkers.testing.enabled", true],
-    ]};
-    SpecialPowers.pushPrefEnv(options, done);
-  });
+  yield enableServiceWorkerDebugging();
 
   let { tab, document } = yield openAboutDebugging("workers");
-
-  // Listen for mutations in the service-workers list.
-  let serviceWorkersElement = getServiceWorkerList(document);
-  let onMutation = waitForMutation(serviceWorkersElement, { childList: true });
 
   // Open a tab that registers an empty service worker.
   let swTab = yield addTab(TAB_URL);
 
-  // Wait for the service workers-list to update.
-  yield onMutation;
+  info("Wait until the service worker appears in about:debugging");
+  yield waitUntilServiceWorkerContainer(SERVICE_WORKER, document);
 
-  // Check that the service worker appears in the UI.
-  assertHasTarget(true, document, "service-workers", SERVICE_WORKER);
+  yield waitForServiceWorkerActivation(SERVICE_WORKER, document);
 
   info("Ensure that the registration resolved before trying to interact with " +
     "the service worker.");
@@ -60,12 +48,12 @@ add_task(function* () {
   let unregisterLink = target.querySelector(".unregister-link");
   ok(unregisterLink, "Found the unregister link");
 
-  onMutation = waitForMutation(serviceWorkersElement, { childList: true });
   unregisterLink.click();
-  yield onMutation;
 
-  is(document.querySelector("#service-workers .target"), null,
-   "No service worker displayed anymore.");
+  info("Wait until the service worker disappears");
+  yield waitUntil(() => {
+    return !document.querySelector("#service-workers .target");
+  });
 
   yield removeTab(swTab);
   yield closeAboutDebugging(tab);

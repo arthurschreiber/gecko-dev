@@ -9,6 +9,7 @@
 
 #include "mozilla/a11y/DocAccessible.h"
 #include "mozilla/a11y/PDocAccessibleChild.h"
+#include "mozilla/Unused.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla {
@@ -38,13 +39,17 @@ public:
     MOZ_COUNT_DTOR(DocAccessibleChildBase);
   }
 
-  void Shutdown()
+  virtual void Shutdown()
   {
-    mDoc->SetIPCDoc(nullptr);
-    mDoc = nullptr;
+    DetachDocument();
     SendShutdown();
   }
 
+  /**
+   * Serializes a shown tree and sends it to the chrome process.
+   */
+  void InsertIntoIpcTree(Accessible* aParent,
+                         Accessible* aChild, uint32_t aIdxInParent);
   void ShowEvent(AccShowEvent* aShowEvent);
 
   virtual void ActorDestroy(ActorDestroyReason) override
@@ -60,6 +65,17 @@ public:
 protected:
   static uint32_t InterfacesFor(Accessible* aAcc);
   static void SerializeTree(Accessible* aRoot, nsTArray<AccessibleData>& aTree);
+
+  virtual void MaybeSendShowEvent(ShowEventData& aData, bool aFromUser)
+  { Unused << SendShowEvent(aData, aFromUser); }
+
+  void DetachDocument()
+  {
+    if (mDoc) {
+      mDoc->SetIPCDoc(nullptr);
+      mDoc = nullptr;
+    }
+  }
 
   DocAccessible*  mDoc;
 };

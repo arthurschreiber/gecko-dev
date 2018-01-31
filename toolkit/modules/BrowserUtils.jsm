@@ -9,15 +9,61 @@ this.EXPORTED_SYMBOLS = [ "BrowserUtils" ];
 
 const {interfaces: Ci, utils: Cu, classes: Cc} = Components;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.importGlobalProperties(['URL']);
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesUtils",
+  "resource://gre/modules/PlacesUtils.jsm");
+
+Cu.importGlobalProperties(["URL"]);
+
+let reflowObservers = new WeakMap();
+
+function ReflowObserver(doc) {
+  this._doc = doc;
+
+  doc.docShell.addWeakReflowObserver(this);
+  reflowObservers.set(this._doc, this);
+
+  this.callbacks = [];
+}
+
+ReflowObserver.prototype = {
+  QueryInterface: XPCOMUtils.generateQI(["nsIReflowObserver", "nsISupportsWeakReference"]),
+
+  _onReflow() {
+    reflowObservers.delete(this._doc);
+    this._doc.docShell.removeWeakReflowObserver(this);
+
+    for (let callback of this.callbacks) {
+      try {
+        callback();
+      } catch (e) {
+        Cu.reportError(e);
+      }
+    }
+  },
+
+  reflow() {
+    this._onReflow();
+  },
+
+  reflowInterruptible() {
+    this._onReflow();
+  },
+};
+
+const FLUSH_TYPES = {
+  "style": Ci.nsIDOMWindowUtils.FLUSH_STYLE,
+  "layout": Ci.nsIDOMWindowUtils.FLUSH_LAYOUT,
+  "display": Ci.nsIDOMWindowUtils.FLUSH_DISPLAY,
+};
 
 this.BrowserUtils = {
 
   /**
    * Prints arguments separated by a space and appends a new line.
    */
-  dumpLn: function (...args) {
+  dumpLn(...args) {
     for (let a of args)
       dump(a + " ");
     dump("\n");
@@ -27,21 +73,19 @@ this.BrowserUtils = {
    * restartApplication: Restarts the application, keeping it in
    * safe mode if it is already in safe mode.
    */
-  restartApplication: function() {
-    let appStartup = Cc["@mozilla.org/toolkit/app-startup;1"]
-                       .getService(Ci.nsIAppStartup);
+  restartApplication() {
     let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"]
                        .createInstance(Ci.nsISupportsPRBool);
     Services.obs.notifyObservers(cancelQuit, "quit-application-requested", "restart");
     if (cancelQuit.data) { // The quit request has been canceled.
       return false;
     }
-    //if already in safe mode restart in safe mode
+    // if already in safe mode restart in safe mode
     if (Services.appinfo.inSafeMode) {
-      appStartup.restartInSafeMode(Ci.nsIAppStartup.eAttemptQuit | Ci.nsIAppStartup.eRestart);
+      Services.startup.restartInSafeMode(Ci.nsIAppStartup.eAttemptQuit | Ci.nsIAppStartup.eRestart);
       return undefined;
     }
-    appStartup.quit(Ci.nsIAppStartup.eAttemptQuit | Ci.nsIAppStartup.eRestart);
+    Services.startup.quit(Ci.nsIAppStartup.eAttemptQuit | Ci.nsIAppStartup.eRestart);
     return undefined;
   },
 
@@ -60,7 +104,7 @@ this.BrowserUtils = {
    *        Flags to be passed to checkLoadURIStr. If undefined,
    *        nsIScriptSecurityManager.STANDARD will be passed.
    */
-  urlSecurityCheck: function(aURL, aPrincipal, aFlags) {
+  urlSecurityCheck(aURL, aPrincipal, aFlags) {
     var secMan = Services.scriptSecurityManager;
     if (aFlags === undefined) {
       aFlags = secMan.STANDARD;
@@ -75,11 +119,46 @@ this.BrowserUtils = {
       let principalStr = "";
       try {
         principalStr = " from " + aPrincipal.URI.spec;
-      }
-      catch (e2) { }
+      } catch (e2) { }
 
       throw "Load of " + aURL + principalStr + " denied.";
     }
+  },
+
+  /**
+   * Return or create a principal with the codebase of one, and the originAttributes
+   * of an existing principal (e.g. on a docshell, where the originAttributes ought
+   * not to change, that is, we should keep the userContextId, privateBrowsingId,
+   * etc. the same when changing the principal).
+   *
+   * @param principal
+   *        The principal whose codebase/null/system-ness we want.
+   * @param existingPrincipal
+   *        The principal whose originAttributes we want, usually the current
+   *        principal of a docshell.
+   * @return an nsIPrincipal that matches the codebase/null/system-ness of the first
+   *         param, and the originAttributes of the second.
+   */
+  principalWithMatchingOA(principal, existingPrincipal) {
+    // Don't care about system principals:
+    if (principal.isSystemPrincipal) {
+      return principal;
+    }
+
+    // If the originAttributes already match, just return the principal as-is.
+    if (existingPrincipal.originSuffix == principal.originSuffix) {
+      return principal;
+    }
+
+    let secMan = Services.scriptSecurityManager;
+    if (principal.isCodebasePrincipal) {
+      return secMan.createCodebasePrincipal(principal.URI, existingPrincipal.originAttributes);
+    }
+
+    if (principal.isNullPrincipal) {
+      return secMan.createNullPrincipal(existingPrincipal.originAttributes);
+    }
+    throw new Error("Can't change the originAttributes of an expanded principal!");
   },
 
   /**
@@ -88,17 +167,22 @@ this.BrowserUtils = {
    * @param aOriginCharset The charset of the URI.
    * @param aBaseURI Base URI to resolve aURL, or null.
    * @return an nsIURI object based on aURL.
+   *
+   * @deprecated Use Services.io.newURI directly instead.
    */
-  makeURI: function(aURL, aOriginCharset, aBaseURI) {
+  makeURI(aURL, aOriginCharset, aBaseURI) {
     return Services.io.newURI(aURL, aOriginCharset, aBaseURI);
   },
 
-  makeFileURI: function(aFile) {
+  /**
+   * @deprecated Use Services.io.newFileURI directly instead.
+   */
+  makeFileURI(aFile) {
     return Services.io.newFileURI(aFile);
   },
 
-  makeURIFromCPOW: function(aCPOWURI) {
-    return Services.io.newURI(aCPOWURI.spec, aCPOWURI.originCharset, null);
+  makeURIFromCPOW(aCPOWURI) {
+    return Services.io.newURI(aCPOWURI.spec);
   },
 
   /**
@@ -107,7 +191,7 @@ this.BrowserUtils = {
    * be relative to the left/top of the tab. In the chrome process,
    * the coordinates are relative to the user's screen.
    */
-  getElementBoundingScreenRect: function(aElement) {
+  getElementBoundingScreenRect(aElement) {
     return this.getElementBoundingRect(aElement, true);
   },
 
@@ -117,9 +201,9 @@ this.BrowserUtils = {
    * the left/top of the topmost content area. If aInScreenCoords is true,
    * screen coordinates will be returned instead.
    */
-  getElementBoundingRect: function(aElement, aInScreenCoords) {
+  getElementBoundingRect(aElement, aInScreenCoords) {
     let rect = aElement.getBoundingClientRect();
-    let win = aElement.ownerDocument.defaultView;
+    let win = aElement.ownerGlobal;
 
     let x = rect.left, y = rect.top;
 
@@ -127,8 +211,8 @@ this.BrowserUtils = {
     // over. We also need to compensate for zooming.
     let parentFrame = win.frameElement;
     while (parentFrame) {
-      win = parentFrame.ownerDocument.defaultView;
-      let cstyle = win.getComputedStyle(parentFrame, "");
+      win = parentFrame.ownerGlobal;
+      let cstyle = win.getComputedStyle(parentFrame);
 
       let framerect = parentFrame.getBoundingClientRect();
       x += framerect.left + parseFloat(cstyle.borderLeftWidth) + parseFloat(cstyle.paddingLeft);
@@ -153,7 +237,7 @@ this.BrowserUtils = {
     return rect;
   },
 
-  onBeforeLinkTraversal: function(originalTarget, linkURI, linkNode, isAppTab) {
+  onBeforeLinkTraversal(originalTarget, linkURI, linkNode, isAppTab) {
     // Don't modify non-default targets or targets that aren't in top-level app
     // tab docshells (isAppTab will be false for app tab subframes).
     if (originalTarget != "" || !isAppTab)
@@ -190,7 +274,7 @@ this.BrowserUtils = {
    * @param aName The full-length name string of the plugin.
    * @return the simplified name string.
    */
-  makeNicePluginName: function (aName) {
+  makeNicePluginName(aName) {
     if (aName == "Shockwave Flash")
       return "Adobe Flash";
     // Regex checks if aName begins with "Java" + non-letter char
@@ -215,7 +299,7 @@ this.BrowserUtils = {
    * @param linkNode The <a> element, or null.
    * @return a boolean indicating if linkNode has a rel="noreferrer" attribute.
    */
-  linkHasNoReferrer: function (linkNode) {
+  linkHasNoReferrer(linkNode) {
     // A null linkNode typically means that we're checking a link that wasn't
     // provided via an <a> link, like a text-selected URL.  Don't leak
     // referrer information in this case.
@@ -229,7 +313,7 @@ this.BrowserUtils = {
     // The HTML spec says that rel should be split on spaces before looking
     // for particular rel values.
     let values = rel.split(/[ \t\r\n\f]/);
-    return values.indexOf('noreferrer') != -1;
+    return values.indexOf("noreferrer") != -1;
   },
 
   /**
@@ -238,7 +322,7 @@ this.BrowserUtils = {
    * @param mimeType
    *        The MIME type to check.
    */
-  mimeTypeIsTextBased: function(mimeType) {
+  mimeTypeIsTextBased(mimeType) {
     return mimeType.startsWith("text/") ||
            mimeType.endsWith("+xml") ||
            mimeType == "application/x-javascript" ||
@@ -257,7 +341,7 @@ this.BrowserUtils = {
    *        The window that is focused
    *
    */
-  shouldFastFind: function(elt, win) {
+  shouldFastFind(elt, win) {
     if (elt) {
       if (elt instanceof win.HTMLInputElement && elt.mozIsTextField(false))
         return false;
@@ -282,7 +366,7 @@ this.BrowserUtils = {
    *        The top level window that is focused
    *
    */
-  canFastFind: function(win) {
+  canFastFind(win) {
     if (!win)
       return false;
 
@@ -323,6 +407,40 @@ this.BrowserUtils = {
   },
 
   /**
+   * Sets the --toolbarbutton-button-height CSS property on the closest
+   * toolbar to the provided element. Useful if you need to vertically
+   * center a position:absolute element within a toolbar that uses
+   * -moz-pack-align:stretch, and thus a height which is dependant on
+   * the font-size.
+   *
+   * @param element An element within the toolbar whose height is desired.
+   */
+  async setToolbarButtonHeightProperty(element) {
+    let window = element.ownerGlobal;
+    let dwu = window.getInterface(Ci.nsIDOMWindowUtils);
+    let toolbarItem = element;
+    let urlBarContainer = element.closest("#urlbar-container");
+    if (urlBarContainer) {
+      // The stop-reload-button, which is contained in #urlbar-container,
+      // needs to use #urlbar-container to calculate the bounds.
+      toolbarItem = urlBarContainer;
+    }
+    if (!toolbarItem) {
+      return;
+    }
+    let bounds = dwu.getBoundsWithoutFlushing(toolbarItem);
+    if (!bounds.height) {
+      let document = element.ownerDocument;
+      await BrowserUtils.promiseLayoutFlushed(document, "layout", () => {
+        bounds = dwu.getBoundsWithoutFlushing(toolbarItem);
+      });
+    }
+    if (bounds.height) {
+      toolbarItem.style.setProperty("--toolbarbutton-height", bounds.height + "px");
+    }
+  },
+
+  /**
    * Track whether a toolbar is visible for a given a docShell.
    *
    * @param  {nsIDocShell} docShell  The docShell instance that a toolbar should
@@ -359,7 +477,7 @@ this.BrowserUtils = {
       .getInterface(Ci.nsIDOMWindow);
   },
 
-  getSelectionDetails: function(topWindow, aCharLen) {
+  getSelectionDetails(topWindow, aCharLen) {
     // selections of more than 150 characters aren't useful
     const kMaxSelectionLen = 150;
     const charLen = Math.min(aCharLen || kMaxSelectionLen, kMaxSelectionLen);
@@ -370,11 +488,24 @@ this.BrowserUtils = {
 
     let selection = focusedWindow.getSelection();
     let selectionStr = selection.toString();
-
-    let collapsed = selection.isCollapsed;
+    let fullText;
 
     let url;
     let linkText;
+
+    // try getting a selected text in text input.
+    if (!selectionStr && focusedElement instanceof Ci.nsIDOMNSEditableElement) {
+      // Don't get the selection for password fields. See bug 565717.
+      if (ChromeUtils.getClassName(focusedElement) === "HTMLTextAreaElement" ||
+          (focusedElement instanceof Ci.nsIDOMHTMLInputElement &&
+           focusedElement.mozIsTextField(true))) {
+        selection = focusedElement.editor.selection;
+        selectionStr = selection.toString();
+      }
+    }
+
+    let collapsed = selection.isCollapsed;
+
     if (selectionStr) {
       // Have some text, let's figure out if it looks like a URL that isn't
       // actually a link.
@@ -383,9 +514,8 @@ this.BrowserUtils = {
         try {
           url = this.makeURI(linkText);
         } catch (ex) {}
-      }
-      // Check if this could be a valid url, just missing the protocol.
-      else if (/^(?:[a-z\d-]+\.)+[a-z]+$/i.test(linkText)) {
+      } else if (/^(?:[a-z\d-]+\.)+[a-z]+$/i.test(linkText)) {
+        // Check if this could be a valid url, just missing the protocol.
         // Now let's see if this is an intentional link selection. Our guess is
         // based on whether the selection begins/ends with whitespace or is
         // preceded/followed by a non-word character.
@@ -419,26 +549,18 @@ this.BrowserUtils = {
         }
 
         if (delimitedAtStart && delimitedAtEnd) {
-          let uriFixup = Cc["@mozilla.org/docshell/urifixup;1"]
-                           .getService(Ci.nsIURIFixup);
           try {
-            url = uriFixup.createFixupURI(linkText, uriFixup.FIXUP_FLAG_NONE);
+            url = Services.uriFixup.createFixupURI(linkText, Services.uriFixup.FIXUP_FLAG_NONE);
           } catch (ex) {}
         }
       }
     }
 
-    // try getting a selected text in text input.
-    if (!selectionStr && focusedElement instanceof Ci.nsIDOMNSEditableElement) {
-      // Don't get the selection for password fields. See bug 565717.
-      if (focusedElement instanceof Ci.nsIDOMHTMLTextAreaElement ||
-          (focusedElement instanceof Ci.nsIDOMHTMLInputElement &&
-           focusedElement.mozIsTextField(true))) {
-        selectionStr = focusedElement.editor.selection.toString();
-      }
-    }
-
     if (selectionStr) {
+      // Pass up to 16K through unmolested.  If an add-on needs more, they will
+      // have to use a content script.
+      fullText = selectionStr.substr(0, 16384);
+
       if (selectionStr.length > charLen) {
         // only use the first charLen important chars. see bug 221361
         var pattern = new RegExp("^(?:\\s*.){0," + charLen + "}");
@@ -457,7 +579,7 @@ this.BrowserUtils = {
       url = null;
     }
 
-    return { text: selectionStr, docSelectionIsCollapsed: collapsed,
+    return { text: selectionStr, docSelectionIsCollapsed: collapsed, fullText,
              linkURL: url ? url.spec : null, linkText: url ? linkText : "" };
   },
 
@@ -475,5 +597,196 @@ this.BrowserUtils = {
     }
 
     return true;
+  },
+
+  /**
+   * Replaces %s or %S in the provided url or postData with the given parameter,
+   * acccording to the best charset for the given url.
+   *
+   * @return [url, postData]
+   * @throws if nor url nor postData accept a param, but a param was provided.
+   */
+  async parseUrlAndPostData(url, postData, param) {
+    let hasGETParam = /%s/i.test(url);
+    let decodedPostData = postData ? unescape(postData) : "";
+    let hasPOSTParam = /%s/i.test(decodedPostData);
+
+    if (!hasGETParam && !hasPOSTParam) {
+      if (param) {
+        // If nor the url, nor postData contain parameters, but a parameter was
+        // provided, return the original input.
+        throw new Error("A param was provided but there's nothing to bind it to");
+      }
+      return [url, postData];
+    }
+
+    let charset = "";
+    const re = /^(.*)\&mozcharset=([a-zA-Z][_\-a-zA-Z0-9]+)\s*$/;
+    let matches = url.match(re);
+    if (matches) {
+      [, url, charset] = matches;
+    } else {
+      // Try to fetch a charset from History.
+      try {
+        // Will return an empty string if character-set is not found.
+        charset = await PlacesUtils.getCharsetForURI(this.makeURI(url));
+      } catch (ex) {
+        // makeURI() throws if url is invalid.
+        Cu.reportError(ex);
+      }
+    }
+
+    // encodeURIComponent produces UTF-8, and cannot be used for other charsets.
+    // escape() works in those cases, but it doesn't uri-encode +, @, and /.
+    // Therefore we need to manually replace these ASCII characters by their
+    // encodeURIComponent result, to match the behavior of nsEscape() with
+    // url_XPAlphas.
+    let encodedParam = "";
+    if (charset && charset != "UTF-8") {
+      try {
+        let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
+                          .createInstance(Ci.nsIScriptableUnicodeConverter);
+        converter.charset = charset;
+        encodedParam = converter.ConvertFromUnicode(param) + converter.Finish();
+      } catch (ex) {
+        encodedParam = param;
+      }
+      encodedParam = escape(encodedParam).replace(/[+@\/]+/g, encodeURIComponent);
+    } else {
+      // Default charset is UTF-8
+      encodedParam = encodeURIComponent(param);
+    }
+
+    url = url.replace(/%s/g, encodedParam).replace(/%S/g, param);
+    if (hasPOSTParam) {
+      postData = decodedPostData.replace(/%s/g, encodedParam)
+                                .replace(/%S/g, param);
+    }
+    return [url, postData];
+  },
+
+  /**
+   * Calls the given function when the given document has just reflowed,
+   * and returns a promise which resolves to its return value after it
+   * has been called.
+   *
+   * The function *must not trigger any reflows*, or make any changes
+   * which would require a layout flush.
+   *
+   * @param {Document} doc
+   * @param {function} callback
+   * @returns {Promise}
+   */
+  promiseReflowed(doc, callback) {
+    let observer = reflowObservers.get(doc);
+    if (!observer) {
+      observer = new ReflowObserver(doc);
+      reflowObservers.set(doc, observer);
+    }
+
+    return new Promise((resolve, reject) => {
+      observer.callbacks.push(() => {
+        try {
+          resolve(callback());
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+  },
+
+  /**
+   * Calls the given function as soon as a layout flush of the given
+   * type is not necessary, and returns a promise which resolves to the
+   * callback's return value after it executes.
+   *
+   * The function *must not trigger any reflows*, or make any changes
+   * which would require a layout flush.
+   *
+   * @param {Document} doc
+   * @param {string} flushType
+   *        The flush type required. Must be one of:
+   *
+   *          - "style"
+   *          - "layout"
+   *          - "display"
+   * @param {function} callback
+   * @returns {Promise}
+   */
+  async promiseLayoutFlushed(doc, flushType, callback) {
+    let utils = doc.defaultView.QueryInterface(Ci.nsIInterfaceRequestor)
+                   .getInterface(Ci.nsIDOMWindowUtils);
+
+    if (!utils.needsFlush(FLUSH_TYPES[flushType])) {
+      return callback();
+    }
+
+    return this.promiseReflowed(doc, callback);
+  },
+
+  /**
+   * Generate a document fragment for a localized string that has DOM
+   * node replacements. This avoids using getFormattedString followed
+   * by assigning to innerHTML. Fluent can probably replace this when
+   * it is in use everywhere.
+   *
+   * @param {Document} doc
+   * @param {String}   msg
+   *                   The string to put replacements in. Fetch from
+   *                   a stringbundle using getString or GetStringFromName,
+   *                   or even an inserted dtd string.
+   * @param {Node|String} nodesOrStrings
+   *                   The replacement items. Can be a mix of Nodes
+   *                   and Strings. However, for correct behaviour, the
+   *                   number of items provided needs to exactly match
+   *                   the number of replacement strings in the l10n string.
+   * @returns {DocumentFragment}
+   *                   A document fragment. In the trivial case (no
+   *                   replacements), this will simply be a fragment with 1
+   *                   child, a text node containing the localized string.
+   */
+  getLocalizedFragment(doc, msg, ...nodesOrStrings) {
+    // Ensure replacement points are indexed:
+    for (let i = 1; i <= nodesOrStrings.length; i++) {
+      if (!msg.includes("%" + i + "$S")) {
+        msg = msg.replace(/%S/, "%" + i + "$S");
+      }
+    }
+    let numberOfInsertionPoints = msg.match(/%\d+\$S/g).length;
+    if (numberOfInsertionPoints != nodesOrStrings.length) {
+      Cu.reportError(`Message has ${numberOfInsertionPoints} insertion points, ` +
+                     `but got ${nodesOrStrings.length} replacement parameters!`);
+    }
+
+    let fragment = doc.createDocumentFragment();
+    let parts = [msg];
+    let insertionPoint = 1;
+    for (let replacement of nodesOrStrings) {
+      let insertionString = "%" + (insertionPoint++) + "$S";
+      let partIndex = parts.findIndex(part => typeof part == "string" && part.includes(insertionString));
+      if (partIndex == -1) {
+        fragment.appendChild(doc.createTextNode(msg));
+        return fragment;
+      }
+
+      if (typeof replacement == "string") {
+        parts[partIndex] = parts[partIndex].replace(insertionString, replacement);
+      } else {
+        let [firstBit, lastBit] = parts[partIndex].split(insertionString);
+        parts.splice(partIndex, 1, firstBit, replacement, lastBit);
+      }
+    }
+
+    // Put everything in a document fragment:
+    for (let part of parts) {
+      if (typeof part == "string") {
+        if (part) {
+          fragment.appendChild(doc.createTextNode(part));
+        }
+      } else {
+        fragment.appendChild(part);
+      }
+    }
+    return fragment;
   },
 };

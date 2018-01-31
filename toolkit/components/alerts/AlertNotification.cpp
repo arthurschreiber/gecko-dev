@@ -34,7 +34,7 @@ AlertNotification::Init(const nsAString& aName, const nsAString& aImageURL,
                         bool aTextClickable, const nsAString& aCookie,
                         const nsAString& aDir, const nsAString& aLang,
                         const nsAString& aData, nsIPrincipal* aPrincipal,
-                        bool aInPrivateBrowsing)
+                        bool aInPrivateBrowsing, bool aRequireInteraction)
 {
   mName = aName;
   mImageURL = aImageURL;
@@ -47,6 +47,7 @@ AlertNotification::Init(const nsAString& aName, const nsAString& aImageURL,
   mData = aData;
   mPrincipal = aPrincipal;
   mInPrivateBrowsing = aInPrivateBrowsing;
+  mRequireInteraction = aRequireInteraction;
   return NS_OK;
 }
 
@@ -103,6 +104,13 @@ NS_IMETHODIMP
 AlertNotification::GetLang(nsAString& aLang)
 {
   aLang = mLang;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+AlertNotification::GetRequireInteraction(bool* aRequireInteraction)
+{
+  *aRequireInteraction = mRequireInteraction;
   return NS_OK;
 }
 
@@ -187,6 +195,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(AlertImageRequest)
   NS_INTERFACE_MAP_ENTRY(imgINotificationObserver)
   NS_INTERFACE_MAP_ENTRY(nsICancelable)
   NS_INTERFACE_MAP_ENTRY(nsITimerCallback)
+  NS_INTERFACE_MAP_ENTRY(nsINamed)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, imgINotificationObserver)
 NS_INTERFACE_MAP_END
 
@@ -262,6 +271,13 @@ AlertImageRequest::Notify(nsITimer* aTimer)
 }
 
 NS_IMETHODIMP
+AlertImageRequest::GetName(nsACString& aName)
+{
+  aName.AssignLiteral("AlertImageRequest");
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 AlertImageRequest::Cancel(nsresult aReason)
 {
   if (mRequest) {
@@ -282,12 +298,9 @@ AlertImageRequest::Start()
 
   nsresult rv;
   if (mTimeout > 0) {
-    mTimer = do_CreateInstance(NS_TIMER_CONTRACTID);
-    if (NS_WARN_IF(!mTimer)) {
-      return NotifyMissing();
-    }
-    rv = mTimer->InitWithCallback(this, mTimeout,
-                                  nsITimer::TYPE_ONE_SHOT);
+    rv = NS_NewTimerWithCallback(getter_AddRefs(mTimer),
+                                 this, mTimeout,
+                                 nsITimer::TYPE_ONE_SHOT);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return NotifyMissing();
     }

@@ -16,11 +16,6 @@ UNIFIED_SOURCES += [
     'nsLayoutStatics.cpp',
 ]
 
-if CONFIG['MOZ_NFC']:
-    LOCAL_INCLUDES += [
-        '/dom/nfc'
-    ]
-
 include('/ipc/chromium/chromium-config.mozbuild')
 
 LOCAL_INCLUDES += [
@@ -29,6 +24,7 @@ LOCAL_INCLUDES += [
     '../generic',
     '../inspector',
     '../mathml',
+    '../painting',
     '../style',
     '../tables',
     '../xul',
@@ -36,29 +32,24 @@ LOCAL_INCLUDES += [
     '/docshell/base',
     '/dom/audiochannel',
     '/dom/base',
-    '/dom/camera',
+    '/dom/bindings',
     '/dom/canvas',
     '/dom/filesystem',
     '/dom/geolocation',
     '/dom/html',
-    '/dom/json',
     '/dom/jsurl',
     '/dom/media',
     '/dom/offline',
-    '/dom/speakermanager',
     '/dom/storage',
     '/dom/svg',
-    '/dom/telephony',
     '/dom/xbl',
     '/dom/xslt/base',
     '/dom/xslt/xml',
     '/dom/xslt/xpath',
     '/dom/xslt/xslt',
     '/dom/xul',
-    '/dom/xul/templates',
     '/editor/composer',
     '/editor/txmgr',
-    '/editor/txtsvc',
     '/extensions/cookie',
     '/js/xpconnect/loader',
     '/js/xpconnect/src',
@@ -80,31 +71,11 @@ elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
         '/dom/system',
         '/dom/system/android',
     ]
-elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-    LOCAL_INCLUDES += [
-        '/dom/system/gonk',
-    ]
-
-if CONFIG['MOZ_B2G_FM']:
-    LOCAL_INCLUDES += [
-        '/dom/fmradio',
-    ]
-
-if CONFIG['MOZ_B2G_BT']:
-    LOCAL_INCLUDES += [
-        '/dom/bluetooth/common',
-    ]
 
 if CONFIG['MOZ_WEBSPEECH']:
     LOCAL_INCLUDES += [
         '/dom/media/webspeech/recognition',
         '/dom/media/webspeech/synth',
-    ]
-
-if CONFIG['MOZ_WEBSPEECH_POCKETSPHINX']:
-    LOCAL_INCLUDES += [
-        '/media/pocketsphinx',
-        '/media/sphinxbase',
     ]
 
 if CONFIG['MOZ_SECUREELEMENT']:
@@ -114,5 +85,5 @@ if CONFIG['MOZ_SECUREELEMENT']:
 
 FINAL_LIBRARY = 'xul'
 
-if CONFIG['GNU_CXX']:
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

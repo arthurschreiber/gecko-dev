@@ -1,5 +1,5 @@
-Components.utils.import('resource://gre/modules/XPCOMUtils.jsm');
-Components.utils.import('resource://gre/modules/LoadContextInfo.jsm');
+ChromeUtils.import('resource://gre/modules/XPCOMUtils.jsm');
+ChromeUtils.import('resource://gre/modules/LoadContextInfo.jsm');
 
 var _CSvc;
 function get_cache_service() {
@@ -39,7 +39,7 @@ function createURI(urispec)
 {
   var ioServ = Components.classes["@mozilla.org/network/io-service;1"]
                          .getService(Components.interfaces.nsIIOService);
-  return ioServ.newURI(urispec, null, null);
+  return ioServ.newURI(urispec);
 }
 
 function getCacheStorage(where, lci, appcache)
@@ -97,11 +97,11 @@ function asyncOpenCacheEntry(key, where, flags, lci, callback, appcache)
 
 function syncWithCacheIOThread(callback, force)
 {
-  if (!newCacheBackEndUsed() || force) {
+  if (force) {
     asyncOpenCacheEntry(
       "http://nonexistententry/", "disk", Ci.nsICacheStorage.OPEN_READONLY, null,
       function(status, entry) {
-        do_check_eq(status, Components.results.NS_ERROR_CACHE_KEY_NOT_FOUND);
+        Assert.equal(status, Components.results.NS_ERROR_CACHE_KEY_NOT_FOUND);
         callback();
       });
   }
@@ -119,7 +119,7 @@ function get_device_entry_count(where, lci, continuation) {
 
   var visitor = {
     onCacheStorageInfo: function (entryCount, consumption) {
-      do_execute_soon(function() {
+      executeSoon(function() {
         continuation(entryCount, consumption);
       });
     },
@@ -135,12 +135,12 @@ function asyncCheckCacheEntryPresence(key, where, shouldExist, continuation, app
     function(status, entry) {
       if (shouldExist) {
         dump("TEST-INFO | checking cache key " + key + " exists @ " + where);
-        do_check_eq(status, Cr.NS_OK);
-        do_check_true(!!entry);
+        Assert.equal(status, Cr.NS_OK);
+        Assert.ok(!!entry);
       } else {
         dump("TEST-INFO | checking cache key " + key + " doesn't exist @ " + where);
-        do_check_eq(status, Cr.NS_ERROR_CACHE_KEY_NOT_FOUND);
-        do_check_null(entry);
+        Assert.equal(status, Cr.NS_ERROR_CACHE_KEY_NOT_FOUND);
+        Assert.equal(null, entry);
       }
       continuation();
     }, appCache);

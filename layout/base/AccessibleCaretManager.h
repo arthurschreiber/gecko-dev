@@ -8,16 +8,17 @@
 #define AccessibleCaretManager_h
 
 #include "AccessibleCaret.h"
+
+#include "mozilla/dom/CaretStateChangedEvent.h"
+#include "mozilla/EnumSet.h"
+#include "mozilla/EventForwards.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
 #include "nsCoord.h"
+#include "nsIDOMMouseEvent.h"
 #include "nsIFrame.h"
 #include "nsISelectionListener.h"
-#include "mozilla/RefPtr.h"
-#include "nsWeakReference.h"
-#include "mozilla/dom/CaretStateChangedEvent.h"
-#include "mozilla/EventForwards.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/WeakPtr.h"
 
 class nsFrameSelection;
 class nsIContent;
@@ -102,6 +103,10 @@ public:
   // was reconstructed, resulting in the content elements getting cloned.
   virtual void OnFrameReconstruction();
 
+  // Update the manager with the last input source that was observed. This
+  // is used in part to determine if the carets should be shown or hidden.
+  void SetLastInputSource(uint16_t aInputSource);
+
 protected:
   // This enum representing the number of AccessibleCarets on the screen.
   enum class CaretMode : uint8_t {
@@ -123,10 +128,16 @@ protected:
     Default,
 
     // Update everything while respecting the old appearance. For example, if
-    // the caret in cursor mode is hidden due to timeout, do not change its
+    // the caret in cursor mode is hidden due to blur, do not change its
     // appearance to Normal.
-    RespectOldAppearance
+    RespectOldAppearance,
+
+    // No CaretStateChangedEvent will be dispatched in the end of
+    // UpdateCarets().
+    DispatchNoEvent,
   };
+
+  using UpdateCaretsHintSet = mozilla::EnumSet<UpdateCaretsHint>;
 
   friend std::ostream& operator<<(std::ostream& aStream,
                                   const UpdateCaretsHint& aResult);
@@ -134,13 +145,13 @@ protected:
   // Update carets based on current selection status. This function will flush
   // layout, so caller must ensure the PresShell is still valid after calling
   // this method.
-  void UpdateCarets(UpdateCaretsHint aHint = UpdateCaretsHint::Default);
+  void UpdateCarets(const UpdateCaretsHintSet& aHints = UpdateCaretsHint::Default);
 
   // Force hiding all carets regardless of the current selection status.
   void HideCarets();
 
-  void UpdateCaretsForCursorMode(UpdateCaretsHint aHint);
-  void UpdateCaretsForSelectionMode(UpdateCaretsHint aHint);
+  void UpdateCaretsForCursorMode(const UpdateCaretsHintSet& aHints);
+  void UpdateCaretsForSelectionMode(const UpdateCaretsHintSet& aHints);
 
   // Provide haptic / touch feedback, primarily for select on longpress.
   void ProvideHapticFeedback();
@@ -156,8 +167,13 @@ protected:
   nsresult SelectWord(nsIFrame* aFrame, const nsPoint& aPoint) const;
   void SetSelectionDragState(bool aState) const;
 
-  // Called to extend a selection if possible that it's a phone number.
+  // Return true if the candidate string is a phone number.
+  bool IsPhoneNumber(nsAString& aCandidate) const;
+
+  // Extend the current selection forwards and backwards if it's already a
+  // phone number.
   void SelectMoreIfPhoneNumber() const;
+
   // Extend the current phone number selection in the requested direction.
   void ExtendPhoneNumberSelection(const nsAString& aDirection) const;
 
@@ -165,23 +181,36 @@ protected:
 
   // If aDirection is eDirNext, get the frame for the range start in the first
   // range from the current selection, and return the offset into that frame as
-  // well as the range start node and the node offset. Otherwise, get the frame
-  // and offset for the range end in the last range instead.
+  // well as the range start content and the content offset. Otherwise, get the
+  // frame and the offset for the range end in the last range instead.
   nsIFrame* GetFrameForFirstRangeStartOrLastRangeEnd(
-    nsDirection aDirection, int32_t* aOutOffset, nsINode** aOutNode = nullptr,
-    int32_t* aOutNodeOffset = nullptr) const;
+    nsDirection aDirection,
+    int32_t* aOutOffset,
+    nsIContent** aOutContent = nullptr,
+    int32_t* aOutContentOffset = nullptr) const;
 
   nsresult DragCaretInternal(const nsPoint& aPoint);
   nsPoint AdjustDragBoundary(const nsPoint& aPoint) const;
+
+  // Start the selection scroll timer if the caret is being dragged out of
+  // the scroll port.
+  void StartSelectionAutoScrollTimer(const nsPoint& aPoint) const;
+  void StopSelectionAutoScrollTimer() const;
+
   void ClearMaintainedSelection() const;
 
-  // Caller is responsible to use IsTerminated() to check whether PresShell is
-  // still valid.
-  void FlushLayout() const;
+  // This method could kill the shell, so callers to methods that call
+  // FlushLayout should ensure the event hub that owns us is still alive.
+  //
+  // See the mRefCnt assertions in AccessibleCaretEventHub.
+  //
+  // Returns whether mPresShell we're holding is still valid.
+  MOZ_MUST_USE bool FlushLayout();
 
   dom::Element* GetEditingHostForFrame(nsIFrame* aFrame) const;
   dom::Selection* GetSelection() const;
   already_AddRefed<nsFrameSelection> GetFrameSelection() const;
+  nsAutoString StringifiedSelection() const;
 
   // Get the union of all the child frame scrollable overflow rects for aFrame,
   // which is used as a helper function to restrict the area where the caret can
@@ -201,12 +230,6 @@ protected:
   // @return true if the aOffsets is suitable for changing the selection.
   bool RestrictCaretDraggingOffsets(nsIFrame::ContentOffsets& aOffsets);
 
-  // Timeout in milliseconds to hide the AccessibleCaret under cursor mode while
-  // no one touches it.
-  uint32_t CaretTimeoutMs() const;
-  void LaunchCaretTimeoutTimer();
-  void CancelCaretTimeoutTimer();
-
   // ---------------------------------------------------------------------------
   // The following functions are made virtual for stubbing or mocking in gtest.
   //
@@ -221,7 +244,8 @@ protected:
                                    nsIFrame* aEndFrame) const;
 
   // Check if the two carets is overlapping to become tilt.
-  virtual void UpdateCaretsForOverlappingTilt();
+  // @return true if the two carets become tilt; false, otherwise.
+  virtual bool UpdateCaretsForOverlappingTilt();
 
   // Make the two carets always tilt.
   virtual void UpdateCaretsForAlwaysTilt(nsIFrame* aStartFrame,
@@ -237,7 +261,7 @@ protected:
 
   // This function will flush layout, so caller must ensure the PresShell is
   // still valid after calling this method.
-  virtual void DispatchCaretStateChangedEvent(dom::CaretChangedReason aReason) const;
+  virtual void DispatchCaretStateChangedEvent(dom::CaretChangedReason aReason);
 
   // ---------------------------------------------------------------------------
   // Member variables
@@ -262,10 +286,6 @@ protected:
   // The caret being pressed or dragged.
   AccessibleCaret* mActiveCaret = nullptr;
 
-  // The timer for hiding the caret in cursor mode after timeout behind the
-  // preference "layout.accessiblecaret.timeout_ms".
-  nsCOMPtr<nsITimer> mCaretTimeoutTimer;
-
   // The caret mode since last update carets.
   CaretMode mLastUpdateCaretMode = CaretMode::None;
 
@@ -275,6 +295,18 @@ protected:
                                  AccessibleCaret::Appearance::None;
   AccessibleCaret::Appearance mSecondCaretAppearanceOnScrollStart =
                                  AccessibleCaret::Appearance::None;
+
+  // The last input source that the event hub saw. We use this to decide whether
+  // or not show the carets when the selection is updated, as we want to hide
+  // the carets for mouse-triggered selection changes but show them for other
+  // input types such as touch.
+  uint16_t mLastInputSource = nsIDOMMouseEvent::MOZ_SOURCE_UNKNOWN;
+
+  // Set to true in OnScrollStart() and set to false in OnScrollEnd().
+  bool mIsScrollStarted = false;
+
+  // Whether we're flushing layout, used for sanity-checking.
+  bool mFlushingLayout = false;
 
   static const int32_t kAutoScrollTimerDelay = 30;
 
@@ -319,6 +351,10 @@ protected:
 
   // AccessibleCaret pref for haptic feedback behaviour on longPress.
   static bool sHapticFeedback;
+
+  // Preference to keep carets hidden when the selection is being manipulated
+  // by mouse input (as opposed to touch/pen/etc.).
+  static bool sHideCaretsForMouseInput;
 };
 
 std::ostream& operator<<(std::ostream& aStream,

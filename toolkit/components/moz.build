@@ -4,6 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('**'):
+    BUG_COMPONENT = ('Toolkit', 'General')
+
 # These component dirs are built for all apps (including suite)
 if CONFIG['MOZ_ENABLE_XREMOTE']:
     DIRS += ['remote']
@@ -17,25 +20,28 @@ DIRS += [
     'alerts',
     'apppicker',
     'asyncshutdown',
+    'backgroundhangmonitor',
+    'browser',
+    'cloudstorage',
     'commandlines',
     'contentprefs',
     'contextualidentity',
-    'cookie',
+    'crashes',
     'crashmonitor',
     'diskspacewatcher',
     'downloads',
+    'enterprisepolicies',
     'extensions',
-    'exthelper',
-    'filepicker',
     'filewatcher',
     'finalizationwitness',
-    'formautofill',
     'find',
-    'gfx',
     'jsdownloads',
+    'jsoncpp/src/lib_json',
     'lz4',
     'mediasniffer',
     'microformats',
+    'mozintl',
+    'mozprotocol',
     'osfile',
     'parentalcontrols',
     'passwordmgr',
@@ -50,8 +56,9 @@ DIRS += [
     'reader',
     'remotebrowserutils',
     'reflect',
+    'reputationservice',
+    'resistfingerprinting',
     'securityreporter',
-    'sqlite',
     'startup',
     'statusfilter',
     'telemetry',
@@ -63,21 +70,18 @@ DIRS += [
     'url-classifier',
     'urlformatter',
     'viewconfig',
+    'viewsource',
+    'windowcreator',
+    'windowwatcher',
     'workerloader',
     'xulstore'
 ]
 
-if CONFIG['ENABLE_INTL_API']:
-    DIRS += ['mozintl']
-
 if CONFIG['MOZ_BUILD_APP'] != 'mobile/android':
-    DIRS += ['narrate', 'viewsource'];
+    DIRS += ['narrate'];
 
     if CONFIG['NS_PRINTING']:
         DIRS += ['printing']
-
-if CONFIG['MOZ_CRASHREPORTER']:
-    DIRS += ['crashes']
 
 if CONFIG['BUILD_CTYPES']:
     DIRS += ['ctypes']
@@ -86,7 +90,7 @@ if CONFIG['MOZ_FEEDS']:
     DIRS += ['feeds']
 
 if CONFIG['MOZ_XUL']:
-    DIRS += ['autocomplete', 'satchel']
+    DIRS += ['autocomplete', 'printingui', 'satchel']
 
 if CONFIG['MOZ_TOOLKIT_SEARCH']:
     DIRS += ['search']
@@ -98,8 +102,14 @@ if CONFIG['OS_TARGET'] != 'Android':
 
 DIRS += ['build']
 
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
+    DIRS += ['gfx']
+
 if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'android':
     EXTRA_COMPONENTS += [
         'nsDefaultCLH.js',
         'nsDefaultCLH.manifest',
     ]
+
+if CONFIG['NIGHTLY_BUILD'] and CONFIG['MOZ_BUILD_APP'] == 'browser':
+    DIRS += ['payments']

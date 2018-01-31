@@ -9,7 +9,6 @@
 #include "nsPISocketTransportService.h"
 #include "nsIThreadInternal.h"
 #include "nsIRunnable.h"
-#include "nsEventQueue.h"
 #include "nsCOMPtr.h"
 #include "prinrval.h"
 #include "mozilla/Logging.h"
@@ -93,11 +92,10 @@ public:
     NS_DECL_NSPISOCKETTRANSPORTSERVICE
     NS_DECL_NSISOCKETTRANSPORTSERVICE
     NS_DECL_NSIROUTEDSOCKETTRANSPORTSERVICE
-    NS_DECL_NSIEVENTTARGET
+    NS_DECL_NSIEVENTTARGET_FULL
     NS_DECL_NSITHREADOBSERVER
     NS_DECL_NSIRUNNABLE
-    NS_DECL_NSIOBSERVER 
-    using nsIEventTarget::Dispatch;
+    NS_DECL_NSIOBSERVER
 
     nsSocketTransportService();
 
@@ -121,6 +119,7 @@ public:
     bool IsTelemetryEnabledAndNotSleepPhase() { return mTelemetryEnabledPref &&
                                                        !mSleepPhase; }
     PRIntervalTime MaxTimeForPrClosePref() {return mMaxTimeForPrClosePref; }
+
 protected:
 
     virtual ~nsSocketTransportService();
@@ -151,6 +150,8 @@ private:
 
     // Detaches all sockets.
     void Reset(bool aGuardLocals);
+
+    nsresult ShutdownThread();
 
     //-------------------------------------------------------------------------
     // socket lists (socket thread only)
@@ -260,10 +261,19 @@ private:
                                int32_t index);
 
     void MarkTheLastElementOfPendingQueue();
+
+#if defined(XP_WIN)
+    Atomic<bool> mPolling;
+    nsCOMPtr<nsITimer> mPollRepairTimer;
+    void StartPollWatchdog();
+    void DoPollRepair();
+    void StartPolling();
+    void EndPolling();
+#endif
 };
 
 extern nsSocketTransportService *gSocketTransportService;
-extern Atomic<PRThread*, Relaxed> gSocketThread;
+bool OnSocketThread();
 
 } // namespace net
 } // namespace mozilla

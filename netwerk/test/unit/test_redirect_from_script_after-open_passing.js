@@ -23,8 +23,8 @@
  *
  */
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 // the topic we observe to use the API.  http-on-opening-request might also
 // work for some purposes.
@@ -153,7 +153,7 @@ Redirector.prototype = {
       if (channel.URI.spec == bait4URI) target = baitURI;
        // if we have a target, redirect there
       if (target) {
-        var tURI = ioservice.newURI(target, null, null);
+        var tURI = ioservice.newURI(target);
         try {
           channel.redirectTo(tURI);
         } catch (e) {
@@ -176,8 +176,8 @@ function makeAsyncTest(uri, headerValue, nextTask)
       do_throw(req + " is not an nsIHttpChannel, catastrophe imminent!");
 
     var httpChannel = req.QueryInterface(Ci.nsIHttpChannel);
-    do_check_eq(httpChannel.getResponseHeader(testHeaderName), headerValue);
-    do_check_eq(buffer, redirectedText);
+    Assert.equal(httpChannel.getResponseHeader(testHeaderName), headerValue);
+    Assert.equal(buffer, redirectedText);
     nextTask();
   };
 
@@ -214,8 +214,8 @@ function runXHRTest(uri, headerValue)
   var req = xhr.createInstance(Ci.nsIXMLHttpRequest);
   req.open("GET", uri, false);
   req.send();
-  do_check_eq(req.getResponseHeader(testHeaderName), headerValue);
-  do_check_eq(req.response, redirectedText);
+  Assert.equal(req.getResponseHeader(testHeaderName), headerValue);
+  Assert.equal(req.response, redirectedText);
 }
 
 function done()

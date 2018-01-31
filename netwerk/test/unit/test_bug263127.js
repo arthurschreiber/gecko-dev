@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var server;
 const BUGID = "263127";
@@ -27,7 +27,7 @@ var listener = {
       do_throw(e);
     }
 
-    do_check_false(file.exists());
+    Assert.ok(!file.exists());
 
     do_test_finished();
   }

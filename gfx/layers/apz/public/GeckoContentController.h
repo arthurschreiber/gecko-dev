@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=4 ts=8 et tw=80 : */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +8,10 @@
 #define mozilla_layers_GeckoContentController_h
 
 #include "FrameMetrics.h"               // for FrameMetrics, etc
+#include "InputData.h"                  // for PinchGestureInput
 #include "Units.h"                      // for CSSPoint, CSSRect, etc
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT_HELPER2
+#include "mozilla/DefineEnum.h"         // for MOZ_DEFINE_ENUM
 #include "mozilla/EventForwards.h"      // for Modifiers
 #include "nsISupportsImpl.h"
 
@@ -42,15 +44,20 @@ public:
    * all eLongTap notifications will be followed by an eLongTapUp (for instance,
    * if the user moves their finger after triggering the long-tap but before
    * lifting it).
+   * The difference between eDoubleTap and eSecondTap is subtle - the eDoubleTap
+   * is for an actual double-tap "gesture" while eSecondTap is for the same user
+   * input but where a double-tap gesture is not allowed. This is used to fire
+   * a click event with detail=2 to web content (similar to what a mouse double-
+   * click would do).
    */
-  enum class TapType {
-    eSingleTap,
-    eDoubleTap,
-    eLongTap,
-    eLongTapUp,
-
-    eSentinel,
-  };
+  MOZ_DEFINE_ENUM_CLASS_AT_CLASS_SCOPE(
+    TapType, (
+      eSingleTap,
+      eDoubleTap,
+      eSecondTap,
+      eLongTap,
+      eLongTapUp
+  ));
 
   /**
    * Requests handling of a tap event. |aPoint| is in LD pixels, relative to the
@@ -61,6 +68,27 @@ public:
                          Modifiers aModifiers,
                          const ScrollableLayerGuid& aGuid,
                          uint64_t aInputBlockId) = 0;
+
+  /**
+   * When the apz.allow_zooming pref is set to false, the APZ will not
+   * translate pinch gestures to actual zooming. Instead, it will call this
+   * method to notify gecko of the pinch gesture, and allow it to deal with it
+   * however it wishes. Note that this function is not called if the pinch is
+   * prevented by content calling preventDefault() on the touch events, or via
+   * use of the touch-action property.
+   * @param aType One of PINCHGESTURE_START, PINCHGESTURE_SCALE, or
+   *        PINCHGESTURE_END, indicating the phase of the pinch.
+   * @param aGuid The guid of the APZ that is detecting the pinch. This is
+   *        generally the root APZC for the layers id.
+   * @param aSpanChange For the START or END event, this is always 0.
+   *        For a SCALE event, this is the difference in span between the
+   *        previous state and the new state.
+   * @param aModifiers The keyboard modifiers depressed during the pinch.
+   */
+  virtual void NotifyPinchGesture(PinchGestureInput::PinchGestureType aType,
+                                  const ScrollableLayerGuid& aGuid,
+                                  LayoutDeviceCoord aSpanChange,
+                                  Modifiers aModifiers) = 0;
 
   /**
    * Schedules a runnable to run on the controller/UI thread at some time
@@ -79,51 +107,32 @@ public:
    */
   virtual void DispatchToRepaintThread(already_AddRefed<Runnable> aTask) = 0;
 
-  /**
-   * APZ uses |FrameMetrics::mCompositionBounds| for hit testing. Sometimes,
-   * widget code has knowledge of a touch-sensitive region that should
-   * additionally constrain hit testing for all frames associated with the
-   * controller. This method allows APZ to query the controller for such a
-   * region. A return value of true indicates that the controller has such a
-   * region, and it is returned in |aOutRegion|.
-   * This method needs to be called on the main thread.
-   * TODO: once bug 928833 is implemented, this should be removed, as
-   * APZ can then get the correct touch-sensitive region for each frame
-   * directly from the layer.
-   */
-  virtual bool GetTouchSensitiveRegion(CSSRect* aOutRegion)
-  {
-    return false;
-  }
+  MOZ_DEFINE_ENUM_CLASS_AT_CLASS_SCOPE(
+    APZStateChange, (
+      /**
+       * APZ started modifying the view (including panning, zooming, and fling).
+       */
+      eTransformBegin,
+      /**
+       * APZ finished modifying the view.
+       */
+      eTransformEnd,
+      /**
+       * APZ started a touch.
+       * |aArg| is 1 if touch can be a pan, 0 otherwise.
+       */
+      eStartTouch,
+      /**
+       * APZ started a pan.
+       */
+      eStartPanning,
+      /**
+       * APZ finished processing a touch.
+       * |aArg| is 1 if touch was a click, 0 otherwise.
+       */
+      eEndTouch
+  ));
 
-  enum class APZStateChange {
-    /**
-     * APZ started modifying the view (including panning, zooming, and fling).
-     */
-    eTransformBegin,
-    /**
-     * APZ finished modifying the view.
-     */
-    eTransformEnd,
-    /**
-     * APZ started a touch.
-     * |aArg| is 1 if touch can be a pan, 0 otherwise.
-     */
-    eStartTouch,
-    /**
-     * APZ started a pan.
-     */
-    eStartPanning,
-    /**
-     * APZ finished processing a touch.
-     * |aArg| is 1 if touch was a click, 0 otherwise.
-     */
-    eEndTouch,
-
-    // Sentinel value for IPC, this must be the last item in the enum and
-    // should not be used as an actual message value.
-    eSentinel
-  };
   /**
    * General notices of APZ state changes for consumers.
    * |aGuid| identifies the APZC originating the state change.
@@ -146,9 +155,13 @@ public:
    */
   virtual void NotifyFlushComplete() = 0;
 
+  virtual void NotifyAsyncScrollbarDragRejected(const FrameMetrics::ViewID& aScrollId) = 0;
+  virtual void NotifyAsyncAutoscrollRejected(const FrameMetrics::ViewID& aScrollId) = 0;
+
+  virtual void CancelAutoscroll(const ScrollableLayerGuid& aGuid) = 0;
+
   virtual void UpdateOverscrollVelocity(float aX, float aY, bool aIsRootContent) {}
   virtual void UpdateOverscrollOffset(float aX, float aY, bool aIsRootContent) {}
-  virtual void SetScrollingRootContent(bool isRootContent) {}
 
   GeckoContentController() {}
 

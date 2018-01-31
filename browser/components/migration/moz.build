@@ -8,6 +8,8 @@ XPCSHELL_TESTS_MANIFESTS += ['tests/unit/xpcshell.ini']
 
 MARIONETTE_UNIT_MANIFESTS += ['tests/marionette/manifest.ini']
 
+BROWSER_CHROME_MANIFESTS += [ 'tests/browser/browser.ini']
+
 JAR_MANIFESTS += ['jar.mn']
 
 XPIDL_SOURCES += [
@@ -28,6 +30,7 @@ EXTRA_PP_COMPONENTS += [
 
 EXTRA_JS_MODULES += [
     'AutoMigrate.jsm',
+    'ChromeMigrationUtils.jsm',
     'MigrationUtils.jsm',
 ]
 

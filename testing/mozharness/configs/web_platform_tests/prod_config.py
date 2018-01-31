@@ -17,8 +17,6 @@ config = {
     ],
 
     "exes": {
-        'python': '/tools/buildbot/bin/python',
-        'virtualenv': ['/tools/buildbot/bin/python', '/tools/misc-python/virtualenv.py'],
         'tooltool.py': "/tools/tooltool.py",
     },
 
@@ -39,7 +37,11 @@ config = {
 
     "download_minidump_stackwalk": True,
 
-    "tooltool_cache": "/builds/tooltool_cache",
+    "download_tooltool": True,
 
+    # this would normally be in "exes", but "exes" is clobbered by remove_executables
+    "geckodriver": "%(abs_test_bin_dir)s/geckodriver",
+
+    "verify_category": "web-platform",
 }
 

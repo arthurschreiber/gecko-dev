@@ -6,8 +6,8 @@
 //       but don't allow it for cross-origin sub-resources
 //   2 - allow the cross-origin authentication as well.
 
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var prefs = Cc["@mozilla.org/preferences-service;1"].
               getService(Ci.nsIPrefBranch);
@@ -72,8 +72,8 @@ AuthPrompt.prototype = {
   },
 
   promptUsernameAndPassword: function(title, text, realm, savePW, user, pw) {
-    do_check_true(this.promptExpected,
-                  "Not expected the authentication prompt.");
+    Assert.ok(this.promptExpected,
+              "Not expected the authentication prompt.");
 
     user.value = this.user;
     pw.value = this.pass;
@@ -113,7 +113,7 @@ Requestor.prototype = {
 function make_uri(url) {
   var ios = Cc["@mozilla.org/network/io-service;1"].
               getService(Ci.nsIIOService);
-  return ios.newURI(url, null, null);
+  return ios.newURI(url);
 }
 
 function makeChan(loadingUrl, url, contentPolicy) {
@@ -156,9 +156,9 @@ Test.prototype = {
         do_throw("Expecting an HTTP channel");
       }
 
-      do_check_eq(request.responseStatus, this._expectedCode);
+      Assert.equal(request.responseStatus, this._expectedCode);
       // The request should be succeeded iff we expect 200
-      do_check_eq(request.requestSucceeded, this._expectedCode == 200);
+      Assert.equal(request.requestSucceeded, this._expectedCode == 200);
 
     } catch (e) {
       do_throw("Unexpected exception: " + e);
@@ -172,7 +172,7 @@ Test.prototype = {
   },
 
   onStopRequest: function(request, ctx, status) {
-    do_check_eq(status, Components.results.NS_ERROR_ABORT);
+    Assert.equal(status, Components.results.NS_ERROR_ABORT);
 
     // Clear the auth cache.
     Components.classes["@mozilla.org/network/http-auth-manager;1"]

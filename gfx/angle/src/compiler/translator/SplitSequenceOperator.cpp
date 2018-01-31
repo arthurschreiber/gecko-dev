@@ -11,8 +11,11 @@
 
 #include "compiler/translator/SplitSequenceOperator.h"
 
-#include "compiler/translator/IntermNode.h"
 #include "compiler/translator/IntermNodePatternMatcher.h"
+#include "compiler/translator/IntermTraverse.h"
+
+namespace sh
+{
 
 namespace
 {
@@ -21,12 +24,13 @@ class SplitSequenceOperatorTraverser : public TLValueTrackingTraverser
 {
   public:
     SplitSequenceOperatorTraverser(unsigned int patternsToSplitMask,
-                                   const TSymbolTable &symbolTable,
+                                   TSymbolTable *symbolTable,
                                    int shaderVersion);
 
+    bool visitUnary(Visit visit, TIntermUnary *node) override;
     bool visitBinary(Visit visit, TIntermBinary *node) override;
     bool visitAggregate(Visit visit, TIntermAggregate *node) override;
-    bool visitSelection(Visit visit, TIntermSelection *node) override;
+    bool visitTernary(Visit visit, TIntermTernary *node) override;
 
     void nextIteration();
     bool foundExpressionToSplit() const { return mFoundExpressionToSplit; }
@@ -41,7 +45,7 @@ class SplitSequenceOperatorTraverser : public TLValueTrackingTraverser
 };
 
 SplitSequenceOperatorTraverser::SplitSequenceOperatorTraverser(unsigned int patternsToSplitMask,
-                                                               const TSymbolTable &symbolTable,
+                                                               TSymbolTable *symbolTable,
                                                                int shaderVersion)
     : TLValueTrackingTraverser(true, false, true, symbolTable, shaderVersion),
       mFoundExpressionToSplit(false),
@@ -54,10 +58,10 @@ void SplitSequenceOperatorTraverser::nextIteration()
 {
     mFoundExpressionToSplit = false;
     mInsideSequenceOperator = 0;
-    nextTemporaryIndex();
+    nextTemporaryId();
 }
 
-bool SplitSequenceOperatorTraverser::visitBinary(Visit visit, TIntermBinary *node)
+bool SplitSequenceOperatorTraverser::visitAggregate(Visit visit, TIntermAggregate *node)
 {
     if (mFoundExpressionToSplit)
         return false;
@@ -65,15 +69,29 @@ bool SplitSequenceOperatorTraverser::visitBinary(Visit visit, TIntermBinary *nod
     if (mInsideSequenceOperator > 0 && visit == PreVisit)
     {
         // Detect expressions that need to be simplified
-        mFoundExpressionToSplit =
-            mPatternToSplitMatcher.match(node, getParentNode(), isLValueRequiredHere());
+        mFoundExpressionToSplit = mPatternToSplitMatcher.match(node, getParentNode());
         return !mFoundExpressionToSplit;
     }
 
     return true;
 }
 
-bool SplitSequenceOperatorTraverser::visitAggregate(Visit visit, TIntermAggregate *node)
+bool SplitSequenceOperatorTraverser::visitUnary(Visit visit, TIntermUnary *node)
+{
+    if (mFoundExpressionToSplit)
+        return false;
+
+    if (mInsideSequenceOperator > 0 && visit == PreVisit)
+    {
+        // Detect expressions that need to be simplified
+        mFoundExpressionToSplit = mPatternToSplitMatcher.match(node);
+        return !mFoundExpressionToSplit;
+    }
+
+    return true;
+}
+
+bool SplitSequenceOperatorTraverser::visitBinary(Visit visit, TIntermBinary *node)
 {
     if (node->getOp() == EOpComma)
     {
@@ -91,19 +109,12 @@ bool SplitSequenceOperatorTraverser::visitAggregate(Visit visit, TIntermAggregat
             // execution order.
             if (mFoundExpressionToSplit && mInsideSequenceOperator == 1)
             {
-                // Move all operands of the sequence operation except the last one into separate
-                // statements in the parent block.
+                // Move the left side operand into a separate statement in the parent block.
                 TIntermSequence insertions;
-                for (auto *sequenceChild : *node->getSequence())
-                {
-                    if (sequenceChild != node->getSequence()->back())
-                    {
-                        insertions.push_back(sequenceChild);
-                    }
-                }
+                insertions.push_back(node->getLeft());
                 insertStatementsInParentBlock(insertions);
-                // Replace the sequence with its last operand
-                queueReplacement(node, node->getSequence()->back(), OriginalNode::IS_DROPPED);
+                // Replace the comma node with its right side operand.
+                queueReplacement(node->getRight(), OriginalNode::IS_DROPPED);
             }
             mInsideSequenceOperator--;
         }
@@ -116,14 +127,15 @@ bool SplitSequenceOperatorTraverser::visitAggregate(Visit visit, TIntermAggregat
     if (mInsideSequenceOperator > 0 && visit == PreVisit)
     {
         // Detect expressions that need to be simplified
-        mFoundExpressionToSplit = mPatternToSplitMatcher.match(node, getParentNode());
+        mFoundExpressionToSplit =
+            mPatternToSplitMatcher.match(node, getParentNode(), isLValueRequiredHere());
         return !mFoundExpressionToSplit;
     }
 
     return true;
 }
 
-bool SplitSequenceOperatorTraverser::visitSelection(Visit visit, TIntermSelection *node)
+bool SplitSequenceOperatorTraverser::visitTernary(Visit visit, TIntermTernary *node)
 {
     if (mFoundExpressionToSplit)
         return false;
@@ -142,13 +154,10 @@ bool SplitSequenceOperatorTraverser::visitSelection(Visit visit, TIntermSelectio
 
 void SplitSequenceOperator(TIntermNode *root,
                            int patternsToSplitMask,
-                           unsigned int *temporaryIndex,
-                           const TSymbolTable &symbolTable,
+                           TSymbolTable *symbolTable,
                            int shaderVersion)
 {
     SplitSequenceOperatorTraverser traverser(patternsToSplitMask, symbolTable, shaderVersion);
-    ASSERT(temporaryIndex != nullptr);
-    traverser.useTemporaryIndex(temporaryIndex);
     // Separate one expression at a time, and reset the traverser between iterations.
     do
     {
@@ -158,3 +167,5 @@ void SplitSequenceOperator(TIntermNode *root,
             traverser.updateTree();
     } while (traverser.foundExpressionToSplit());
 }
+
+}  // namespace sh

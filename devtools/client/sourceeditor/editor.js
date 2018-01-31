@@ -30,66 +30,32 @@ const RE_SCRATCHPAD_ERROR = /(?:@Scratchpad\/\d+:|\()(\d+):?(\d+)?(?:\)|\n)/;
 const RE_JUMP_TO_LINE = /^(\d+):?(\d+)?/;
 
 const Services = require("Services");
-const promise = require("promise");
-const events = require("devtools/shared/event-emitter");
-const { PrefObserver } = require("devtools/client/styleeditor/utils");
+const events = require("devtools/shared/old-event-emitter");
+const { PrefObserver } = require("devtools/client/shared/prefs");
 const { getClientCssProperties } = require("devtools/shared/fronts/css-properties");
+const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
 
 const {LocalizationHelper} = require("devtools/shared/l10n");
-const L10N = new LocalizationHelper("devtools/locale/sourceeditor.properties");
+const L10N = new LocalizationHelper("devtools/client/locales/sourceeditor.properties");
+
+const {
+  getWasmText,
+  getWasmLineNumberFormatter,
+  isWasm,
+  lineToWasmOffset,
+  wasmOffsetToLine,
+} = require("./wasm");
 
 const { OS } = Services.appinfo;
 
-// CM_STYLES, CM_SCRIPTS and CM_IFRAME represent the HTML,
-// JavaScript and CSS that is injected into an iframe in
-// order to initialize a CodeMirror instance.
-
-const CM_STYLES = [
-  "chrome://devtools/content/sourceeditor/codemirror/lib/codemirror.css",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/dialog/dialog.css",
-  "chrome://devtools/content/sourceeditor/codemirror/mozilla.css"
-];
+// CM_SCRIPTS and CM_IFRAME represent the HTML and JavaScript that is
+// injected into an iframe in order to initialize a CodeMirror instance.
 
 const CM_SCRIPTS = [
-  "chrome://devtools/content/sourceeditor/codemirror/lib/codemirror.js",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/dialog/dialog.js",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/search/searchcursor.js",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/search/search.js",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/edit/matchbrackets.js",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/edit/closebrackets.js",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/comment/comment.js",
-  "chrome://devtools/content/sourceeditor/codemirror/mode/javascript.js",
-  "chrome://devtools/content/sourceeditor/codemirror/mode/xml.js",
-  "chrome://devtools/content/sourceeditor/codemirror/mode/css.js",
-  "chrome://devtools/content/sourceeditor/codemirror/mode/htmlmixed.js",
-  "chrome://devtools/content/sourceeditor/codemirror/mode/clike.js",
-  "chrome://devtools/content/sourceeditor/codemirror/mode/wasm.js",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/selection/active-line.js",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/edit/trailingspace.js",
-  "chrome://devtools/content/sourceeditor/codemirror/keymap/emacs.js",
-  "chrome://devtools/content/sourceeditor/codemirror/keymap/vim.js",
-  "chrome://devtools/content/sourceeditor/codemirror/keymap/sublime.js",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/fold/foldcode.js",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/fold/brace-fold.js",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/fold/comment-fold.js",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/fold/xml-fold.js",
-  "chrome://devtools/content/sourceeditor/codemirror/addon/fold/foldgutter.js"
+  "chrome://devtools/content/sourceeditor/codemirror/codemirror.bundle.js",
 ];
 
-const CM_IFRAME =
-  "data:text/html;charset=utf8,<!DOCTYPE html>" +
-  "<html dir='ltr'>" +
-  "  <head>" +
-  "    <style>" +
-  "      html, body { height: 100%; }" +
-  "      body { margin: 0; overflow: hidden; }" +
-  "      .CodeMirror { width: 100%; height: 100% !important; " +
-  "line-height: 1.25 !important;}" +
-  "    </style>" +
-  CM_STYLES.map(style => "<link rel='stylesheet' href='" + style + "'>").join("\n") +
-  "  </head>" +
-  "  <body class='theme-body devtools-monospace'></body>" +
-  "</html>";
+const CM_IFRAME = "chrome://devtools/content/sourceeditor/codemirror/cmiframe.html";
 
 const CM_MAPPING = [
   "focus",
@@ -224,7 +190,7 @@ function Editor(config) {
 
     let num = cm.getOption("indentUnit");
     if (cm.getCursor().ch !== 0) {
-      num -= 1;
+      num -= cm.getCursor().ch % num;
     }
     cm.replaceSelection(" ".repeat(num), "end", "+input");
   };
@@ -275,43 +241,45 @@ Editor.prototype = {
    * This method is asynchronous and returns a promise.
    */
   appendTo: function (el, env) {
-    let def = promise.defer();
-    let cm = editors.get(this);
+    return new Promise(resolve => {
+      let cm = editors.get(this);
 
-    if (!env) {
-      env = el.ownerDocument.createElementNS(XUL_NS, "iframe");
-    }
+      if (!env) {
+        env = el.ownerDocument.createElementNS(el.namespaceURI, "iframe");
 
-    env.flex = 1;
-
-    if (cm) {
-      throw new Error("You can append an editor only once.");
-    }
-
-    let onLoad = () => {
-      let win = env.contentWindow.wrappedJSObject;
-
-      if (!this.config.themeSwitching) {
-        win.document.documentElement.setAttribute("force-theme", "light");
+        if (el.namespaceURI === XUL_NS) {
+          env.flex = 1;
+        }
       }
 
-      Services.scriptloader.loadSubScript(
-        "chrome://devtools/content/shared/theme-switching.js",
-        win, "utf8"
-      );
-      this.container = env;
-      this._setup(win.document.body);
-      env.removeEventListener("load", onLoad, true);
+      if (cm) {
+        throw new Error("You can append an editor only once.");
+      }
 
-      def.resolve();
-    };
+      let onLoad = () => {
+        let win = env.contentWindow.wrappedJSObject;
 
-    env.addEventListener("load", onLoad, true);
-    env.setAttribute("src", CM_IFRAME);
-    el.appendChild(env);
+        if (!this.config.themeSwitching) {
+          win.document.documentElement.setAttribute("force-theme", "light");
+        }
 
-    this.once("destroy", () => el.removeChild(env));
-    return def.promise;
+        Services.scriptloader.loadSubScript(
+          "chrome://devtools/content/shared/theme-switching.js",
+          win, "utf8"
+        );
+        this.container = env;
+        this._setup(win.document.body, el.ownerDocument);
+        env.removeEventListener("load", onLoad, true);
+
+        resolve();
+      };
+
+      env.addEventListener("load", onLoad, true);
+      env.setAttribute("src", CM_IFRAME);
+      el.appendChild(env);
+
+      this.once("destroy", () => el.removeChild(env));
+    });
   },
 
   appendToLocalElement: function (el) {
@@ -323,7 +291,8 @@ Editor.prototype = {
    * used by both append functions above, and does all the hard work to
    * configure CodeMirror with all the right options/modes/etc.
    */
-  _setup: function (el) {
+  _setup: function (el, doc) {
+    doc = doc || el.ownerDocument;
     let win = el.ownerDocument.defaultView;
 
     let scriptsToInject = CM_SCRIPTS.concat(this.config.externalScripts);
@@ -387,78 +356,20 @@ Editor.prototype = {
     });
 
     cm.getWrapperElement().addEventListener("contextmenu", ev => {
-      ev.preventDefault();
-
       if (!this.config.contextMenu) {
         return;
       }
 
+      ev.stopPropagation();
+      ev.preventDefault();
+
       let popup = this.config.contextMenu;
       if (typeof popup == "string") {
-        popup = el.ownerDocument.getElementById(this.config.contextMenu);
+        popup = doc.getElementById(this.config.contextMenu);
       }
 
       this.emit("popupOpen", ev, popup);
       popup.openPopupAtScreen(ev.screenX, ev.screenY, true);
-    }, false);
-
-    // Intercept the find and find again keystroke on CodeMirror, to avoid
-    // the browser's search
-
-    let findKey = L10N.getStr("find.commandkey");
-    let findAgainKey = L10N.getStr("findAgain.commandkey");
-    let [accel, modifier] = OS === "Darwin"
-        ? ["metaKey", "altKey"]
-        : ["ctrlKey", "shiftKey"];
-
-    cm.getWrapperElement().addEventListener("keydown", ev => {
-      let key = ev.key.toUpperCase();
-      let node = ev.originalTarget;
-      let isInput = node.tagName === "INPUT";
-      let isSearchInput = isInput && node.type === "search";
-
-      // replace box is a different input instance than search, and it is
-      // located in a code mirror dialog
-      let isDialogInput = isInput &&
-          node.parentNode &&
-          node.parentNode.classList.contains("CodeMirror-dialog");
-
-      if (!ev[accel] || !(isSearchInput || isDialogInput)) {
-        return;
-      }
-
-      if (key === findKey) {
-        ev.preventDefault();
-
-        if (isSearchInput || ev[modifier]) {
-          node.select();
-        }
-      } else if (key === findAgainKey) {
-        ev.preventDefault();
-
-        if (!isSearchInput) {
-          return;
-        }
-
-        let query = node.value;
-
-        // If there isn't a search state, or the text in the input does not
-        // match with the current search state, we need to create a new one
-        if (!cm.state.search || cm.state.search.query !== query) {
-          cm.state.search = {
-            posFrom: null,
-            posTo: null,
-            overlay: null,
-            query
-          };
-        }
-
-        if (ev.shiftKey) {
-          cm.execCommand("findPrev");
-        } else {
-          cm.execCommand("findNext");
-        }
-      }
     });
 
     cm.on("focus", () => this.emit("focus"));
@@ -473,8 +384,9 @@ Editor.prototype = {
     cm.on("cursorActivity", () => this.emit("cursorActivity"));
 
     cm.on("gutterClick", (cmArg, line, gutter, ev) => {
+      let lineOrOffset = !this.isWasm ? line : this.lineToWasmOffset(line);
       let head = { line: line, ch: 0 };
-      let tail = { line: line, ch: this.getText(line).length };
+      let tail = { line: line, ch: this.getText(lineOrOffset).length };
 
       // Shift-click on a gutter selects the whole line.
       if (ev.shiftKey) {
@@ -482,14 +394,14 @@ Editor.prototype = {
         return;
       }
 
-      this.emit("gutterClick", line, ev.button);
+      this.emit("gutterClick", lineOrOffset, ev.button);
     });
 
     win.CodeMirror.defineExtension("l10n", (name) => {
       return L10N.getStr(name);
     });
 
-    cm.getInputField().controllers.insertControllerAt(0, controller(this));
+    this._initShortcuts(win);
 
     editors.set(this, cm);
 
@@ -551,6 +463,9 @@ Editor.prototype = {
   replaceDocument: function (doc) {
     let cm = editors.get(this);
     cm.swapDoc(doc);
+    if (!Services.prefs.getBoolPref("devtools.debugger.new-debugger-frontend")) {
+      this._updateLineNumberFormat();
+    }
   },
 
   /**
@@ -569,6 +484,16 @@ Editor.prototype = {
   },
 
   /**
+   * The source editor can expose several commands linked from system and context menus.
+   * Kept for backward compatibility with scratchpad and styleeditor.
+   */
+  insertCommandsController: function () {
+    const { insertCommandsController } =
+      require("devtools/client/sourceeditor/editor-commands-controller");
+    insertCommandsController(this);
+  },
+
+  /**
    * Returns text from the text area. If line argument is provided
    * the method returns only that line.
    */
@@ -579,8 +504,55 @@ Editor.prototype = {
       return cm.getValue();
     }
 
-    let info = cm.lineInfo(line);
-    return info ? cm.lineInfo(line).text : "";
+    let info = this.lineInfo(line);
+    return info ? info.text : "";
+  },
+
+  getDoc: function () {
+    let cm = editors.get(this);
+    return cm.getDoc();
+  },
+
+  get isWasm() {
+    return isWasm(this.getDoc());
+  },
+
+  wasmOffsetToLine: function (offset) {
+    return wasmOffsetToLine(this.getDoc(), offset);
+  },
+
+  lineToWasmOffset: function (number) {
+    return lineToWasmOffset(this.getDoc(), number);
+  },
+
+  toLineIfWasmOffset: function (maybeOffset) {
+    if (typeof maybeOffset !== "number" || !this.isWasm) {
+      return maybeOffset;
+    }
+    return this.wasmOffsetToLine(maybeOffset);
+  },
+
+  lineInfo: function (lineOrOffset) {
+    let line = this.toLineIfWasmOffset(lineOrOffset);
+    if (line == undefined) {
+      return null;
+    }
+    let cm = editors.get(this);
+    return cm.lineInfo(line);
+  },
+
+  getLineOrOffset: function (line) {
+    return this.isWasm ? this.lineToWasmOffset(line) : line;
+  },
+
+  _updateLineNumberFormat: function () {
+    let cm = editors.get(this);
+    if (this.isWasm) {
+      let formatter = getWasmLineNumberFormatter(this.getDoc());
+      cm.setOption("lineNumberFormatter", formatter);
+    } else {
+      cm.setOption("lineNumberFormatter", (number) => number);
+    }
   },
 
   /**
@@ -589,6 +561,31 @@ Editor.prototype = {
    */
   setText: function (value) {
     let cm = editors.get(this);
+
+    if (typeof value !== "string" && "binary" in value) { // wasm?
+      // binary does not survive as Uint8Array, converting from string
+      let binary = value.binary;
+      let data = new Uint8Array(binary.length);
+      for (let i = 0; i < data.length; i++) {
+        data[i] = binary.charCodeAt(i);
+      }
+      let { lines, done } = getWasmText(this.getDoc(), data);
+      const MAX_LINES = 10000000;
+      if (lines.length > MAX_LINES) {
+        lines.splice(MAX_LINES, lines.length - MAX_LINES);
+        lines.push(";; .... text is truncated due to the size");
+      }
+      if (!done) {
+        lines.push(";; .... possible error during wast conversion");
+      }
+      // cm will try to split into lines anyway, saving memory
+      value = { split: () => lines };
+    }
+
+    if (!Services.prefs.getBoolPref("devtools.debugger.new-debugger-frontend")) {
+      this._updateLineNumberFormat();
+    }
+
     cm.setValue(value);
 
     this.resetIndentUnit();
@@ -769,7 +766,7 @@ Editor.prototype = {
    */
   addMarker: function (line, gutterName, markerClass) {
     let cm = editors.get(this);
-    let info = cm.lineInfo(line);
+    let info = this.lineInfo(line);
     if (!info) {
       return;
     }
@@ -798,8 +795,7 @@ Editor.prototype = {
       return;
     }
 
-    let cm = editors.get(this);
-    cm.lineInfo(line).gutterMarkers[gutterName].classList.remove(markerClass);
+    this.lineInfo(line).gutterMarkers[gutterName].classList.remove(markerClass);
   },
 
   /**
@@ -809,13 +805,14 @@ Editor.prototype = {
    */
   addContentMarker: function (line, gutterName, markerClass, content) {
     let cm = editors.get(this);
-    let info = cm.lineInfo(line);
+    let info = this.lineInfo(line);
     if (!info) {
       return;
     }
 
     let marker = cm.getWrapperElement().ownerDocument.createElement("div");
     marker.className = markerClass;
+    // eslint-disable-next-line no-unsanitized/property
     marker.innerHTML = content;
     cm.setGutterMarker(info.line, gutterName, marker);
   },
@@ -826,7 +823,7 @@ Editor.prototype = {
    */
   removeContentMarker: function (line, gutterName) {
     let cm = editors.get(this);
-    let info = cm.lineInfo(line);
+    let info = this.lineInfo(line);
     if (!info) {
       return;
     }
@@ -835,8 +832,7 @@ Editor.prototype = {
   },
 
   getMarker: function (line, gutterName) {
-    let cm = editors.get(this);
-    let info = cm.lineInfo(line);
+    let info = this.lineInfo(line);
     if (!info) {
       return null;
     }
@@ -884,8 +880,7 @@ Editor.prototype = {
    * Returns whether a line is decorated using the specified class name.
    */
   hasLineClass: function (line, className) {
-    let cm = editors.get(this);
-    let info = cm.lineInfo(line);
+    let info = this.lineInfo(line);
 
     if (!info || !info.wrapClass) {
       return false;
@@ -897,16 +892,18 @@ Editor.prototype = {
   /**
    * Sets a CSS class name for the given line, including the text and gutter.
    */
-  addLineClass: function (line, className) {
+  addLineClass: function (lineOrOffset, className) {
     let cm = editors.get(this);
+    let line = this.toLineIfWasmOffset(lineOrOffset);
     cm.addLineClass(line, "wrap", className);
   },
 
   /**
    * The reverse of addLineClass.
    */
-  removeLineClass: function (line, className) {
+  removeLineClass: function (lineOrOffset, className) {
     let cm = editors.get(this);
+    let line = this.toLineIfWasmOffset(lineOrOffset);
     cm.removeLineClass(line, "wrap", className);
   },
 
@@ -1017,8 +1014,7 @@ Editor.prototype = {
     let doc = editors.get(this).getWrapperElement().ownerDocument;
     let div = doc.createElement("div");
     let inp = doc.createElement("input");
-    let txt =
-      doc.createTextNode(L10N.getStr("gotoLineCmd.promptTitle"));
+    let txt = doc.createTextNode(L10N.getStr("gotoLineCmd.promptTitle"));
 
     inp.type = "text";
     inp.style.width = "10em";
@@ -1110,6 +1106,65 @@ Editor.prototype = {
       { line: end.line + 1, ch: cm.getLine(end.line + 1).length});
     cm.setSelection({ line: start.line + 1, ch: start.ch },
       { line: end.line + 1, ch: end.ch });
+  },
+
+  /**
+   * Intercept CodeMirror's Find and replace key shortcut to select the search input
+   */
+  findOrReplace: function (node, isReplaceAll) {
+    let cm = editors.get(this);
+    let isInput = node.tagName === "INPUT";
+    let isSearchInput = isInput && node.type === "search";
+    // replace box is a different input instance than search, and it is
+    // located in a code mirror dialog
+    let isDialogInput = isInput &&
+        node.parentNode &&
+        node.parentNode.classList.contains("CodeMirror-dialog");
+    if (!(isSearchInput || isDialogInput)) {
+      return;
+    }
+
+    if (isSearchInput || isReplaceAll) {
+      // select the search input
+      // it's the precise reason why we reimplement these key shortcuts
+      node.select();
+    }
+
+    // need to call it since we prevent the propagation of the event and
+    // cancel codemirror's key handling
+    cm.execCommand("find");
+  },
+
+  /**
+   * Intercept CodeMirror's findNext and findPrev key shortcut to allow
+   * immediately search for next occurance after typing a word to search.
+   */
+  findNextOrPrev: function (node, isFindPrev) {
+    let cm = editors.get(this);
+    let isInput = node.tagName === "INPUT";
+    let isSearchInput = isInput && node.type === "search";
+    if (!isSearchInput) {
+      return;
+    }
+    let query = node.value;
+    // cm.state.search allows to automatically start searching for the next occurance
+    // it's the precise reason why we reimplement these key shortcuts
+    if (!cm.state.search || cm.state.search.query !== query) {
+      cm.state.search = {
+        posFrom: null,
+        posTo: null,
+        overlay: null,
+        query
+      };
+    }
+
+    // need to call it since we prevent the propagation of the event and
+    // cancel codemirror's key handling
+    if (isFindPrev) {
+      cm.execCommand("findPrev");
+    } else {
+      cm.execCommand("findNext");
+    }
   },
 
   /**
@@ -1244,6 +1299,12 @@ Editor.prototype = {
       this._prefObserver.destroy();
     }
 
+    // Remove the link between the document and code-mirror.
+    let cm = editors.get(this);
+    if (cm && cm.doc) {
+      cm.doc.cm = null;
+    }
+
     this.emit("destroy");
   },
 
@@ -1280,6 +1341,76 @@ Editor.prototype = {
 
       this.setOption("foldGutter", false);
     }
+  },
+
+  /**
+   * Register all key shortcuts.
+   */
+  _initShortcuts: function (win) {
+    let shortcuts = new KeyShortcuts({
+      window: win
+    });
+    this._onShortcut = this._onShortcut.bind(this);
+    let keys = [
+      "find.key",
+      "findNext.key",
+      "findPrev.key"
+    ];
+
+    if (OS === "Darwin") {
+      keys.push("replaceAllMac.key");
+    } else {
+      keys.push("replaceAll.key");
+    }
+    // Process generic keys:
+    keys.forEach(name => {
+      let key = L10N.getStr(name);
+      shortcuts.on(key, (_, event) => this._onShortcut(name, event));
+    });
+  },
+    /**
+   * Key shortcut listener.
+   */
+  _onShortcut: function (name, event) {
+    if (!this._isInputOrTextarea(event.target)) {
+      return;
+    }
+    let node = event.originalTarget;
+
+    switch (name) {
+      // replaceAll.key is Alt + find.key
+      case "replaceAllMac.key":
+        this.findOrReplace(node, true);
+        break;
+      // replaceAll.key is Shift + find.key
+      case "replaceAll.key":
+        this.findOrReplace(node, true);
+        break;
+      case "find.key":
+        this.findOrReplace(node, false);
+        break;
+      // findPrev.key is Shift + findNext.key
+      case "findPrev.key":
+        this.findNextOrPrev(node, true);
+        break;
+      case "findNext.key":
+        this.findNextOrPrev(node, false);
+        break;
+      default:
+        console.error("Unexpected editor key shortcut", name);
+        return;
+    }
+    // Prevent default for this action
+    event.stopPropagation();
+    event.preventDefault();
+  },
+
+  /**
+   * Check if a node is an input or textarea
+   */
+  _isInputOrTextarea: function (element) {
+    let name = element.tagName.toLowerCase();
+    return name === "input" || name === "textarea";
   }
 };
 
@@ -1356,75 +1487,6 @@ function getCSSKeywords(cssProperties) {
     propertyKeywords: keySet(propertyKeywords),
     colorKeywords: colorKeywords,
     valueKeywords: valueKeywords
-  };
-}
-
-/**
- * Returns a controller object that can be used for
- * editor-specific commands such as find, jump to line,
- * copy/paste, etc.
- */
-function controller(ed) {
-  return {
-    supportsCommand: function (cmd) {
-      switch (cmd) {
-        case "cmd_find":
-        case "cmd_findAgain":
-        case "cmd_findPrevious":
-        case "cmd_gotoLine":
-        case "cmd_undo":
-        case "cmd_redo":
-        case "cmd_delete":
-        case "cmd_selectAll":
-          return true;
-      }
-
-      return false;
-    },
-
-    isCommandEnabled: function (cmd) {
-      let cm = editors.get(ed);
-
-      switch (cmd) {
-        case "cmd_find":
-        case "cmd_gotoLine":
-        case "cmd_selectAll":
-          return true;
-        case "cmd_findAgain":
-          return cm.state.search != null && cm.state.search.query != null;
-        case "cmd_undo":
-          return ed.canUndo();
-        case "cmd_redo":
-          return ed.canRedo();
-        case "cmd_delete":
-          return ed.somethingSelected();
-      }
-
-      return false;
-    },
-
-    doCommand: function (cmd) {
-      let cm = editors.get(ed);
-      let map = {
-        "cmd_selectAll": "selectAll",
-        "cmd_find": "find",
-        "cmd_undo": "undo",
-        "cmd_redo": "redo",
-        "cmd_delete": "delCharAfter",
-        "cmd_findAgain": "findNext"
-      };
-
-      if (map[cmd]) {
-        cm.execCommand(map[cmd]);
-        return;
-      }
-
-      if (cmd == "cmd_gotoLine") {
-        ed.jumpToLine();
-      }
-    },
-
-    onEvent: function () {}
   };
 }
 

@@ -33,7 +33,7 @@ public class PropertyAnimator implements Runnable {
         HEIGHT
     }
 
-    private class ElementHolder {
+    private static final class ElementHolder {
         View view;
         Property property;
         float from;
@@ -173,7 +173,7 @@ public class PropertyAnimator implements Runnable {
         // in the current view tree. OnPreDrawListener seems broken
         // on pre-Honeycomb devices, start animation immediatelly
         // in this case.
-        if (Versions.feature11Plus && treeObserver != null && treeObserver.isAlive()) {
+        if (treeObserver != null && treeObserver.isAlive()) {
             treeObserver.addOnPreDrawListener(preDrawListener);
         } else {
             mFramePoster.postFirstAnimationFrame();

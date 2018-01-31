@@ -6,6 +6,7 @@
 #include "InsertTextTransaction.h"
 
 #include "mozilla/EditorBase.h"         // mEditorBase
+#include "mozilla/SelectionState.h"     // RangeUpdater
 #include "mozilla/dom/Selection.h"      // Selection local var
 #include "mozilla/dom/Text.h"           // mTextNode
 #include "nsAString.h"                  // nsAString parameter
@@ -17,14 +18,26 @@ namespace mozilla {
 
 using namespace dom;
 
-InsertTextTransaction::InsertTextTransaction(Text& aTextNode,
-                                             uint32_t aOffset,
+// static
+already_AddRefed<InsertTextTransaction>
+InsertTextTransaction::Create(EditorBase& aEditorBase,
+                              const nsAString& aStringToInsert,
+                              Text& aTextNode,
+                              uint32_t aOffset)
+{
+  RefPtr<InsertTextTransaction> transaction =
+    new InsertTextTransaction(aEditorBase, aStringToInsert, aTextNode, aOffset);
+  return transaction.forget();
+}
+
+InsertTextTransaction::InsertTextTransaction(EditorBase& aEditorBase,
                                              const nsAString& aStringToInsert,
-                                             EditorBase& aEditorBase)
+                                             Text& aTextNode,
+                                             uint32_t aOffset)
   : mTextNode(&aTextNode)
   , mOffset(aOffset)
   , mStringToInsert(aStringToInsert)
-  , mEditorBase(aEditorBase)
+  , mEditorBase(&aEditorBase)
 {
 }
 
@@ -33,6 +46,7 @@ InsertTextTransaction::~InsertTextTransaction()
 }
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(InsertTextTransaction, EditTransactionBase,
+                                   mEditorBase,
                                    mTextNode)
 
 NS_IMPL_ADDREF_INHERITED(InsertTextTransaction, EditTransactionBase)
@@ -47,20 +61,30 @@ NS_INTERFACE_MAP_END_INHERITING(EditTransactionBase)
 NS_IMETHODIMP
 InsertTextTransaction::DoTransaction()
 {
-  nsresult res = mTextNode->InsertData(mOffset, mStringToInsert);
-  NS_ENSURE_SUCCESS(res, res);
+  if (NS_WARN_IF(!mEditorBase) || NS_WARN_IF(!mTextNode)) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  nsresult rv = mTextNode->InsertData(mOffset, mStringToInsert);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
 
   // Only set selection to insertion point if editor gives permission
-  if (mEditorBase.GetShouldTxnSetSelection()) {
-    RefPtr<Selection> selection = mEditorBase.GetSelection();
-    NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
-    res = selection->Collapse(mTextNode,
-                              mOffset + mStringToInsert.Length());
-    NS_ASSERTION(NS_SUCCEEDED(res),
+  if (mEditorBase->GetShouldTxnSetSelection()) {
+    RefPtr<Selection> selection = mEditorBase->GetSelection();
+    if (NS_WARN_IF(!selection)) {
+      return NS_ERROR_FAILURE;
+    }
+    DebugOnly<nsresult> rv =
+      selection->Collapse(mTextNode, mOffset + mStringToInsert.Length());
+    NS_ASSERTION(NS_SUCCEEDED(rv),
                  "Selection could not be collapsed after insert");
   } else {
     // Do nothing - DOM Range gravity will adjust selection
   }
+  mEditorBase->RangeUpdaterRef().
+                 SelAdjInsertText(*mTextNode, mOffset, mStringToInsert);
 
   return NS_OK;
 }
@@ -91,14 +115,6 @@ InsertTextTransaction::Merge(nsITransaction* aTransaction,
     *aDidMerge = true;
   }
 
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-InsertTextTransaction::GetTxnDescription(nsAString& aString)
-{
-  aString.AssignLiteral("InsertTextTransaction: ");
-  aString += mStringToInsert;
   return NS_OK;
 }
 

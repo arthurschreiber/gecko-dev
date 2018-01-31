@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,7 +8,6 @@
 #define __inDOMView_h__
 
 #include "inIDOMView.h"
-#include "inIDOMUtils.h"
 
 #include "nsITreeView.h"
 #include "nsITreeSelection.h"
@@ -18,7 +19,7 @@
 #include "nsCOMPtr.h"
 
 class inDOMViewNode;
-class nsIDOMMozNamedAttrMap;
+class nsDOMAttributeMap;
 
 class inDOMView : public inIDOMView,
                   public nsITreeView,
@@ -43,7 +44,6 @@ protected:
 
   nsCOMPtr<nsITreeBoxObject> mTree;
   nsCOMPtr<nsITreeSelection> mSelection;
-  nsCOMPtr<inIDOMUtils> mDOMUtils;
 
   bool mShowAnonymous;
   bool mShowSubDocuments;
@@ -80,11 +80,10 @@ protected:
   void ReplaceLink(inDOMViewNode* aNewNode, inDOMViewNode* aOldNode);
 
   nsresult GetChildNodesFor(nsIDOMNode* aNode, nsCOMArray<nsIDOMNode>& aResult);
-  nsresult AppendKidsToArray(nsIDOMNodeList* aKids, nsCOMArray<nsIDOMNode>& aArray);
-  nsresult AppendAttrsToArray(nsIDOMMozNamedAttrMap* aKids, nsCOMArray<nsIDOMNode>& aArray);
+  void AppendKidsToArray(nsINodeList* aKids, nsCOMArray<nsIDOMNode>& aArray);
+  nsresult AppendAttrsToArray(nsDOMAttributeMap* aKids, nsCOMArray<nsIDOMNode>& aArray);
   nsresult GetFirstDescendantOf(inDOMViewNode* aNode, int32_t aRow, int32_t* aResult);
   nsresult GetLastDescendantOf(inDOMViewNode* aNode, int32_t aRow, int32_t* aResult);
-  nsresult GetRealPreviousSibling(nsIDOMNode* aNode, nsIDOMNode* aRealParent, nsIDOMNode** aSibling);
 };
 
 // {FB5C1775-1BBD-4b9c-ABB0-AE7ACD29E87E}

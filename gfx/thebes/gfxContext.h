@@ -24,6 +24,9 @@ namespace mozilla {
 namespace gfx {
 struct RectCornerRadii;
 } // namespace gfx
+namespace layout {
+class TextDrawTarget;
+} // namespace layout
 } // namespace mozilla
 
 class ClipExporter;
@@ -37,7 +40,7 @@ class ClipExporter;
  * All drawing happens by creating a path and then stroking or filling it.
  * The functions like Rectangle and Arc do not do any drawing themselves.
  * When a path is drawn (stroked or filled), it is filled/stroked with a
- * pattern set by SetPattern, SetColor or SetSource.
+ * pattern set by SetPattern or SetColor.
  *
  * Note that the gfxContext takes coordinates in device pixels,
  * as opposed to app units.
@@ -78,6 +81,11 @@ public:
         CreatePreservingTransformOrNull(mozilla::gfx::DrawTarget* aTarget);
 
     mozilla::gfx::DrawTarget *GetDrawTarget() { return mDT; }
+
+    /**
+     * Returns the DrawTarget if it's actually a TextDrawTarget.
+     */
+    mozilla::layout::TextDrawTarget* GetTextDrawer();
 
     /**
      ** State
@@ -164,12 +172,14 @@ public:
     /**
      * Replaces the current transformation matrix with matrix.
      */
-    void SetMatrix(const gfxMatrix& matrix);
+    void SetMatrix(const mozilla::gfx::Matrix& matrix);
+    void SetMatrixDouble(const gfxMatrix& matrix);
 
     /**
      * Returns the current transformation matrix.
      */
-    gfxMatrix CurrentMatrix() const;
+    mozilla::gfx::Matrix CurrentMatrix() const;
+    gfxMatrix CurrentMatrixDouble() const;
 
     /**
      * Converts a point from device to user coordinates using the inverse
@@ -260,25 +270,9 @@ public:
     void SetColor(const mozilla::gfx::Color& aColor);
 
     /**
-     * Uses a surface for drawing. This is a shorthand for creating a
-     * pattern and setting it.
-     *
-     * @param offset from the source surface, to use only part of it.
-     *        May need to make it negative.
-     */
-    void SetSource(gfxASurface *surface, const gfxPoint& offset = gfxPoint(0.0, 0.0));
-
-    /**
      * Uses a pattern for drawing.
      */
     void SetPattern(gfxPattern *pattern);
-
-    /**
-     * Set the color that text drawn on top of transparent pixels should be
-     * anti-aliased into.
-     */
-    void SetFontSmoothingBackgroundColor(const mozilla::gfx::Color& aColor);
-    mozilla::gfx::Color GetFontSmoothingBackgroundColor();
 
     /**
      * Get the source pattern (solid color, normal pattern, surface, etc)
@@ -377,16 +371,16 @@ public:
 
     void PopClip();
 
-    /**
-     * This will return the current bounds of the clip region in user
-     * space.
-     */
-    gfxRect GetClipExtents();
+    enum ClipExtentsSpace {
+        eUserSpace = 0,
+        eDeviceSpace = 1,
+    };
 
     /**
-     * Whether the current clip is not a simple rectangle.
+     * According to aSpace, this function will return the current bounds of
+     * the clip region in user space or device space.
      */
-    bool HasComplexClip() const;
+    gfxRect GetClipExtents(ClipExtentsSpace aSpace = eUserSpace) const;
 
     /**
      * Returns true if the given rectangle is fully contained in the current clip.
@@ -477,16 +471,14 @@ private:
       , color(0, 0, 0, 1.0f)
       , aaMode(mozilla::gfx::AntialiasMode::SUBPIXEL)
       , patternTransformChanged(false)
-      , mBlendOpacity(0.0f)
+#ifdef DEBUG
+      , mContentChanged(false)
+#endif
     {}
 
     mozilla::gfx::CompositionOp op;
     Color color;
     RefPtr<gfxPattern> pattern;
-    RefPtr<gfxASurface> sourceSurfCairo;
-    RefPtr<SourceSurface> sourceSurface;
-    mozilla::gfx::Point sourceSurfaceDeviceOffset;
-    Matrix surfTransform;
     Matrix transform;
     struct PushedClip {
       RefPtr<Path> path;
@@ -503,12 +495,9 @@ private:
     Color fontSmoothingBackgroundColor;
     // This is used solely for using minimal intermediate surface size.
     mozilla::gfx::Point deviceOffset;
-    // Support groups
-    mozilla::gfx::Float mBlendOpacity;
-    RefPtr<SourceSurface> mBlendMask;
-    Matrix mBlendMaskTransform;
 #ifdef DEBUG
-    bool mWasPushedForBlendBack;
+    // Whether the content of this AzureState changed after construction.
+    bool mContentChanged;
 #endif
   };
 
@@ -517,13 +506,11 @@ private:
   // This ensures mPathBuilder contains a valid PathBuilder (in user space!)
   void EnsurePathBuilder();
   void FillAzure(const Pattern& aPattern, mozilla::gfx::Float aOpacity);
-  void PushClipsToDT(mozilla::gfx::DrawTarget *aDT);
   CompositionOp GetOp();
   void ChangeTransform(const mozilla::gfx::Matrix &aNewMatrix, bool aUpdatePatternTransform = true);
-  Rect GetAzureDeviceSpaceClipBounds();
+  Rect GetAzureDeviceSpaceClipBounds() const;
   Matrix GetDeviceTransform() const;
   Matrix GetDTTransform() const;
-  void PushNewDT(gfxContentType content);
 
   bool mPathIsRect;
   bool mTransformChanged;
@@ -592,47 +579,49 @@ class gfxContextMatrixAutoSaveRestore
 {
 public:
     gfxContextMatrixAutoSaveRestore() :
-        mContext(nullptr)
+      mContext(nullptr)
     {
     }
 
     explicit gfxContextMatrixAutoSaveRestore(gfxContext *aContext) :
-        mContext(aContext), mMatrix(aContext->CurrentMatrix())
+      mContext(aContext), mMatrix(aContext->CurrentMatrix())
     {
     }
 
     ~gfxContextMatrixAutoSaveRestore()
     {
-        if (mContext) {
-            mContext->SetMatrix(mMatrix);
-        }
+      if (mContext) {
+        mContext->SetMatrix(mMatrix);
+      }
     }
 
     void SetContext(gfxContext *aContext)
     {
-        NS_ASSERTION(!mContext, "Not going to restore the matrix on some context!");
-        mContext = aContext;
-        mMatrix = aContext->CurrentMatrix();
+      NS_ASSERTION(!mContext,
+                   "Not going to restore the matrix on some context!");
+      mContext = aContext;
+      mMatrix = aContext->CurrentMatrix();
     }
 
     void Restore()
     {
-        if (mContext) {
-            mContext->SetMatrix(mMatrix);
-        }
+      if (mContext) {
+        mContext->SetMatrix(mMatrix);
+        mContext = nullptr;
+      }
     }
 
-    const gfxMatrix& Matrix()
+    const mozilla::gfx::Matrix& Matrix()
     {
-        MOZ_ASSERT(mContext, "mMatrix doesn't contain a useful matrix");
-        return mMatrix;
+      MOZ_ASSERT(mContext, "mMatrix doesn't contain a useful matrix");
+      return mMatrix;
     }
 
     bool HasMatrix() const { return !!mContext; }
 
 private:
     gfxContext *mContext;
-    gfxMatrix   mMatrix;
+    mozilla::gfx::Matrix mMatrix;
 };
 
 

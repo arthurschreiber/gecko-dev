@@ -41,10 +41,6 @@ function HTML_TAG(aTagName, aImplClass) {
   var interfaceName = "nsIDOM" + getClassName(aTagName);
   if (interfaceName in SpecialPowers.Ci) {  // no nsIDOMHTMLSpanElement
     interfaces[aTagName].push(interfaceName);
-    interfacesNonClassinfo[aTagName].push("nsIDOMHTMLElement");
-  } else {
-    // Inherits directly from nsIDOMHTMLElement.
-    interfaces[aTagName].push("nsIDOMHTMLElement");
   }
 
   var interfaceNameNS = "nsIDOMNS" + getClassName(aTagName);
@@ -79,7 +75,6 @@ objectIfaces2.push("nsIImageLoadingContent");
 /* List copy/pasted from nsHTMLTagList.h, with the second field modified to the
    correct classinfo (instead of the impl class) in the following cases:
 
-   applet
    base
    blockquote
    dir
@@ -99,7 +94,6 @@ HTML_TAG("a", "Anchor");
 HTML_TAG("abbr", "");
 HTML_TAG("acronym", "");
 HTML_TAG("address", "");
-HTML_TAG("applet", "Applet", [], objectIfaces);
 HTML_TAG("area", "Area");
 HTML_TAG("article", "");
 HTML_TAG("aside", "");
@@ -197,7 +191,7 @@ HTML_TAG("s", "");
 HTML_TAG("samp", "");
 HTML_TAG("script", "Script", [ "nsIScriptLoaderObserver" ], []);
 HTML_TAG("section", "")
-HTML_TAG("select", "Select", ["nsIDOMHTMLSelectElement"]);
+HTML_TAG("select", "Select");
 HTML_TAG("small", "");
 HTML_TAG("span", "Span");
 HTML_TAG("strike", "");

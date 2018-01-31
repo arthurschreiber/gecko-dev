@@ -7,7 +7,7 @@
 #ifndef mozilla_dom_workers_WorkerHolder_h
 #define mozilla_dom_workers_WorkerHolder_h
 
-#include "mozilla/dom/workers/Workers.h"
+#include "mozilla/dom/workers/WorkerCommon.h"
 
 BEGIN_WORKERS_NAMESPACE
 
@@ -72,15 +72,27 @@ enum Status
 class WorkerHolder
 {
 public:
-  NS_DECL_OWNINGTHREAD
+  enum Behavior {
+    AllowIdleShutdownStart,
+    PreventIdleShutdownStart,
+  };
 
-  WorkerHolder();
+  explicit WorkerHolder(const char* aName,
+                        Behavior aBehavior = PreventIdleShutdownStart);
   virtual ~WorkerHolder();
 
   bool HoldWorker(WorkerPrivate* aWorkerPrivate, Status aFailStatus);
   void ReleaseWorker();
 
   virtual bool Notify(Status aStatus) = 0;
+
+  Behavior GetBehavior() const;
+
+  const char*
+  Name() const
+  {
+    return mName;
+  }
 
 protected:
   void ReleaseWorkerInternal();
@@ -89,6 +101,12 @@ protected:
 
 private:
   void AssertIsOwningThread() const;
+
+  const Behavior mBehavior;
+
+  // For debugging only.
+  void* mThread;
+  const char* mName;
 };
 
 END_WORKERS_NAMESPACE

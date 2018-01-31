@@ -13,7 +13,7 @@ Some parts of the environment must be fetched asynchronously at startup. We don'
 This currently affects the following sections:
 
 - profile
-- addons
+- add-ons
 
 
 Structure:
@@ -31,12 +31,12 @@ Structure:
         vendor: <string>, // e.g. "Mozilla"
         platformVersion: <string>, // e.g. "35.0"
         xpcomAbi: <string>, // e.g. "x86-msvc"
-        hotfixVersion: <string>, // e.g. "20141211.01"
+        updaterAvailable: <bool>, // Whether the app was built with app update available (MOZ_UPDATER)
       },
       settings: {
         addonCompatibilityCheckEnabled: <bool>, // Whether application compatibility is respected for add-ons
         blocklistEnabled: <bool>, // true on failure
-        isDefaultBrowser: <bool>, // null on failure, not available on Android
+        isDefaultBrowser: <bool>, // null on failure and until session restore completes, not available on Android
         defaultSearchEngine: <string>, // e.g. "yahoo"
         defaultSearchEngineData: {, // data about the current default engine
           name: <string>, // engine name, e.g. "Yahoo"; or "NONE" if no default
@@ -46,7 +46,6 @@ Structure:
         },
         searchCohort: <string>, // optional, contains an identifier for any active search A/B experiments
         e10sEnabled: <bool>, // whether e10s is on, i.e. browser tabs open by default in a different process
-        e10sCohort: <string>, // which e10s cohort was assigned for this user
         telemetryEnabled: <bool>, // false on failure
         locale: <string>, // e.g. "it", null on failure
         update: {
@@ -55,12 +54,21 @@ Structure:
           autoDownload: <bool>, // true on failure
         },
         userPrefs: {
-          // Only prefs which are changed from the default value are listed
-          // in this block
+          // Only prefs which are changed are listed in this block
           "pref.name.value": value // some prefs send the value
           "pref.name.url": "<user-set>" // For some privacy-sensitive prefs
             // only the fact that the value has been changed is recorded
         },
+        attribution: { // optional, only present if the installation has attribution data
+          // all of these values are optional.
+          source: <string>, // referring partner domain, when install happens via a known partner
+          medium: <string>, // category of the source, such as "organic" for a search engine
+          campaign: <string>, // identifier of the particular campaign that led to the download of the product
+          content: <string>, // identifier to indicate the particular link within a campaign
+        },
+        sandbox: {
+          effectiveContentProcessLevel: <integer>,
+        }
       },
       profile: {
         creationDate: <integer>, // integer days since UNIX epoch, e.g. 16446
@@ -94,8 +102,9 @@ Structure:
               <string>,
               ...
               // as applicable:
-              // "MMX", "SSE", "SSE2", "SSE3", "SSSE3", "SSE4A", "SSE4_1",
-              // "SSE4_2", "AVX", "AVX2", "EDSP", "ARMv6", "ARMv7", "NEON"
+              // "hasMMX", "hasSSE", "hasSSE2", "hasSSE3", "hasSSSE3",
+              // "hasSSE4A", "hasSSE4_1", "hasSSE4_2", "hasAVX", "hasAVX2",
+              // "hasAES", "hasEDSP", "hasARMv6", "hasARMv7", "hasNEON"
             ],
         },
         device: { // This section is only available on mobile devices.
@@ -107,10 +116,10 @@ Structure:
         os: {
             name: <string>, // "Windows_NT" or null on failure
             version: <string>, // e.g. "6.1", null on failure
-            kernelVersion: <string>, // android/b2g only or null on failure
+            kernelVersion: <string>, // android only or null on failure
             servicePackMajor: <number>, // windows only or null on failure
             servicePackMinor: <number>, // windows only or null on failure
-            windowsBuildNumber: <number>, // windows 10 only or null on failure
+            windowsBuildNumber: <number>, // windows only or null on failure
             windowsUBR: <number>, // windows 10 only or null on failure
             installYear: <number>, // windows only or null on failure
             locale: <string>, // "en" or null on failure
@@ -171,7 +180,7 @@ Structure:
               //   "disabled"    - User explicitly disabled this default feature.
               //   "failed"      - This feature was attempted but failed to initialize.
               //   "available"   - User has this feature available.
-              "d3d11" { // This feature is Windows-only.
+              d3d11: { // This feature is Windows-only.
                 status: <string>,
                 warp: <bool>,           // Software rendering (WARP) mode was chosen.
                 textureSharing: <bool>  // Whether or not texture sharing works.
@@ -179,15 +188,27 @@ Structure:
                 blacklisted: <bool>,    // Whether D3D11 is blacklisted; use to see whether WARP
                                         // was blacklist induced or driver-failure induced.
               },
-              "d2d" { // This feature is Windows-only.
+              d2d: { // This feature is Windows-only.
                 status: <string>,
                 version: <string>,      // Either "1.0" or "1.1".
               },
+              gpuProcess: { // Out-of-process compositing ("GPU process") feature
+                status: <string>, // "Available" means currently in use
+              },
+              advancedLayers: { // Advanced Layers compositing. Only present if D3D11 enabled.
+                status: <string>,    // See the status codes above.
+              },
             },
           },
+        appleModelId: <string>, // Mac only or null on failure
+        sec: { // This feature is Windows 8+ only
+          antivirus: [ <string>, ... ],    // null if unavailable on platform: Product name(s) of registered antivirus programs
+          antispyware: [ <string>, ... ],  // null if unavailable on platform: Product name(s) of registered antispyware programs
+          firewall: [ <string>, ... ],     // null if unavailable on platform: Product name(s) of registered firewall programs
+        },
       },
       addons: {
-        activeAddons: { // the currently enabled addons
+        activeAddons: { // the currently enabled add-ons
           <addon id>: {
             blocklisted: <bool>,
             description: <string>, // null if not available
@@ -198,11 +219,13 @@ Structure:
             scope: <integer>,
             type: <string>, // "extension", "service", ...
             foreignInstall: <bool>,
-            hasBinaryComponents: <bool>
+            hasBinaryComponents: <bool>,
             installDay: <number>, // days since UNIX epoch, 0 on failure
             updateDay: <number>, // days since UNIX epoch, 0 on failure
             signedState: <integer>, // whether the add-on is signed by AMO, only present for extensions
             isSystem: <bool>, // true if this is a System Add-on
+            isWebExtension: <bool>, // true if this is a WebExtension
+            multiprocessCompatible: <bool>, // true if this add-on does *not* require e10s shims
           },
           ...
         },
@@ -245,8 +268,12 @@ Structure:
             id: <string>, // id
             branch: <string>, // branch name
         },
-        persona: <string>, // id of the current persona, null on GONK
+        persona: <string>, // id of the current persona
       },
+      experiments: {
+        "<experiment id>": { branch: "<branch>" },
+        // ...
+      }
     }
 
 build
@@ -286,6 +313,10 @@ The object contains:
   [profile]/searchplugins/engine.xml
   [distribution]/searchplugins/common/engine.xml
   [other]/engine.xml
+  [other]/addEngineWithDetails
+  [other]/addEngineWithDetails:extensionID
+  [http/https]example.com/engine-name.xml
+  [http/https]example.com/engine-name.xml:extensionID
 
 - an ``origin`` property: the value will be ``default`` for engines that are built-in or from distribution partners, ``verified`` for user-installed engines with valid verification hashes, ``unverified`` for non-default engines without verification hash, and ``invalid`` for engines with broken verification hashes.
 
@@ -304,7 +335,7 @@ userPrefs
 
 This object contains user preferences.
 
-Each key in the object is the name of a preference. A key's value depends on the policy with which the preference was collected. There are two such policies, "value" and "state". For preferences collected under the "value" policy, the value will be the preference's value. For preferences collected under the "state" policy, the value will be an opaque marker signifying only that the preference has a user value. The "state" policy is therefore used when user privacy is a concern.
+Each key in the object is the name of a preference. A key's value depends on the policy with which the preference was collected. There are three such policies, "value", "state", and "default value". For preferences collected under the "value" policy, the value will be the preference's value. For preferences collected under the "state" policy, the value will be an opaque marker signifying only that the preference has a user value. The "state" policy is therefore used when user privacy is a concern. For preferences collected under the "default value" policy, the value will be the preference's default value, if the preference exists. If the preference does not exist, there is no key or value.
 
 The following is a partial list of collected preferences.
 
@@ -314,16 +345,32 @@ The following is a partial list of collected preferences.
 
 - ``browser.urlbar.userMadeSearchSuggestionsChoice``: True if the user has clicked Yes or No in the urlbar's opt-in notification. Defaults to false.
 
-- ``browser.zoom.full``: True if zoom is enabled for both text and images, that is if "Zoom Text Only" is not enabled. Defaults to true. Collection of this preference has been enabled in Firefox 50 and will be disabled again in Firefox 53 (`Bug 979323 <https://bugzilla.mozilla.org/show_bug.cgi?id=979323>`_).
+- ``browser.zoom.full`` (deprecated): True if zoom is enabled for both text and images, that is if "Zoom Text Only" is not enabled. Defaults to true. This preference was collected in Firefox 50 to 52 (`Bug 979323 <https://bugzilla.mozilla.org/show_bug.cgi?id=979323>`_).
 
-- ``security.sandbox.content.level``: The meanings of the values are OS dependent, but 0 means not sandboxed for all OS. Details of the meanings can be found in the `Firefox prefs file <http://hg.mozilla.org/mozilla-central/file/tip/browser/app/profile/firefox.js>`_.
+attribution
+~~~~~~~~~~~
+
+This object contains the attribution data for the product installation.
+
+Attribution data is used to link installations of Firefox with the source that the user arrived at the Firefox download page from. It would indicate, for instance, when a user executed a web search for Firefox and arrived at the download page from there, directly navigated to the site, clicked on a link from a particular social media campaign, etc.
+
+The attribution data is included in some versions of the default Firefox installer for Windows (the "stub" installer) and stored as part of the installation. All platforms other than Windows and also Windows installations that did not use the stub installer do not have this data and will not include the ``attribution`` object.
+
+sandbox
+~~~~~~~
+
+This object contains data about the state of Firefox's sandbox.
+
+Specific keys are:
+
+- ``effectiveContentProcessLevel``: The meanings of the values are OS dependent. Details of the meanings can be found in the `Firefox prefs file <https://hg.mozilla.org/mozilla-central/file/tip/browser/app/profile/firefox.js>`_. The value here is the effective value, not the raw value, some platforms enforce a minimum sandbox level. If there is an error calculating this, it will be ``null``.
 
 partner
 -------
 
 If the user is using a partner repack, this contains information identifying the repack being used, otherwise "partnerNames" will be an empty array and other entries will be null. The information may be missing when the profile just becomes available. In Firefox for desktop, the information along with other customizations defined in distribution.ini are processed later in the startup phase, and will be fully applied when "distribution-customization-complete" notification is sent.
 
-Distributions are most reliably identified by the ``distributionId`` field. Partner information can be found in the `partner repacks <https://github.com/mozilla-partners>`_ (`the old one <http://hg.mozilla.org/build/partner-repacks/>`_ is deprecated): it contains one private repository per partner.
+Distributions are most reliably identified by the ``distributionId`` field. Partner information can be found in the `partner repacks <https://github.com/mozilla-partners>`_ (`the old one <https://hg.mozilla.org/build/partner-repacks/>`_ is deprecated): it contains one private repository per partner.
 Important values for ``distributionId`` include:
 
 - "MozillaOnline" for the Mozilla China repack.
@@ -340,10 +387,10 @@ This object contains operating system information.
 
 - ``name``: the name of the OS.
 - ``version``: a string representing the OS version.
-- ``kernelVersion``: an Android/B2G only string representing the kernel version.
+- ``kernelVersion``: an Android only string representing the kernel version.
 - ``servicePackMajor``: the Windows only major version number for the installed service pack.
 - ``servicePackMinor``: the Windows only minor version number for the installed service pack.
-- ``windowsBuildNumber``: the Windows build number, only available for Windows >= 10.
+- ``windowsBuildNumber``: the Windows build number.
 - ``windowsUBR``: the Windows UBR number, only available for Windows >= 10. This value is incremented by Windows cumulative updates patches.
 - ``installYear``: the Windows only integer representing the year the OS was installed.
 - ``locale``: the string representing the OS locale.
@@ -355,3 +402,9 @@ activeAddons
 ~~~~~~~~~~~~
 
 Starting from Firefox 44, the length of the following string fields: ``name``, ``description`` and ``version`` is limited to 100 characters. The same limitation applies to the same fields in ``theme`` and ``activePlugins``.
+
+Some of the fields in the record for each add-on are not available during startup.  The fields that will always be present are ``id``, ``version``, ``type``, ``updateDate``, ``scope``, ``isSystem``, ``isWebExtension``, and ``multiprocessCompatible``.  All the other fields documented above become present shortly after the ``sessionstore-windows-restored`` event is dispatched.
+
+experiments
+-----------
+For each experiment we collect the ``id`` and the ``branch`` the client is enrolled in. Both fields are truncated to 100 characters and a warning is printed when that happens. This section will eventually supersede ``addons/activeExperiment``.

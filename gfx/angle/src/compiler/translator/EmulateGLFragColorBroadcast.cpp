@@ -12,126 +12,106 @@
 //
 
 #include "compiler/translator/EmulateGLFragColorBroadcast.h"
-#include "compiler/translator/IntermNode.h"
+
+#include "compiler/translator/IntermNode_util.h"
+#include "compiler/translator/IntermTraverse.h"
+#include "compiler/translator/RunAtTheEndOfShader.h"
+
+namespace sh
+{
 
 namespace
 {
 
-TIntermConstantUnion *constructIndexNode(int index)
-{
-    TConstantUnion *u = new TConstantUnion[1];
-    u[0].setIConst(index);
-
-    TType type(EbtInt, EbpUndefined, EvqConst, 1);
-    TIntermConstantUnion *node = new TIntermConstantUnion(u, type);
-    return node;
-}
-
-TIntermBinary *constructGLFragDataNode(int index)
-{
-    TIntermBinary *indexDirect = new TIntermBinary(EOpIndexDirect);
-    TIntermSymbol *symbol      = new TIntermSymbol(0, "gl_FragData", TType(EbtFloat, 4));
-    indexDirect->setLeft(symbol);
-    TIntermConstantUnion *indexNode = constructIndexNode(index);
-    indexDirect->setRight(indexNode);
-    return indexDirect;
-}
-
-TIntermBinary *constructGLFragDataAssignNode(int index)
-{
-    TIntermBinary *assign = new TIntermBinary(EOpAssign);
-    assign->setLeft(constructGLFragDataNode(index));
-    assign->setRight(constructGLFragDataNode(0));
-    assign->setType(TType(EbtFloat, 4));
-    return assign;
-}
-
 class GLFragColorBroadcastTraverser : public TIntermTraverser
 {
   public:
-    GLFragColorBroadcastTraverser()
-        : TIntermTraverser(true, false, false), mMainSequence(nullptr), mGLFragColorUsed(false)
+    GLFragColorBroadcastTraverser(int maxDrawBuffers, TSymbolTable *symbolTable, int shaderVersion)
+        : TIntermTraverser(true, false, false, symbolTable),
+          mGLFragColorUsed(false),
+          mMaxDrawBuffers(maxDrawBuffers),
+          mShaderVersion(shaderVersion)
     {
     }
 
-    void broadcastGLFragColor(int maxDrawBuffers);
+    void broadcastGLFragColor(TIntermBlock *root);
 
     bool isGLFragColorUsed() const { return mGLFragColorUsed; }
 
   protected:
     void visitSymbol(TIntermSymbol *node) override;
-    bool visitAggregate(Visit visit, TIntermAggregate *node) override;
+
+    TIntermBinary *constructGLFragDataNode(int index) const;
+    TIntermBinary *constructGLFragDataAssignNode(int index) const;
 
   private:
-    TIntermSequence *mMainSequence;
     bool mGLFragColorUsed;
+    int mMaxDrawBuffers;
+    const int mShaderVersion;
 };
+
+TIntermBinary *GLFragColorBroadcastTraverser::constructGLFragDataNode(int index) const
+{
+    TIntermSymbol *symbol =
+        ReferenceBuiltInVariable(TString("gl_FragData"), *mSymbolTable, mShaderVersion);
+    TIntermTyped *indexNode = CreateIndexNode(index);
+
+    TIntermBinary *binary = new TIntermBinary(EOpIndexDirect, symbol, indexNode);
+    return binary;
+}
+
+TIntermBinary *GLFragColorBroadcastTraverser::constructGLFragDataAssignNode(int index) const
+{
+    TIntermTyped *fragDataIndex = constructGLFragDataNode(index);
+    TIntermTyped *fragDataZero  = constructGLFragDataNode(0);
+
+    return new TIntermBinary(EOpAssign, fragDataIndex, fragDataZero);
+}
 
 void GLFragColorBroadcastTraverser::visitSymbol(TIntermSymbol *node)
 {
     if (node->getSymbol() == "gl_FragColor")
     {
-        queueReplacement(node, constructGLFragDataNode(0), OriginalNode::IS_DROPPED);
+        queueReplacement(constructGLFragDataNode(0), OriginalNode::IS_DROPPED);
         mGLFragColorUsed = true;
     }
 }
 
-bool GLFragColorBroadcastTraverser::visitAggregate(Visit visit, TIntermAggregate *node)
+void GLFragColorBroadcastTraverser::broadcastGLFragColor(TIntermBlock *root)
 {
-    switch (node->getOp())
-    {
-        case EOpFunction:
-            // Function definition.
-            ASSERT(visit == PreVisit);
-            if (node->getName() == "main(")
-            {
-                TIntermSequence *sequence = node->getSequence();
-                ASSERT((sequence->size() == 1) || (sequence->size() == 2));
-                if (sequence->size() == 2)
-                {
-                    TIntermAggregate *body = (*sequence)[1]->getAsAggregate();
-                    ASSERT(body);
-                    mMainSequence = body->getSequence();
-                }
-            }
-            break;
-        default:
-            break;
-    }
-    return true;
-}
-
-void GLFragColorBroadcastTraverser::broadcastGLFragColor(int maxDrawBuffers)
-{
-    ASSERT(maxDrawBuffers > 1);
+    ASSERT(mMaxDrawBuffers > 1);
     if (!mGLFragColorUsed)
     {
         return;
     }
-    ASSERT(mMainSequence);
+
+    TIntermBlock *broadcastBlock = new TIntermBlock();
     // Now insert statements
     //   gl_FragData[1] = gl_FragData[0];
     //   ...
     //   gl_FragData[maxDrawBuffers - 1] = gl_FragData[0];
-    for (int colorIndex = 1; colorIndex < maxDrawBuffers; ++colorIndex)
+    for (int colorIndex = 1; colorIndex < mMaxDrawBuffers; ++colorIndex)
     {
-        mMainSequence->insert(mMainSequence->end(), constructGLFragDataAssignNode(colorIndex));
+        broadcastBlock->appendStatement(constructGLFragDataAssignNode(colorIndex));
     }
+    RunAtTheEndOfShader(root, broadcastBlock, mSymbolTable);
 }
 
 }  // namespace anonymous
 
-void EmulateGLFragColorBroadcast(TIntermNode *root,
+void EmulateGLFragColorBroadcast(TIntermBlock *root,
                                  int maxDrawBuffers,
-                                 std::vector<sh::OutputVariable> *outputVariables)
+                                 std::vector<sh::OutputVariable> *outputVariables,
+                                 TSymbolTable *symbolTable,
+                                 int shaderVersion)
 {
     ASSERT(maxDrawBuffers > 1);
-    GLFragColorBroadcastTraverser traverser;
+    GLFragColorBroadcastTraverser traverser(maxDrawBuffers, symbolTable, shaderVersion);
     root->traverse(&traverser);
     if (traverser.isGLFragColorUsed())
     {
         traverser.updateTree();
-        traverser.broadcastGLFragColor(maxDrawBuffers);
+        traverser.broadcastGLFragColor(root);
         for (auto &var : *outputVariables)
         {
             if (var.name == "gl_FragColor")
@@ -144,3 +124,5 @@ void EmulateGLFragColorBroadcast(TIntermNode *root,
         }
     }
 }
+
+}  // namespace sh

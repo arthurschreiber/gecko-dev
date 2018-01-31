@@ -8,7 +8,6 @@
 
 /* ECC code moved here from ssl3con.c */
 
-#include "nss.h"
 #include "cert.h"
 #include "ssl.h"
 #include "cryptohi.h" /* for DSAU_ stuff */
@@ -19,6 +18,7 @@
 #include "sslimpl.h"
 #include "sslproto.h"
 #include "sslerr.h"
+#include "ssl3ext.h"
 #include "prtime.h"
 #include "prinrval.h"
 #include "prerror.h"
@@ -31,36 +31,11 @@
 
 #include <stdio.h>
 
-#ifndef PK11_SETATTRS
-#define PK11_SETATTRS(x, id, v, l) \
-    (x)->type = (id);              \
-    (x)->pValue = (v);             \
-    (x)->ulValueLen = (l);
-#endif
-
-static SECStatus ssl_CreateECDHEphemeralKeys(sslSocket *ss,
-                                             const namedGroupDef *ecGroup);
-
-typedef struct ECDHEKeyPairStr {
-    sslEphemeralKeyPair *pair;
-    int error; /* error code of the call-once function */
-    PRCallOnceType once;
-} ECDHEKeyPair;
-
-/* arrays of ECDHE KeyPairs */
-static PRCallOnceType gECDHEInitOnce;
-static int gECDHEInitError;
-/* This must be the same as ssl_named_groups_count.  ssl_ECRegister() asserts
- * this at runtime; no compile-time error, sorry. */
-static ECDHEKeyPair gECDHEKeyPairs[30];
-
 SECStatus
-ssl_NamedGroup2ECParams(PLArenaPool *arena, const namedGroupDef *ecGroup,
+ssl_NamedGroup2ECParams(PLArenaPool *arena, const sslNamedGroupDef *ecGroup,
                         SECKEYECParams *params)
 {
     SECOidData *oidData = NULL;
-    PRUint32 policyFlags = 0;
-    SECStatus rv;
 
     if (!params) {
         PORT_Assert(0);
@@ -68,14 +43,8 @@ ssl_NamedGroup2ECParams(PLArenaPool *arena, const namedGroupDef *ecGroup,
         return SECFailure;
     }
 
-    if (!ecGroup || ecGroup->type != group_type_ec ||
+    if (!ecGroup || ecGroup->keaType != ssl_kea_ecdh ||
         (oidData = SECOID_FindOIDByTag(ecGroup->oidTag)) == NULL) {
-        PORT_SetError(SEC_ERROR_UNSUPPORTED_ELLIPTIC_CURVE);
-        return SECFailure;
-    }
-
-    rv = NSS_GetAlgorithmPolicy(ecGroup->oidTag, &policyFlags);
-    if (rv == SECSuccess && !(policyFlags & NSS_USE_ALG_IN_SSL_KX)) {
         PORT_SetError(SEC_ERROR_UNSUPPORTED_ELLIPTIC_CURVE);
         return SECFailure;
     }
@@ -97,7 +66,7 @@ ssl_NamedGroup2ECParams(PLArenaPool *arena, const namedGroupDef *ecGroup,
     return SECSuccess;
 }
 
-const namedGroupDef *
+const sslNamedGroupDef *
 ssl_ECPubKey2NamedGroup(const SECKEYPublicKey *pubKey)
 {
     SECItem oid = { siBuffer, NULL, 0 };
@@ -129,7 +98,7 @@ ssl_ECPubKey2NamedGroup(const SECKEYPublicKey *pubKey)
         !(policyFlags & NSS_USE_ALG_IN_SSL_KX)) {
         return NULL;
     }
-    for (i = 0; i < ssl_named_group_count; ++i) {
+    for (i = 0; i < SSL_NAMED_GROUP_COUNT; ++i) {
         if (ssl_named_groups[i].oidTag == oidData->offset) {
             return &ssl_named_groups[i];
         }
@@ -142,18 +111,17 @@ ssl_ECPubKey2NamedGroup(const SECKEYPublicKey *pubKey)
 static SECStatus
 ssl3_ComputeECDHKeyHash(SSLHashType hashAlg,
                         SECItem ec_params, SECItem server_ecpoint,
-                        SSL3Random *client_rand, SSL3Random *server_rand,
-                        SSL3Hashes *hashes, PRBool bypassPKCS11)
+                        PRUint8 *client_rand, PRUint8 *server_rand,
+                        SSL3Hashes *hashes)
 {
     PRUint8 *hashBuf;
     PRUint8 *pBuf;
     SECStatus rv = SECSuccess;
     unsigned int bufLen;
     /*
-     * XXX For now, we only support named curves (the appropriate
-     * checks are made before this method is called) so ec_params
-     * takes up only two bytes. ECPoint needs to fit in 256 bytes
-     * (because the spec says the length must fit in one byte)
+     * We only support named curves (the appropriate checks are made before this
+     * method is called) so ec_params takes up only two bytes. ECPoint needs to
+     * fit in 256 bytes because the spec says the length must fit in one byte.
      */
     PRUint8 buf[2 * SSL3_RANDOM_LENGTH + 2 + 1 + 256];
 
@@ -179,8 +147,7 @@ ssl3_ComputeECDHKeyHash(SSLHashType hashAlg,
     pBuf += server_ecpoint.len;
     PORT_Assert((unsigned int)(pBuf - hashBuf) == bufLen);
 
-    rv = ssl3_ComputeCommonKeyHash(hashAlg, hashBuf, bufLen, hashes,
-                                   bypassPKCS11);
+    rv = ssl3_ComputeCommonKeyHash(hashAlg, hashBuf, bufLen, hashes);
 
     PRINT_BUF(95, (NULL, "ECDHkey hash: ", hashBuf, bufLen));
     PRINT_BUF(95, (NULL, "ECDHkey hash: MD5 result",
@@ -201,15 +168,15 @@ ssl3_SendECDHClientKeyExchange(sslSocket *ss, SECKEYPublicKey *svrPubKey)
     SECStatus rv = SECFailure;
     PRBool isTLS, isTLS12;
     CK_MECHANISM_TYPE target;
-    const namedGroupDef *groupDef;
+    const sslNamedGroupDef *groupDef;
     sslEphemeralKeyPair *keyPair = NULL;
     SECKEYPublicKey *pubKey;
 
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
     PORT_Assert(ss->opt.noLocks || ssl_HaveXmitBufLock(ss));
 
-    isTLS = (PRBool)(ss->ssl3.pwSpec->version > SSL_LIBRARY_VERSION_3_0);
-    isTLS12 = (PRBool)(ss->ssl3.pwSpec->version >= SSL_LIBRARY_VERSION_TLS_1_2);
+    isTLS = (PRBool)(ss->version > SSL_LIBRARY_VERSION_3_0);
+    isTLS12 = (PRBool)(ss->version >= SSL_LIBRARY_VERSION_TLS_1_2);
 
     /* Generate ephemeral EC keypair */
     if (svrPubKey->keyType != ecKey) {
@@ -221,7 +188,8 @@ ssl3_SendECDHClientKeyExchange(sslSocket *ss, SECKEYPublicKey *svrPubKey)
         PORT_SetError(SEC_ERROR_BAD_KEY);
         goto loser;
     }
-    rv = ssl_CreateECDHEphemeralKeyPair(groupDef, &keyPair);
+    ss->sec.keaGroup = groupDef;
+    rv = ssl_CreateECDHEphemeralKeyPair(ss, groupDef, &keyPair);
     if (rv != SECSuccess) {
         ssl_MapLowLevelError(SEC_ERROR_KEYGEN_FAIL);
         goto loser;
@@ -251,7 +219,7 @@ ssl3_SendECDHClientKeyExchange(sslSocket *ss, SECKEYPublicKey *svrPubKey)
         goto loser;
     }
 
-    rv = ssl3_AppendHandshakeHeader(ss, client_key_exchange,
+    rv = ssl3_AppendHandshakeHeader(ss, ssl_hs_client_key_exchange,
                                     pubKey->u.ec.publicValue.len + 1);
     if (rv != SECSuccess) {
         goto loser; /* err set by ssl3_AppendHandshake* */
@@ -264,7 +232,7 @@ ssl3_SendECDHClientKeyExchange(sslSocket *ss, SECKEYPublicKey *svrPubKey)
         goto loser; /* err set by ssl3_AppendHandshake* */
     }
 
-    rv = ssl3_InitPendingCipherSpec(ss, pms);
+    rv = ssl3_InitPendingCipherSpecs(ss, pms, PR_TRUE);
     if (rv != SECSuccess) {
         ssl_MapLowLevelError(SSL_ERROR_CLIENT_KEY_EXCHANGE_FAILURE);
         goto loser;
@@ -282,34 +250,11 @@ loser:
     return SECFailure;
 }
 
-/* This function returns the size of the key_exchange field in
- * the KeyShareEntry structure, i.e.:
- *     opaque point <1..2^8-1>; */
-unsigned int
-tls13_SizeOfECDHEKeyShareKEX(const SECKEYPublicKey *pubKey)
-{
-    PORT_Assert(pubKey->keyType == ecKey);
-    return pubKey->u.ec.publicValue.len;
-}
-
-/* This function encodes the key_exchange field in
- * the KeyShareEntry structure. */
-SECStatus
-tls13_EncodeECDHEKeyShareKEX(sslSocket *ss, const SECKEYPublicKey *pubKey)
-{
-    PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
-    PORT_Assert(ss->opt.noLocks || ssl_HaveXmitBufLock(ss));
-    PORT_Assert(pubKey->keyType == ecKey);
-
-    return ssl3_AppendHandshake(ss, pubKey->u.ec.publicValue.data,
-                                pubKey->u.ec.publicValue.len);
-}
-
 /*
 ** Called from ssl3_HandleClientKeyExchange()
 */
 SECStatus
-ssl3_HandleECDHClientKeyExchange(sslSocket *ss, SSL3Opaque *b,
+ssl3_HandleECDHClientKeyExchange(sslSocket *ss, PRUint8 *b,
                                  PRUint32 length,
                                  sslKeyPair *serverKeyPair)
 {
@@ -328,6 +273,7 @@ ssl3_HandleECDHClientKeyExchange(sslSocket *ss, SSL3Opaque *b,
         serverKeyPair->pubKey->u.ec.DEREncodedParams.len;
     clntPubKey.u.ec.DEREncodedParams.data =
         serverKeyPair->pubKey->u.ec.DEREncodedParams.data;
+    clntPubKey.u.ec.encoding = ECPoint_Undefined;
 
     rv = ssl3_ConsumeHandshakeVariable(ss, &clntPubKey.u.ec.publicValue,
                                        1, &b, &length);
@@ -367,23 +313,23 @@ ssl3_HandleECDHClientKeyExchange(sslSocket *ss, SSL3Opaque *b,
         return SECFailure;
     }
 
-    rv = ssl3_InitPendingCipherSpec(ss, pms);
+    rv = ssl3_InitPendingCipherSpecs(ss, pms, PR_TRUE);
     PK11_FreeSymKey(pms);
     if (rv != SECSuccess) {
         /* error code set by ssl3_InitPendingCipherSpec */
         return SECFailure;
     }
+    ss->sec.keaGroup = ssl_ECPubKey2NamedGroup(&clntPubKey);
     return SECSuccess;
 }
 
 /*
 ** Take an encoded key share and make a public key out of it.
-** returns NULL on error.
 */
 SECStatus
-tls13_ImportECDHKeyShare(sslSocket *ss, SECKEYPublicKey *peerKey,
-                         SSL3Opaque *b, PRUint32 length,
-                         const namedGroupDef *ecGroup)
+ssl_ImportECDHKeyShare(sslSocket *ss, SECKEYPublicKey *peerKey,
+                       PRUint8 *b, PRUint32 length,
+                       const sslNamedGroupDef *ecGroup)
 {
     SECStatus rv;
     SECItem ecPoint = { siBuffer, NULL, 0 };
@@ -397,7 +343,8 @@ tls13_ImportECDHKeyShare(sslSocket *ss, SECKEYPublicKey *peerKey,
     }
 
     /* Fail if the ec point uses compressed representation */
-    if (b[0] != EC_POINT_FORM_UNCOMPRESSED) {
+    if (b[0] != EC_POINT_FORM_UNCOMPRESSED &&
+        ecGroup->name != ssl_grp_ec_curve25519) {
         PORT_SetError(SEC_ERROR_UNSUPPORTED_EC_POINT_FORM);
         return SECFailure;
     }
@@ -410,6 +357,7 @@ tls13_ImportECDHKeyShare(sslSocket *ss, SECKEYPublicKey *peerKey,
         ssl_MapLowLevelError(SSL_ERROR_RX_MALFORMED_ECDHE_KEY_SHARE);
         return SECFailure;
     }
+    peerKey->u.ec.encoding = ECPoint_Undefined;
 
     /* copy publicValue in peerKey */
     ecPoint.data = b;
@@ -423,27 +371,28 @@ tls13_ImportECDHKeyShare(sslSocket *ss, SECKEYPublicKey *peerKey,
     return SECSuccess;
 }
 
-const namedGroupDef *
-ssl_GetECGroupWithStrength(PRUint32 curvemsk, unsigned int requiredECCbits)
+const sslNamedGroupDef *
+ssl_GetECGroupWithStrength(sslSocket *ss, unsigned int requiredECCbits)
 {
     int i;
 
-    for (i = 0; i < ssl_named_group_count; i++) {
-        if (ssl_named_groups[i].type != group_type_ec ||
-            ssl_named_groups[i].bits < requiredECCbits) {
-            continue;
-        }
-        if ((curvemsk & (1U << i))) {
-            return &ssl_named_groups[i];
+    PORT_Assert(ss);
+
+    for (i = 0; i < SSL_NAMED_GROUP_COUNT; ++i) {
+        const sslNamedGroupDef *group = ss->namedGroupPreferences[i];
+        if (group && group->keaType == ssl_kea_ecdh &&
+            group->bits >= requiredECCbits) {
+            return group;
         }
     }
+
     PORT_SetError(SSL_ERROR_NO_CYPHER_OVERLAP);
     return NULL;
 }
 
 /* Find the "weakest link".  Get the strength of the signature and symmetric
  * keys and choose a curve based on the weakest of those two. */
-const namedGroupDef *
+const sslNamedGroupDef *
 ssl_GetECGroupForServerSocket(sslSocket *ss)
 {
     const sslServerCert *cert = ss->sec.serverCert;
@@ -457,23 +406,19 @@ ssl_GetECGroupForServerSocket(sslSocket *ss)
         return NULL;
     }
 
-    if (cert->certType.authType == ssl_auth_rsa_sign) {
+    if (SSL_CERT_IS(cert, ssl_auth_rsa_sign) ||
+        SSL_CERT_IS(cert, ssl_auth_rsa_pss)) {
         certKeySize = SECKEY_PublicKeyStrengthInBits(cert->serverKeyPair->pubKey);
-        certKeySize =
-            SSL_RSASTRENGTH_TO_ECSTRENGTH(certKeySize);
-    } else if (cert->certType.authType == ssl_auth_ecdsa ||
-               cert->certType.authType == ssl_auth_ecdh_rsa ||
-               cert->certType.authType == ssl_auth_ecdh_ecdsa) {
-        const namedGroupDef *groupDef = cert->certType.namedCurve;
-
+        certKeySize = SSL_RSASTRENGTH_TO_ECSTRENGTH(certKeySize);
+    } else if (SSL_CERT_IS_EC(cert)) {
         /* We won't select a certificate unless the named curve has been
          * negotiated (or supported_curves was absent), double check that. */
-        PORT_Assert(groupDef->type == group_type_ec);
-        PORT_Assert(ssl_NamedGroupEnabled(ss, groupDef));
-        if (!ssl_NamedGroupEnabled(ss, groupDef)) {
+        PORT_Assert(cert->namedCurve->keaType == ssl_kea_ecdh);
+        PORT_Assert(ssl_NamedGroupEnabled(ss, cert->namedCurve));
+        if (!ssl_NamedGroupEnabled(ss, cert->namedCurve)) {
             return NULL;
         }
-        certKeySize = groupDef->bits;
+        certKeySize = cert->namedCurve->bits;
     } else {
         PORT_Assert(0);
         return NULL;
@@ -486,39 +431,13 @@ ssl_GetECGroupForServerSocket(sslSocket *ss)
         requiredECCbits = certKeySize;
     }
 
-    return ssl_GetECGroupWithStrength(ss->namedGroups, requiredECCbits);
-}
-
-/* function to clear out the lists */
-static SECStatus
-ssl_ShutdownECDHECurves(void *appData, void *nssData)
-{
-    int i;
-
-    for (i = 0; i < PR_ARRAY_SIZE(gECDHEKeyPairs); i++) {
-        if (gECDHEKeyPairs[i].pair) {
-            ssl_FreeEphemeralKeyPair(gECDHEKeyPairs[i].pair);
-        }
-    }
-    memset(gECDHEKeyPairs, 0, sizeof(gECDHEKeyPairs));
-    return SECSuccess;
-}
-
-static PRStatus
-ssl_ECRegister(void)
-{
-    SECStatus rv;
-    PORT_Assert(PR_ARRAY_SIZE(gECDHEKeyPairs) == ssl_named_group_count);
-    rv = NSS_RegisterShutdown(ssl_ShutdownECDHECurves, gECDHEKeyPairs);
-    if (rv != SECSuccess) {
-        gECDHEInitError = PORT_GetError();
-    }
-    return (PRStatus)rv;
+    return ssl_GetECGroupWithStrength(ss, requiredECCbits);
 }
 
 /* Create an ECDHE key pair for a given curve */
 SECStatus
-ssl_CreateECDHEphemeralKeyPair(const namedGroupDef *ecGroup,
+ssl_CreateECDHEphemeralKeyPair(const sslSocket *ss,
+                               const sslNamedGroupDef *ecGroup,
                                sslEphemeralKeyPair **keyPair)
 {
     SECKEYPrivateKey *privKey = NULL;
@@ -529,7 +448,7 @@ ssl_CreateECDHEphemeralKeyPair(const namedGroupDef *ecGroup,
     if (ssl_NamedGroup2ECParams(NULL, ecGroup, &ecParams) != SECSuccess) {
         return SECFailure;
     }
-    privKey = SECKEY_CreateECPrivateKey(&ecParams, &pubKey, NULL);
+    privKey = SECKEY_CreateECPrivateKey(&ecParams, &pubKey, ss->pkcs11PinArg);
     SECITEM_FreeItem(&ecParams, PR_FALSE);
 
     if (!privKey || !pubKey ||
@@ -545,75 +464,28 @@ ssl_CreateECDHEphemeralKeyPair(const namedGroupDef *ecGroup,
     }
 
     *keyPair = pair;
-    return SECSuccess;
-}
-
-/* CallOnce function, called once for each named curve. */
-static PRStatus
-ssl_CreateECDHEphemeralKeyPairOnce(void *arg)
-{
-    const namedGroupDef *groupDef = (const namedGroupDef *)arg;
-    sslEphemeralKeyPair *keyPair = NULL;
-    SECStatus rv;
-
-    PORT_Assert(groupDef->type == group_type_ec);
-    PORT_Assert(gECDHEKeyPairs[groupDef->index].pair == NULL);
-
-    /* ok, no one has generated a global key for this curve yet, do so */
-    rv = ssl_CreateECDHEphemeralKeyPair(groupDef, &keyPair);
-    if (rv != SECSuccess) {
-        gECDHEKeyPairs[groupDef->index].error = PORT_GetError();
-        return PR_FAILURE;
-    }
-
-    gECDHEKeyPairs[groupDef->index].pair = keyPair;
-    return PR_SUCCESS;
-}
-
-/*
- * Creates the ephemeral public and private ECDH keys used by
- * server in ECDHE_RSA and ECDHE_ECDSA handshakes.
- * For now, the elliptic curve is chosen to be the same
- * strength as the signing certificate (ECC or RSA).
- * We need an API to specify the curve. This won't be a real
- * issue until we further develop server-side support for ECC
- * cipher suites.
- */
-static SECStatus
-ssl_CreateECDHEphemeralKeys(sslSocket *ss, const namedGroupDef *ecGroup)
-{
-    sslEphemeralKeyPair *keyPair = NULL;
-
-    /* if there's no global key for this curve, make one. */
-    if (gECDHEKeyPairs[ecGroup->index].pair == NULL) {
-        PRStatus status;
-
-        status = PR_CallOnce(&gECDHEInitOnce, ssl_ECRegister);
-        if (status != PR_SUCCESS) {
-            PORT_SetError(gECDHEInitError);
-            return SECFailure;
-        }
-        status = PR_CallOnceWithArg(&gECDHEKeyPairs[ecGroup->index].once,
-                                    ssl_CreateECDHEphemeralKeyPairOnce,
-                                    (void *)ecGroup);
-        if (status != PR_SUCCESS) {
-            PORT_SetError(gECDHEKeyPairs[ecGroup->index].error);
-            return SECFailure;
+    SSL_TRC(50, ("%d: SSL[%d]: Create ECDH ephemeral key %d",
+                 SSL_GETPID(), ss ? ss->fd : NULL, ecGroup->name));
+    PRINT_BUF(50, (ss, "Public Key", pubKey->u.ec.publicValue.data,
+                   pubKey->u.ec.publicValue.len));
+#ifdef TRACE
+    if (ssl_trace >= 50) {
+        SECItem d = { siBuffer, NULL, 0 };
+        SECStatus rv = PK11_ReadRawAttribute(PK11_TypePrivKey, privKey,
+                                             CKA_VALUE, &d);
+        if (rv == SECSuccess) {
+            PRINT_BUF(50, (ss, "Private Key", d.data, d.len));
+            SECITEM_FreeItem(&d, PR_FALSE);
+        } else {
+            SSL_TRC(50, ("Error extracting private key"));
         }
     }
-
-    keyPair = ssl_CopyEphemeralKeyPair(gECDHEKeyPairs[ecGroup->index].pair);
-    PORT_Assert(keyPair != NULL);
-    if (!keyPair)
-        return SECFailure;
-
-    PORT_Assert(PR_CLIST_IS_EMPTY(&ss->ephemeralKeyPairs));
-    PR_APPEND_LINK(&keyPair->link, &ss->ephemeralKeyPairs);
+#endif
     return SECSuccess;
 }
 
 SECStatus
-ssl3_HandleECDHServerKeyExchange(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
+ssl3_HandleECDHServerKeyExchange(sslSocket *ss, PRUint8 *b, PRUint32 length)
 {
     PLArenaPool *arena = NULL;
     SECKEYPublicKey *peerKey = NULL;
@@ -624,11 +496,12 @@ ssl3_HandleECDHServerKeyExchange(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     SSL3Hashes hashes;
     SECItem signature = { siBuffer, NULL, 0 };
     SSLHashType hashAlg;
+    SSLSignatureScheme sigScheme;
 
     SECItem ec_params = { siBuffer, NULL, 0 };
     SECItem ec_point = { siBuffer, NULL, 0 };
-    unsigned char paramBuf[3]; /* only for curve_type == named_curve */
-    const namedGroupDef *ecGroup;
+    unsigned char paramBuf[3];
+    const sslNamedGroupDef *ecGroup;
 
     isTLS = (PRBool)(ss->ssl3.prSpec->version > SSL_LIBRARY_VERSION_3_0);
 
@@ -646,7 +519,7 @@ ssl3_HandleECDHServerKeyExchange(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
         goto alert_loser;
     }
     ecGroup = ssl_LookupNamedGroup(ec_params.data[1] << 8 | ec_params.data[2]);
-    if (!ecGroup || ecGroup->type != group_type_ec) {
+    if (!ecGroup || ecGroup->keaType != ssl_kea_ecdh) {
         errCode = SEC_ERROR_UNSUPPORTED_ELLIPTIC_CURVE;
         desc = handshake_failure;
         goto alert_loser;
@@ -663,8 +536,9 @@ ssl3_HandleECDHServerKeyExchange(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
         goto alert_loser;
     }
 
-    /* Fail if the ec point uses compressed representation. */
-    if (ec_point.data[0] != EC_POINT_FORM_UNCOMPRESSED) {
+    /* Fail if the ec point is not uncompressed for any curve that's not 25519. */
+    if (ecGroup->name != ssl_grp_ec_curve25519 &&
+        ec_point.data[0] != EC_POINT_FORM_UNCOMPRESSED) {
         errCode = SEC_ERROR_UNSUPPORTED_EC_POINT_FORM;
         desc = handshake_failure;
         goto alert_loser;
@@ -672,7 +546,6 @@ ssl3_HandleECDHServerKeyExchange(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 
     PORT_Assert(ss->ssl3.prSpec->version <= SSL_LIBRARY_VERSION_TLS_1_2);
     if (ss->ssl3.prSpec->version == SSL_LIBRARY_VERSION_TLS_1_2) {
-        SignatureScheme sigScheme;
         rv = ssl_ConsumeSignatureScheme(ss, &b, &length, &sigScheme);
         if (rv != SECSuccess) {
             goto loser; /* malformed or unsupported. */
@@ -686,6 +559,7 @@ ssl3_HandleECDHServerKeyExchange(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     } else {
         /* Use ssl_hash_none to represent the MD5+SHA1 combo. */
         hashAlg = ssl_hash_none;
+        sigScheme = ssl_sig_none;
     }
 
     rv = ssl3_ConsumeHandshakeVariable(ss, &signature, 2, &b, &length);
@@ -699,8 +573,7 @@ ssl3_HandleECDHServerKeyExchange(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
         goto alert_loser; /* malformed. */
     }
 
-    PRINT_BUF(60, (NULL, "Server EC params", ec_params.data,
-                   ec_params.len));
+    PRINT_BUF(60, (NULL, "Server EC params", ec_params.data, ec_params.len));
     PRINT_BUF(60, (NULL, "Server EC point", ec_point.data, ec_point.len));
 
     /* failures after this point are not malformed handshakes. */
@@ -711,17 +584,16 @@ ssl3_HandleECDHServerKeyExchange(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
      *  check to make sure the hash is signed by right guy
      */
     rv = ssl3_ComputeECDHKeyHash(hashAlg, ec_params, ec_point,
-                                 &ss->ssl3.hs.client_random,
-                                 &ss->ssl3.hs.server_random,
-                                 &hashes, ss->opt.bypassPKCS11);
+                                 ss->ssl3.hs.client_random,
+                                 ss->ssl3.hs.server_random,
+                                 &hashes);
 
     if (rv != SECSuccess) {
         errCode =
             ssl_MapLowLevelError(SSL_ERROR_SERVER_KEY_EXCHANGE_FAILURE);
         goto alert_loser;
     }
-    rv = ssl3_VerifySignedHashes(&hashes, ss->sec.peerCert, &signature,
-                                 isTLS, ss->pkcs11PinArg);
+    rv = ssl3_VerifySignedHashes(ss, sigScheme, &hashes, &signature);
     if (rv != SECSuccess) {
         errCode =
             ssl_MapLowLevelError(SSL_ERROR_SERVER_KEY_EXCHANGE_FAILURE);
@@ -739,25 +611,16 @@ ssl3_HandleECDHServerKeyExchange(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
         errCode = SEC_ERROR_NO_MEMORY;
         goto loser;
     }
-
     peerKey->arena = arena;
-    peerKey->keyType = ecKey;
 
-    /* set up EC parameters in peerKey */
-    rv = ssl_NamedGroup2ECParams(arena, ecGroup,
-                                 &peerKey->u.ec.DEREncodedParams);
+    /* create public key from point data */
+    rv = ssl_ImportECDHKeyShare(ss, peerKey, ec_point.data, ec_point.len,
+                                ecGroup);
     if (rv != SECSuccess) {
-        /* we should never get here since we already
-         * checked that we are dealing with a supported curve
-         */
-        errCode = SEC_ERROR_UNSUPPORTED_ELLIPTIC_CURVE;
+        /* error code is set */
+        desc = handshake_failure;
+        errCode = PORT_GetError();
         goto alert_loser;
-    }
-
-    /* copy publicValue in peerKey */
-    if (SECITEM_CopyItem(arena, &peerKey->u.ec.publicValue, &ec_point)) {
-        errCode = SEC_ERROR_NO_MEMORY;
-        goto loser;
     }
     peerKey->pkcs11Slot = NULL;
     peerKey->pkcs11ID = CK_INVALID_HANDLE;
@@ -780,14 +643,14 @@ ssl3_SendECDHServerKeyExchange(sslSocket *ss)
 {
     SECStatus rv = SECFailure;
     int length;
-    PRBool isTLS, isTLS12;
+    PRBool isTLS12;
     SECItem signed_hash = { siBuffer, NULL, 0 };
-    SSLHashType hashAlg = ssl_hash_none;
+    SSLHashType hashAlg;
     SSL3Hashes hashes;
 
     SECItem ec_params = { siBuffer, NULL, 0 };
     unsigned char paramBuf[3];
-    const namedGroupDef *ecGroup;
+    const sslNamedGroupDef *ecGroup;
     sslEphemeralKeyPair *keyPair;
     SECKEYPublicKey *pubKey;
 
@@ -799,13 +662,13 @@ ssl3_SendECDHServerKeyExchange(sslSocket *ss)
 
     PORT_Assert(PR_CLIST_IS_EMPTY(&ss->ephemeralKeyPairs));
     if (ss->opt.reuseServerECDHEKey) {
-        rv = ssl_CreateECDHEphemeralKeys(ss, ecGroup);
+        rv = ssl_CreateStaticECDHEKey(ss, ecGroup);
         if (rv != SECSuccess) {
             goto loser;
         }
         keyPair = (sslEphemeralKeyPair *)PR_NEXT_LINK(&ss->ephemeralKeyPairs);
     } else {
-        rv = ssl_CreateECDHEphemeralKeyPair(ecGroup, &keyPair);
+        rv = ssl_CreateECDHEphemeralKeyPair(ss, ecGroup, &keyPair);
         if (rv != SECSuccess) {
             goto loser;
         }
@@ -821,13 +684,13 @@ ssl3_SendECDHServerKeyExchange(sslSocket *ss)
     ec_params.len = sizeof(paramBuf);
     ec_params.data = paramBuf;
     PORT_Assert(keyPair->group);
-    PORT_Assert(keyPair->group->type == group_type_ec);
+    PORT_Assert(keyPair->group->keaType == ssl_kea_ecdh);
     ec_params.data[0] = ec_type_named;
     ec_params.data[1] = keyPair->group->name >> 8;
     ec_params.data[2] = keyPair->group->name & 0xff;
 
     pubKey = keyPair->keys->pubKey;
-    if (ss->ssl3.pwSpec->version == SSL_LIBRARY_VERSION_TLS_1_2) {
+    if (ss->version == SSL_LIBRARY_VERSION_TLS_1_2) {
         hashAlg = ssl_SignatureSchemeToHashType(ss->ssl3.hs.signatureScheme);
     } else {
         /* Use ssl_hash_none to represent the MD5+SHA1 combo. */
@@ -835,33 +698,27 @@ ssl3_SendECDHServerKeyExchange(sslSocket *ss)
     }
     rv = ssl3_ComputeECDHKeyHash(hashAlg, ec_params,
                                  pubKey->u.ec.publicValue,
-                                 &ss->ssl3.hs.client_random,
-                                 &ss->ssl3.hs.server_random,
-                                 &hashes, ss->opt.bypassPKCS11);
+                                 ss->ssl3.hs.client_random,
+                                 ss->ssl3.hs.server_random,
+                                 &hashes);
     if (rv != SECSuccess) {
         ssl_MapLowLevelError(SSL_ERROR_SERVER_KEY_EXCHANGE_FAILURE);
         goto loser;
     }
 
-    isTLS = (PRBool)(ss->ssl3.pwSpec->version > SSL_LIBRARY_VERSION_3_0);
-    isTLS12 = (PRBool)(ss->ssl3.pwSpec->version >= SSL_LIBRARY_VERSION_TLS_1_2);
+    isTLS12 = (PRBool)(ss->version >= SSL_LIBRARY_VERSION_TLS_1_2);
 
-    rv = ssl3_SignHashes(&hashes, ss->sec.serverCert->serverKeyPair->privKey,
-                         &signed_hash, isTLS);
+    rv = ssl3_SignHashes(ss, &hashes,
+                         ss->sec.serverCert->serverKeyPair->privKey, &signed_hash);
     if (rv != SECSuccess) {
         goto loser; /* ssl3_SignHashes has set err. */
-    }
-    if (signed_hash.data == NULL) {
-        /* how can this happen and rv == SECSuccess ?? */
-        PORT_SetError(SSL_ERROR_SERVER_KEY_EXCHANGE_FAILURE);
-        goto loser;
     }
 
     length = ec_params.len +
              1 + pubKey->u.ec.publicValue.len +
              (isTLS12 ? 2 : 0) + 2 + signed_hash.len;
 
-    rv = ssl3_AppendHandshakeHeader(ss, server_key_exchange, length);
+    rv = ssl3_AppendHandshakeHeader(ss, ssl_hs_server_key_exchange, length);
     if (rv != SECSuccess) {
         goto loser; /* err set by AppendHandshake. */
     }
@@ -961,7 +818,7 @@ static const ssl3CipherSuite ssl_dhe_suites[] = {
 
 /* Order(N^2).  Yuk. */
 static PRBool
-ssl_IsSuiteEnabled(sslSocket *ss, const ssl3CipherSuite *list)
+ssl_IsSuiteEnabled(const sslSocket *ss, const ssl3CipherSuite *list)
 {
     const ssl3CipherSuite *suite;
 
@@ -978,7 +835,7 @@ ssl_IsSuiteEnabled(sslSocket *ss, const ssl3CipherSuite *list)
 
 /* Ask: is ANY ECC cipher suite enabled on this socket? */
 PRBool
-ssl_IsECCEnabled(sslSocket *ss)
+ssl_IsECCEnabled(const sslSocket *ss)
 {
     PK11SlotInfo *slot;
 
@@ -994,256 +851,102 @@ ssl_IsECCEnabled(sslSocket *ss)
 }
 
 PRBool
-ssl_IsDHEEnabled(sslSocket *ss)
+ssl_IsDHEEnabled(const sslSocket *ss)
 {
     return ssl_IsSuiteEnabled(ss, ssl_dhe_suites);
 }
 
-void
-ssl_DisableNonSuiteBGroups(sslSocket *ss)
-{
-    unsigned int i;
-    PK11SlotInfo *slot;
-
-    /* See if we can support small curves (like 163). If not, assume we can
-     * only support Suite-B curves (P-256, P-384, P-521). */
-    slot = PK11_GetBestSlotWithAttributes(CKM_ECDH1_DERIVE, 0, 163,
-                                          ss->pkcs11PinArg);
-    if (slot) {
-        /* Looks like we're committed to having lots of curves. */
-        PK11_FreeSlot(slot);
-        return;
-    }
-
-    for (i = 0; i < ssl_named_group_count; ++i) {
-        PORT_Assert(ssl_named_groups[i].index == i);
-        if (ssl_named_groups[i].type == group_type_ec &&
-            !ssl_named_groups[i].suiteb) {
-            ss->namedGroups &= ~(1U << ssl_named_groups[i].index);
-        }
-    }
-}
-
 /* Send our Supported Groups extension. */
-PRInt32
-ssl_SendSupportedGroupsXtn(sslSocket *ss, PRBool append, PRUint32 maxBytes)
+SECStatus
+ssl_SendSupportedGroupsXtn(const sslSocket *ss, TLSExtensionData *xtnData,
+                           sslBuffer *buf, PRBool *added)
 {
-    PRInt32 extension_length;
-    unsigned char enabledGroups[64];
-    unsigned int enabledGroupsLen = 0;
     unsigned int i;
     PRBool ec;
     PRBool ff = PR_FALSE;
+    PRBool found = PR_FALSE;
+    SECStatus rv;
+    unsigned int lengthOffset;
 
-    if (!ss)
-        return 0;
-
-    ec = ssl_IsECCEnabled(ss);
-    /* We only send FF supported groups if we require DH named groups or if TLS
-     * 1.3 is a possibility. */
-    if (ss->opt.requireDHENamedGroups ||
-        ss->vrange.max >= SSL_LIBRARY_VERSION_TLS_1_3) {
-        ff = ssl_IsDHEEnabled(ss);
+    /* We only send FF supported groups if we require DH named groups
+     * or if TLS 1.3 is a possibility. */
+    if (ss->vrange.max < SSL_LIBRARY_VERSION_TLS_1_3) {
+        ec = ssl_IsECCEnabled(ss);
+        if (ss->opt.requireDHENamedGroups) {
+            ff = ssl_IsDHEEnabled(ss);
+        }
+        if (!ec && !ff) {
+            return SECSuccess;
+        }
+    } else {
+        ec = ff = PR_TRUE;
     }
-    if (!ec && !ff) {
-        return 0;
+
+    /* Mark the location of the length. */
+    rv = sslBuffer_Skip(buf, 2, &lengthOffset);
+    if (rv != SECSuccess) {
+        return SECFailure;
     }
 
-    PORT_Assert(sizeof(enabledGroups) > ssl_named_group_count * 2);
-    for (i = 0; i < ssl_named_group_count; ++i) {
-        if (ssl_named_groups[i].type == group_type_ec && !ec) {
+    for (i = 0; i < SSL_NAMED_GROUP_COUNT; ++i) {
+        const sslNamedGroupDef *group = ss->namedGroupPreferences[i];
+        if (!group) {
             continue;
         }
-        if (ssl_named_groups[i].type == group_type_ff && !ff) {
+        if (group->keaType == ssl_kea_ecdh && !ec) {
             continue;
         }
-        if (!ssl_NamedGroupEnabled(ss, &ssl_named_groups[i])) {
+        if (group->keaType == ssl_kea_dh && !ff) {
             continue;
         }
 
-        if (append) {
-            enabledGroups[enabledGroupsLen++] = ssl_named_groups[i].name >> 8;
-            enabledGroups[enabledGroupsLen++] = ssl_named_groups[i].name & 0xff;
-        } else {
-            enabledGroupsLen += 2;
+        found = PR_TRUE;
+        rv = sslBuffer_AppendNumber(buf, group->name, 2);
+        if (rv != SECSuccess) {
+            return SECFailure;
         }
     }
 
-    extension_length =
-        2 /* extension type */ +
-        2 /* extension length */ +
-        2 /* enabled groups length */ +
-        enabledGroupsLen;
-
-    if (maxBytes < (PRUint32)extension_length) {
-        return 0;
+    if (!found) {
+        /* We added nothing, don't send the extension. */
+        return SECSuccess;
     }
 
-    if (append) {
-        SECStatus rv;
-        rv = ssl3_AppendHandshakeNumber(ss, ssl_supported_groups_xtn, 2);
-        if (rv != SECSuccess)
-            return -1;
-        rv = ssl3_AppendHandshakeNumber(ss, extension_length - 4, 2);
-        if (rv != SECSuccess)
-            return -1;
-        rv = ssl3_AppendHandshakeVariable(ss, enabledGroups,
-                                          enabledGroupsLen, 2);
-        if (rv != SECSuccess)
-            return -1;
-        if (!ss->sec.isServer) {
-            TLSExtensionData *xtnData = &ss->xtnData;
-            xtnData->advertised[xtnData->numAdvertised++] =
-                ssl_supported_groups_xtn;
-        }
+    rv = sslBuffer_InsertLength(buf, lengthOffset, 2);
+    if (rv != SECSuccess) {
+        return SECFailure;
     }
-    return extension_length;
+
+    *added = PR_TRUE;
+    return SECSuccess;
 }
 
 /* Send our "canned" (precompiled) Supported Point Formats extension,
  * which says that we only support uncompressed points.
  */
-PRInt32
-ssl3_SendSupportedPointFormatsXtn(
-    sslSocket *ss,
-    PRBool append,
-    PRUint32 maxBytes)
+SECStatus
+ssl3_SendSupportedPointFormatsXtn(const sslSocket *ss, TLSExtensionData *xtnData,
+                                  sslBuffer *buf, PRBool *added)
 {
-    static const PRUint8 ecPtFmt[6] = {
-        0, 11, /* Extension type */
-        0, 2,  /* octets that follow */
-        1,     /* octets that follow */
-        0      /* uncompressed type only */
-    };
+    SECStatus rv;
 
     /* No point in doing this unless we have a socket that supports ECC.
      * Similarly, no point if we are going to do TLS 1.3 only or we have already
      * picked TLS 1.3 (server) given that it doesn't use point formats. */
     if (!ss || !ssl_IsECCEnabled(ss) ||
         ss->vrange.min >= SSL_LIBRARY_VERSION_TLS_1_3 ||
-        (ss->sec.isServer && ss->version >= SSL_LIBRARY_VERSION_TLS_1_3))
-        return 0;
-    if (append && maxBytes >= (sizeof ecPtFmt)) {
-        SECStatus rv = ssl3_AppendHandshake(ss, ecPtFmt, (sizeof ecPtFmt));
-        if (rv != SECSuccess)
-            return -1;
-        if (!ss->sec.isServer) {
-            TLSExtensionData *xtnData = &ss->xtnData;
-            xtnData->advertised[xtnData->numAdvertised++] =
-                ssl_ec_point_formats_xtn;
-        }
+        (ss->sec.isServer && ss->version >= SSL_LIBRARY_VERSION_TLS_1_3)) {
+        return SECSuccess;
     }
-    return sizeof(ecPtFmt);
-}
-
-/* Just make sure that the remote client supports uncompressed points,
- * Since that is all we support.  Disable ECC cipher suites if it doesn't.
- */
-SECStatus
-ssl3_HandleSupportedPointFormatsXtn(sslSocket *ss, PRUint16 ex_type,
-                                    SECItem *data)
-{
-    int i;
-
-    if (data->len < 2 || data->len > 255 || !data->data ||
-        data->len != (unsigned int)data->data[0] + 1) {
-        return ssl3_DecodeError(ss);
+    rv = sslBuffer_AppendNumber(buf, 1, 1); /* length */
+    if (rv != SECSuccess) {
+        return SECFailure;
     }
-    for (i = data->len; --i > 0;) {
-        if (data->data[i] == 0) {
-            /* indicate that we should send a reply */
-            SECStatus rv;
-            rv = ssl3_RegisterServerHelloExtensionSender(ss, ex_type,
-                                                         &ssl3_SendSupportedPointFormatsXtn);
-            return rv;
-        }
-    }
-
-    /* Poor client doesn't support uncompressed points. */
-    PORT_SetError(SSL_ERROR_RX_MALFORMED_HANDSHAKE);
-    return SECFailure;
-}
-
-static SECStatus
-ssl_UpdateSupportedGroups(sslSocket *ss, SECItem *data)
-{
-    PRInt32 list_len;
-    PRUint32 peerGroups = 0;
-
-    if (!data->data || data->len < 4) {
-        (void)ssl3_DecodeError(ss);
+    rv = sslBuffer_AppendNumber(buf, 0, 1); /* uncompressed type only */
+    if (rv != SECSuccess) {
         return SECFailure;
     }
 
-    /* get the length of elliptic_curve_list */
-    list_len = ssl3_ConsumeHandshakeNumber(ss, 2, &data->data, &data->len);
-    if (list_len < 0 || data->len != list_len || (data->len % 2) != 0) {
-        (void)ssl3_DecodeError(ss);
-        return SECFailure;
-    }
-
-    /* build bit vector of peer's supported groups */
-    while (data->len) {
-        const namedGroupDef *group;
-        PRInt32 curve_name =
-            ssl3_ConsumeHandshakeNumber(ss, 2, &data->data, &data->len);
-        if (curve_name < 0) {
-            return SECFailure; /* fatal alert already sent */
-        }
-        group = ssl_LookupNamedGroup(curve_name);
-        if (group) {
-            peerGroups |= (1U << group->index);
-        }
-
-        /* "Codepoints in the NamedCurve registry with a high byte of 0x01 (that
-         * is, between 256 and 511 inclusive) are set aside for FFDHE groups,"
-         * -- https://tools.ietf.org/html/draft-ietf-tls-negotiated-ff-dhe-10
-         */
-        if ((curve_name & 0xff00) == 0x0100) {
-            ss->ssl3.hs.peerSupportsFfdheGroups = PR_TRUE;
-        }
-    }
-    /* Note: if ss->opt.requireDHENamedGroups is set, we disable DHE cipher
-     * suites, but we do that in ssl3_config_match(). */
-    if (!ss->opt.requireDHENamedGroups && !ss->ssl3.hs.peerSupportsFfdheGroups) {
-        /* If we don't require that DHE use named groups, and no FFDHE was
-         * included, we pretend that they support all the FFDHE groups we do. */
-        unsigned int i;
-        for (i = 0; i < ssl_named_group_count; ++i) {
-            if (ssl_named_groups[i].type == group_type_ff) {
-                peerGroups |= (1U << ssl_named_groups[i].index);
-            }
-        }
-    }
-
-    /* What curves do we support in common? */
-    ss->namedGroups &= peerGroups;
-    return SECSuccess;
-}
-
-/* Ensure that the curve in our server cert is one of the ones supported
- * by the remote client, and disable all ECC cipher suites if not.
- */
-SECStatus
-ssl_HandleSupportedGroupsXtn(sslSocket *ss, PRUint16 ex_type, SECItem *data)
-{
-    SECStatus rv;
-
-    rv = ssl_UpdateSupportedGroups(ss, data);
-    if (rv != SECSuccess)
-        return SECFailure;
-
-    /* TLS 1.3 permits the server to send this extension so make it so. */
-    if (ss->sec.isServer && ss->version >= SSL_LIBRARY_VERSION_TLS_1_3) {
-        rv = ssl3_RegisterServerHelloExtensionSender(ss, ex_type,
-                                                     &ssl_SendSupportedGroupsXtn);
-        if (rv != SECSuccess) {
-            return SECFailure; /* error already set. */
-        }
-    }
-
-    /* Remember that we negotiated this extension. */
-    ss->xtnData.negotiated[ss->xtnData.numNegotiated++] = ex_type;
-
+    *added = PR_TRUE;
     return SECSuccess;
 }

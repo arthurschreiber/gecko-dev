@@ -30,6 +30,12 @@ OuterDocAccessible::
 {
   mType = eOuterDocType;
 
+#ifdef XP_WIN
+  if (DocAccessibleParent* remoteDoc = RemoteChildDoc()) {
+    remoteDoc->SendParentCOMProxy();
+  }
+#endif
+
   // Request document accessible for the content document to make sure it's
   // created. It will appended to outerdoc accessible children asynchronously.
   nsIDocument* outerDoc = mContent->GetUncomposedDoc();
@@ -64,8 +70,7 @@ OuterDocAccessible::ChildAtPoint(int32_t aX, int32_t aY,
                                  EWhichChildAtPoint aWhichChild)
 {
   nsIntRect docRect = Bounds();
-  if (aX < docRect.x || aX >= docRect.x + docRect.width ||
-      aY < docRect.y || aY >= docRect.y + docRect.height)
+  if (!docRect.Contains(aX, aY))
     return nullptr;
 
   // Always return the inner doc as direct child accessible unless bounds
@@ -207,7 +212,7 @@ OuterDocAccessible::GetChildAt(uint32_t aIndex) const
 
 #endif // defined(XP_WIN)
 
-ProxyAccessible*
+DocAccessibleParent*
 OuterDocAccessible::RemoteChildDoc() const
 {
   dom::TabParent* tab = dom::TabParent::GetFrom(GetContent());

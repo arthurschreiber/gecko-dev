@@ -5,14 +5,14 @@
 var Ci = Components.interfaces;
 var Cc = Components.classes;
 
-Components.utils.import("resource://gre/modules/Services.jsm");
-Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
-Components.utils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var unsafeAboutModule = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIAboutModule]),
   newChannel: function (aURI, aLoadInfo) {
-    var uri = Services.io.newURI("about:blank", null, null);
+    var uri = Services.io.newURI("about:blank");
     let chan = Services.io.newChannelFromURIWithLoadInfo(uri, aLoadInfo);
     chan.owner = Services.scriptSecurityManager.getSystemPrincipal();
     return chan;
@@ -44,7 +44,7 @@ function run_test() {
     loadUsingSystemPrincipal: true
   });
 
-  do_check_null(aboutUnsafeChan.owner, "URI_SAFE_FOR_UNTRUSTED_CONTENT channel has no owner");
+  Assert.equal(null, aboutUnsafeChan.owner, "URI_SAFE_FOR_UNTRUSTED_CONTENT channel has no owner");
 
   registrar.unregisterFactory(classID, factory);
 }

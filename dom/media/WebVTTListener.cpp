@@ -11,6 +11,7 @@
 #include "nsIInputStream.h"
 #include "nsIWebVTTParserWrapper.h"
 #include "nsComponentManagerUtils.h"
+#include "nsIAsyncVerifyRedirectCallback.h"
 
 namespace mozilla {
 namespace dom {
@@ -53,11 +54,6 @@ WebVTTListener::GetInterface(const nsIID &aIID,
 nsresult
 WebVTTListener::LoadResource()
 {
-  if (!HTMLTrackElement::IsWebVTTEnabled()) {
-    NS_WARNING("WebVTT support disabled."
-               " See media.webvtt.enabled in about:config. ");
-    return NS_ERROR_FAILURE;
-  }
   nsresult rv;
   mParserWrapper = do_CreateInstance(NS_WEBVTTPARSERWRAPPER_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -82,6 +78,7 @@ WebVTTListener::AsyncOnChannelRedirect(nsIChannel* aOldChannel,
   if (mElement) {
     mElement->OnChannelRedirect(aOldChannel, aNewChannel, aFlags);
   }
+  cb->OnRedirectVerifyCallback(NS_OK);
   return NS_OK;
 }
 
@@ -160,8 +157,9 @@ WebVTTListener::OnCue(JS::Handle<JS::Value> aCue, JSContext* aCx)
     return NS_ERROR_FAILURE;
   }
 
-  TextTrackCue* cue;
-  nsresult rv = UNWRAP_OBJECT(VTTCue, &aCue.toObject(), cue);
+  JS::Rooted<JSObject*> obj(aCx, &aCue.toObject());
+  TextTrackCue* cue = nullptr;
+  nsresult rv = UNWRAP_OBJECT(VTTCue, &obj, cue);
   NS_ENSURE_SUCCESS(rv, rv);
 
   cue->SetTrackElement(mElement);

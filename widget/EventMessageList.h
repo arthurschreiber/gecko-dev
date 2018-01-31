@@ -47,11 +47,6 @@ NS_EVENT_MESSAGE(eKeyDown)
 NS_EVENT_MESSAGE(eKeyDownOnPlugin)
 NS_EVENT_MESSAGE(eKeyUpOnPlugin)
 
-NS_EVENT_MESSAGE(eBeforeKeyDown)
-NS_EVENT_MESSAGE(eAfterKeyDown)
-NS_EVENT_MESSAGE(eBeforeKeyUp)
-NS_EVENT_MESSAGE(eAfterKeyUp)
-
 // This message is sent after a content process handles a key event or accesskey
 // to indicate that an potential accesskey was not found. The parent process may
 // then respond by, for example, opening menus and processing other shortcuts.
@@ -63,6 +58,7 @@ NS_EVENT_MESSAGE(eScroll)
 
 // Application installation
 NS_EVENT_MESSAGE(eInstall)
+NS_EVENT_MESSAGE(eAppInstalled)
 
 // A plugin was clicked or otherwise focused. ePluginActivate should be
 // used when the window is not active. ePluginFocus should be used when
@@ -83,6 +79,7 @@ NS_EVENT_MESSAGE(eMouseEnterIntoWidget)
 NS_EVENT_MESSAGE(eMouseExitFromWidget)
 NS_EVENT_MESSAGE(eMouseDoubleClick)
 NS_EVENT_MESSAGE(eMouseClick)
+NS_EVENT_MESSAGE(eMouseAuxClick)
 // eMouseActivate is fired when the widget is activated by a click.
 NS_EVENT_MESSAGE(eMouseActivate)
 NS_EVENT_MESSAGE(eMouseOver)
@@ -90,6 +87,7 @@ NS_EVENT_MESSAGE(eMouseOut)
 NS_EVENT_MESSAGE(eMouseHitTest)
 NS_EVENT_MESSAGE(eMouseEnter)
 NS_EVENT_MESSAGE(eMouseLeave)
+NS_EVENT_MESSAGE(eMouseTouchDrag)
 NS_EVENT_MESSAGE(eMouseLongTap)
 NS_EVENT_MESSAGE_FIRST_LAST(eMouseEvent, eMouseMove, eMouseLongTap)
 
@@ -124,10 +122,14 @@ NS_EVENT_MESSAGE(eFormReset)
 NS_EVENT_MESSAGE(eFormChange)
 NS_EVENT_MESSAGE(eFormSelect)
 NS_EVENT_MESSAGE(eFormInvalid)
+NS_EVENT_MESSAGE(eFormCheckboxStateChange)
+NS_EVENT_MESSAGE(eFormRadioStateChange)
 
 //Need separate focus/blur notifications for non-native widgets
 NS_EVENT_MESSAGE(eFocus)
 NS_EVENT_MESSAGE(eBlur)
+NS_EVENT_MESSAGE(eFocusIn)
+NS_EVENT_MESSAGE(eFocusOut)
 
 NS_EVENT_MESSAGE(eDragEnter)
 NS_EVENT_MESSAGE(eDragOver)
@@ -142,6 +144,7 @@ NS_EVENT_MESSAGE_FIRST_LAST(eDragDropEvent, eDragEnter, eDragLeave)
 // XUL specific events
 NS_EVENT_MESSAGE(eXULPopupShowing)
 NS_EVENT_MESSAGE(eXULPopupShown)
+NS_EVENT_MESSAGE(eXULPopupPositioned)
 NS_EVENT_MESSAGE(eXULPopupHiding)
 NS_EVENT_MESSAGE(eXULPopupHidden)
 NS_EVENT_MESSAGE(eXULBroadcast)
@@ -195,6 +198,14 @@ NS_EVENT_MESSAGE(eCompositionCommitAsIs)
 // After that, eCompositionEnd will be dispatched automatically.
 // Its mRanges should be nullptr.
 NS_EVENT_MESSAGE(eCompositionCommit)
+// eCompositionCommitRequestHandled is NOT used with any Widget*Event.
+// This is used only by PBrowser.OnEventNeedingAckHandled().  If active IME
+// commits composition synchronously, TabParent returns the commit string
+// to the remote process synchronously.  Then, TabChild dispatches
+// eCompositionCommit in the remote process.  Finally, this message is sent
+// to TabParent.  (If IME commits composition asynchronously, this message is
+// not used.)
+NS_EVENT_MESSAGE(eCompositionCommitRequestHandled)
 
 // Following events are defined for deprecated DOM events which are using
 // InternalUIEvent class.
@@ -225,6 +236,7 @@ NS_EVENT_MESSAGE(eXULCommand)
 NS_EVENT_MESSAGE(eCopy)
 NS_EVENT_MESSAGE(eCut)
 NS_EVENT_MESSAGE(ePaste)
+NS_EVENT_MESSAGE(ePasteNoFormatting)
 
 // Query for the selected text information, it return the selection offset,
 // selection length and selected text.
@@ -332,10 +344,14 @@ NS_EVENT_MESSAGE(eGestureNotify)
 NS_EVENT_MESSAGE(eScrolledAreaChanged)
 
 // CSS Transition & Animation events:
+NS_EVENT_MESSAGE(eTransitionStart)
+NS_EVENT_MESSAGE(eTransitionRun)
 NS_EVENT_MESSAGE(eTransitionEnd)
+NS_EVENT_MESSAGE(eTransitionCancel)
 NS_EVENT_MESSAGE(eAnimationStart)
 NS_EVENT_MESSAGE(eAnimationEnd)
 NS_EVENT_MESSAGE(eAnimationIteration)
+NS_EVENT_MESSAGE(eAnimationCancel)
 
 // Webkit-prefixed versions of Transition & Animation events, for web compat:
 NS_EVENT_MESSAGE(eWebkitTransitionEnd)
@@ -358,6 +374,7 @@ NS_EVENT_MESSAGE(eBeforePrint)
 NS_EVENT_MESSAGE(eAfterPrint)
 
 NS_EVENT_MESSAGE(eMessage)
+NS_EVENT_MESSAGE(eMessageError)
 
 // Menu open event
 NS_EVENT_MESSAGE(eOpen)
@@ -369,11 +386,13 @@ NS_EVENT_MESSAGE(eDeviceMotion)
 NS_EVENT_MESSAGE(eDeviceProximity)
 NS_EVENT_MESSAGE(eUserProximity)
 NS_EVENT_MESSAGE(eDeviceLight)
-#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GONK)
+#if defined(MOZ_WIDGET_ANDROID)
 NS_EVENT_MESSAGE(eOrientationChange)
 #endif
 
 // WebVR events
+NS_EVENT_MESSAGE(eVRDisplayActivate)
+NS_EVENT_MESSAGE(eVRDisplayDeactivate)
 NS_EVENT_MESSAGE(eVRDisplayConnect)
 NS_EVENT_MESSAGE(eVRDisplayDisconnect)
 NS_EVENT_MESSAGE(eVRDisplayPresentChange)
@@ -390,6 +409,7 @@ NS_EVENT_MESSAGE(eTouchStart)
 NS_EVENT_MESSAGE(eTouchMove)
 NS_EVENT_MESSAGE(eTouchEnd)
 NS_EVENT_MESSAGE(eTouchCancel)
+NS_EVENT_MESSAGE(eTouchPointerCancel)
 
 // Pointerlock DOM API
 NS_EVENT_MESSAGE(ePointerLockChange)
@@ -420,10 +440,6 @@ NS_EVENT_MESSAGE(eMediaRecorderDataAvailable)
 NS_EVENT_MESSAGE(eMediaRecorderWarning)
 NS_EVENT_MESSAGE(eMediaRecorderStop)
 
-// SpeakerManager events
-NS_EVENT_MESSAGE(eSpeakerForcedChange)
-
-#ifdef MOZ_GAMEPAD
 // Gamepad input events
 NS_EVENT_MESSAGE(eGamepadButtonDown)
 NS_EVENT_MESSAGE(eGamepadButtonUp)
@@ -432,7 +448,6 @@ NS_EVENT_MESSAGE(eGamepadConnected)
 NS_EVENT_MESSAGE(eGamepadDisconnected)
 NS_EVENT_MESSAGE_FIRST_LAST(eGamepadEvent,
                             eGamepadButtonDown, eGamepadDisconnected)
-#endif
 
 // input and beforeinput events.
 NS_EVENT_MESSAGE(eEditorInput)
@@ -441,8 +456,14 @@ NS_EVENT_MESSAGE(eEditorInput)
 NS_EVENT_MESSAGE(eSelectStart)
 NS_EVENT_MESSAGE(eSelectionChange)
 
+// visibility change
+NS_EVENT_MESSAGE(eVisibilityChange)
+
 // Details element events.
 NS_EVENT_MESSAGE(eToggle)
+
+// Dialog element events.
+NS_EVENT_MESSAGE(eClose)
 
 #ifdef UNDEF_NS_EVENT_MESSAGE_FIRST_LAST
 #undef UNDEF_NS_EVENT_MESSAGE_FIRST_LAST

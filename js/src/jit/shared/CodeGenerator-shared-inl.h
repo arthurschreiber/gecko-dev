@@ -222,14 +222,8 @@ int32_t
 CodeGeneratorShared::ArgToStackOffset(int32_t slot) const
 {
     return masm.framePushed() +
-           (gen->compilingAsmJS() ? sizeof(AsmJSFrame) : sizeof(JitFrameLayout)) +
+           (gen->compilingWasm() ? sizeof(wasm::Frame) : sizeof(JitFrameLayout)) +
            slot;
-}
-
-int32_t
-CodeGeneratorShared::CalleeStackOffset() const
-{
-    return masm.framePushed() + JitFrameLayout::offsetOfCalleeToken();
 }
 
 int32_t
@@ -382,7 +376,7 @@ CodeGeneratorShared::verifyHeapAccessDisassembly(uint32_t begin, uint32_t end, b
             // for unsigned element types so that we match what the disassembly
             // code does, as it doesn't know about signedness of stores.
             unsigned shift = 32 - TypedArrayElemSize(type) * 8;
-            i = i << shift >> shift;
+            i = int32_t(uint32_t(i) << shift) >> shift;
             op = OtherOperand(i);
         }
         break;

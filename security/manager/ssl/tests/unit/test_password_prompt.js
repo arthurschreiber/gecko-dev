@@ -16,13 +16,13 @@ var gMockPrompter = {
   // This intentionally does not use arrow function syntax to avoid an issue
   // where in the context of the arrow function, |this != gMockPrompter| due to
   // how objects get wrapped when going across xpcom boundaries.
-  promptPassword: function(dialogTitle, text, password, checkMsg, checkValue) {
+  promptPassword(dialogTitle, text, password, checkMsg, checkValue) {
     this.numPrompts++;
     if (this.numPrompts > 1) { // don't keep retrying a bad password
       return false;
     }
     equal(text,
-          "Please enter the master password for the Software Security Device.",
+          "Please enter your master password.",
           "password prompt text should be as expected");
     equal(checkMsg, null, "checkMsg should be null");
     ok(this.passwordToTry, "passwordToTry should be non-null");
@@ -46,7 +46,7 @@ function run_test() {
   let windowWatcherCID =
     MockRegistrar.register("@mozilla.org/embedcomp/window-watcher;1",
                            gWindowWatcher);
-  do_register_cleanup(() => {
+  registerCleanupFunction(() => {
     MockRegistrar.unregister(windowWatcherCID);
   });
 

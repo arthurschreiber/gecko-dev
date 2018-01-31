@@ -7,105 +7,12 @@
 #ifndef GeneratedJNIWrappers_h
 #define GeneratedJNIWrappers_h
 
+#ifndef MOZ_PREPROCESSOR
 #include "mozilla/jni/Refs.h"
+#endif
 
 namespace mozilla {
 namespace java {
-
-class ANRReporter : public mozilla::jni::ObjectBase<ANRReporter>
-{
-public:
-    static const char name[];
-
-    explicit ANRReporter(const Context& ctx) : ObjectBase<ANRReporter>(ctx) {}
-
-    struct GetNativeStack_t {
-        typedef ANRReporter Owner;
-        typedef mozilla::jni::String::LocalRef ReturnType;
-        typedef mozilla::jni::String::Param SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "getNativeStack";
-        static constexpr char signature[] =
-                "()Ljava/lang/String;";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct ReleaseNativeStack_t {
-        typedef ANRReporter Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "releaseNativeStack";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct RequestNativeStack_t {
-        typedef ANRReporter Owner;
-        typedef bool ReturnType;
-        typedef bool SetterType;
-        typedef mozilla::jni::Args<
-                bool> Args;
-        static constexpr char name[] = "requestNativeStack";
-        static constexpr char signature[] =
-                "(Z)Z";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::ANY;
-
-    template<class Impl> class Natives;
-};
-
-class AlarmReceiver : public mozilla::jni::ObjectBase<AlarmReceiver>
-{
-public:
-    static const char name[];
-
-    explicit AlarmReceiver(const Context& ctx) : ObjectBase<AlarmReceiver>(ctx) {}
-
-    struct NotifyAlarmFired_t {
-        typedef AlarmReceiver Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "notifyAlarmFired";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
-
-    static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::UI;
-
-    template<class Impl> class Natives;
-};
 
 class AndroidGamepadManager : public mozilla::jni::ObjectBase<AndroidGamepadManager>
 {
@@ -131,7 +38,7 @@ public:
         static const mozilla::jni::CallingThread callingThread =
                 mozilla::jni::CallingThread::UI;
         static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
+                mozilla::jni::DispatchTarget::CURRENT;
     };
 
     struct OnButtonChange_t {
@@ -152,7 +59,7 @@ public:
         static const mozilla::jni::CallingThread callingThread =
                 mozilla::jni::CallingThread::UI;
         static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
+                mozilla::jni::DispatchTarget::CURRENT;
     };
 
     struct OnGamepadAdded_t {
@@ -169,7 +76,7 @@ public:
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
+                mozilla::jni::CallingThread::ANY;
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::CURRENT;
     };
@@ -192,17 +99,18 @@ public:
         static const mozilla::jni::CallingThread callingThread =
                 mozilla::jni::CallingThread::UI;
         static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
+                mozilla::jni::DispatchTarget::CURRENT;
     };
 
     struct Start_t {
         typedef AndroidGamepadManager Owner;
         typedef void ReturnType;
         typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param> Args;
         static constexpr char name[] = "start";
         static constexpr char signature[] =
-                "()V";
+                "(Landroid/content/Context;)V";
         static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -212,16 +120,17 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    static auto Start() -> void;
+    static auto Start(mozilla::jni::Object::Param) -> void;
 
     struct Stop_t {
         typedef AndroidGamepadManager Owner;
         typedef void ReturnType;
         typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param> Args;
         static constexpr char name[] = "stop";
         static constexpr char signature[] =
-                "()V";
+                "(Landroid/content/Context;)V";
         static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -231,7 +140,7 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    static auto Stop() -> void;
+    static auto Stop(mozilla::jni::Object::Param) -> void;
 
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::ANY;
@@ -239,42 +148,22 @@ public:
     template<class Impl> class Natives;
 };
 
-class DownloadsIntegration : public mozilla::jni::ObjectBase<DownloadsIntegration>
+class Clipboard : public mozilla::jni::ObjectBase<Clipboard>
 {
 public:
     static const char name[];
 
-    explicit DownloadsIntegration(const Context& ctx) : ObjectBase<DownloadsIntegration>(ctx) {}
+    explicit Clipboard(const Context& ctx) : ObjectBase<Clipboard>(ctx) {}
 
-    struct GetTemporaryDownloadDirectory_t {
-        typedef DownloadsIntegration Owner;
-        typedef mozilla::jni::String::LocalRef ReturnType;
-        typedef mozilla::jni::String::Param SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "getTemporaryDownloadDirectory";
-        static constexpr char signature[] =
-                "()Ljava/lang/String;";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto GetTemporaryDownloadDirectory() -> mozilla::jni::String::LocalRef;
-
-    struct ScanMedia_t {
-        typedef DownloadsIntegration Owner;
+    struct ClearText_t {
+        typedef Clipboard Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "scanMedia";
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "clearText";
         static constexpr char signature[] =
-                "(Ljava/lang/String;Ljava/lang/String;)V";
+                "(Landroid/content/Context;)V";
         static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -284,11 +173,294 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    static auto ScanMedia(mozilla::jni::String::Param, mozilla::jni::String::Param) -> void;
+    static auto ClearText(mozilla::jni::Object::Param) -> void;
+
+    struct GetText_t {
+        typedef Clipboard Owner;
+        typedef mozilla::jni::String::LocalRef ReturnType;
+        typedef mozilla::jni::String::Param SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "getText";
+        static constexpr char signature[] =
+                "(Landroid/content/Context;)Ljava/lang/String;";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto GetText(mozilla::jni::Object::Param) -> mozilla::jni::String::LocalRef;
+
+    struct HasText_t {
+        typedef Clipboard Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "hasText";
+        static constexpr char signature[] =
+                "(Landroid/content/Context;)Z";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto HasText(mozilla::jni::Object::Param) -> bool;
+
+    struct SetText_t {
+        typedef Clipboard Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param,
+                mozilla::jni::String::Param> Args;
+        static constexpr char name[] = "setText";
+        static constexpr char signature[] =
+                "(Landroid/content/Context;Ljava/lang/CharSequence;)V";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto SetText(mozilla::jni::Object::Param, mozilla::jni::String::Param) -> void;
 
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::GECKO;
 
+};
+
+class EventDispatcher : public mozilla::jni::ObjectBase<EventDispatcher>
+{
+public:
+    static const char name[];
+
+    explicit EventDispatcher(const Context& ctx) : ObjectBase<EventDispatcher>(ctx) {}
+
+    class NativeCallbackDelegate;
+
+    struct DispatchToGecko_t {
+        typedef EventDispatcher Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::String::Param,
+                mozilla::jni::Object::Param,
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "dispatchToGecko";
+        static constexpr char signature[] =
+                "(Ljava/lang/String;Lorg/mozilla/gecko/util/GeckoBundle;Lorg/mozilla/gecko/util/EventCallback;)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::GECKO;
+    };
+
+    struct DispatchToThreads_t {
+        typedef EventDispatcher Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::String::Param,
+                mozilla::jni::Object::Param,
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "dispatchToThreads";
+        static constexpr char signature[] =
+                "(Ljava/lang/String;Lorg/mozilla/gecko/util/GeckoBundle;Lorg/mozilla/gecko/util/EventCallback;)Z";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto DispatchToThreads(mozilla::jni::String::Param, mozilla::jni::Object::Param, mozilla::jni::Object::Param) const -> bool;
+
+    struct DisposeNative_t {
+        typedef EventDispatcher Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "disposeNative";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::GECKO;
+    };
+
+    struct GetInstance_t {
+        typedef EventDispatcher Owner;
+        typedef EventDispatcher::LocalRef ReturnType;
+        typedef EventDispatcher::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "getInstance";
+        static constexpr char signature[] =
+                "()Lorg/mozilla/gecko/EventDispatcher;";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto GetInstance() -> EventDispatcher::LocalRef;
+
+    struct HasGeckoListener_t {
+        typedef EventDispatcher Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::String::Param> Args;
+        static constexpr char name[] = "hasGeckoListener";
+        static constexpr char signature[] =
+                "(Ljava/lang/String;)Z";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    struct SetAttachedToGecko_t {
+        typedef EventDispatcher Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t> Args;
+        static constexpr char name[] = "setAttachedToGecko";
+        static constexpr char signature[] =
+                "(I)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto SetAttachedToGecko(int32_t) const -> void;
+
+    static const int32_t ATTACHED = 1;
+
+    static const int32_t DETACHED = 0;
+
+    static const int32_t REATTACHING = 2;
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+    template<class Impl> class Natives;
+};
+
+class EventDispatcher::NativeCallbackDelegate : public mozilla::jni::ObjectBase<NativeCallbackDelegate>
+{
+public:
+    static const char name[];
+
+    explicit NativeCallbackDelegate(const Context& ctx) : ObjectBase<NativeCallbackDelegate>(ctx) {}
+
+    struct New_t {
+        typedef NativeCallbackDelegate Owner;
+        typedef NativeCallbackDelegate::LocalRef ReturnType;
+        typedef NativeCallbackDelegate::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "<init>";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto New() -> NativeCallbackDelegate::LocalRef;
+
+    struct Finalize_t {
+        typedef NativeCallbackDelegate Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "finalize";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::GECKO;
+    };
+
+    struct SendError_t {
+        typedef NativeCallbackDelegate Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "sendError";
+        static constexpr char signature[] =
+                "(Ljava/lang/Object;)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::PROXY;
+    };
+
+    struct SendSuccess_t {
+        typedef NativeCallbackDelegate Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "sendSuccess";
+        static constexpr char signature[] =
+                "(Ljava/lang/Object;)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::PROXY;
+    };
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+    template<class Impl> class Natives;
 };
 
 class GeckoAppShell : public mozilla::jni::ObjectBase<GeckoAppShell>
@@ -299,26 +471,6 @@ public:
     explicit GeckoAppShell(const Context& ctx) : ObjectBase<GeckoAppShell>(ctx) {}
 
     class CameraCallback;
-
-    struct AddFullScreenPluginView_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::Object::Param> Args;
-        static constexpr char name[] = "addFullScreenPluginView";
-        static constexpr char signature[] =
-                "(Landroid/view/View;)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto AddFullScreenPluginView(mozilla::jni::Object::Param) -> void;
 
     struct CancelVibrate_t {
         typedef GeckoAppShell Owner;
@@ -338,26 +490,6 @@ public:
     };
 
     static auto CancelVibrate() -> void;
-
-    struct CheckURIVisited_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "checkUriVisited";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto CheckURIVisited(mozilla::jni::String::Param) -> void;
 
     struct CloseCamera_t {
         typedef GeckoAppShell Owner;
@@ -437,117 +569,6 @@ public:
     };
 
     static auto CreateInputStream(mozilla::jni::Object::Param) -> mozilla::jni::Object::LocalRef;
-
-    struct CreateMessageCursor_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int64_t,
-                int64_t,
-                mozilla::jni::ObjectArray::Param,
-                int32_t,
-                mozilla::jni::String::Param,
-                bool,
-                bool,
-                bool,
-                int64_t,
-                bool,
-                int32_t> Args;
-        static constexpr char name[] = "createMessageCursor";
-        static constexpr char signature[] =
-                "(JJ[Ljava/lang/String;ILjava/lang/String;ZZZJZI)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto CreateMessageCursor(int64_t, int64_t, mozilla::jni::ObjectArray::Param, int32_t, mozilla::jni::String::Param, bool, bool, bool, int64_t, bool, int32_t) -> void;
-
-    struct CreateShortcut_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "createShortcut";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;Ljava/lang/String;)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto CreateShortcut(mozilla::jni::String::Param, mozilla::jni::String::Param) -> void;
-
-    struct CreateThreadCursor_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t> Args;
-        static constexpr char name[] = "createThreadCursor";
-        static constexpr char signature[] =
-                "(I)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto CreateThreadCursor(int32_t) -> void;
-
-    struct DeleteMessage_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t> Args;
-        static constexpr char name[] = "deleteMessage";
-        static constexpr char signature[] =
-                "(II)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto DeleteMessage(int32_t, int32_t) -> void;
-
-    struct DisableAlarm_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "disableAlarm";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto DisableAlarm() -> void;
 
     struct DisableBatteryNotifications_t {
         typedef GeckoAppShell Owner;
@@ -647,13 +668,13 @@ public:
 
     struct EnableLocation_t {
         typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
+        typedef bool ReturnType;
+        typedef bool SetterType;
         typedef mozilla::jni::Args<
                 bool> Args;
         static constexpr char name[] = "enableLocation";
         static constexpr char signature[] =
-                "(Z)V";
+                "(Z)Z";
         static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -663,7 +684,7 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    static auto EnableLocation(bool) -> void;
+    static auto EnableLocation(bool) -> bool;
 
     struct EnableLocationHighAccuracy_t {
         typedef GeckoAppShell Owner;
@@ -743,6 +764,25 @@ public:
 
     static auto EnableSensor(int32_t) -> void;
 
+    struct GetAppNotes_t {
+        typedef GeckoAppShell Owner;
+        typedef mozilla::jni::String::LocalRef ReturnType;
+        typedef mozilla::jni::String::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "getAppNotes";
+        static constexpr char signature[] =
+                "()Ljava/lang/String;";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::IGNORE;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto GetAppNotes() -> mozilla::jni::String::LocalRef;
+
     struct GetApplicationContext_t {
         typedef GeckoAppShell Owner;
         typedef mozilla::jni::Object::LocalRef ReturnType;
@@ -761,6 +801,44 @@ public:
     };
 
     static auto GetApplicationContext() -> mozilla::jni::Object::LocalRef;
+
+    struct GetAudioOutputFramesPerBuffer_t {
+        typedef GeckoAppShell Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "getAudioOutputFramesPerBuffer";
+        static constexpr char signature[] =
+                "()I";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto GetAudioOutputFramesPerBuffer() -> int32_t;
+
+    struct GetAudioOutputSampleRate_t {
+        typedef GeckoAppShell Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "getAudioOutputSampleRate";
+        static constexpr char signature[] =
+                "()I";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto GetAudioOutputSampleRate() -> int32_t;
 
     struct GetConnection_t {
         typedef GeckoAppShell Owner;
@@ -781,25 +859,6 @@ public:
     };
 
     static auto GetConnection(mozilla::jni::String::Param) -> mozilla::jni::Object::LocalRef;
-
-    struct GetContext_t {
-        typedef GeckoAppShell Owner;
-        typedef mozilla::jni::Object::LocalRef ReturnType;
-        typedef mozilla::jni::Object::Param SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "getContext";
-        static constexpr char signature[] =
-                "()Landroid/content/Context;";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto GetContext() -> mozilla::jni::Object::LocalRef;
 
     struct GetCurrentBatteryInformation_t {
         typedef GeckoAppShell Owner;
@@ -838,6 +897,25 @@ public:
     };
 
     static auto GetCurrentNetworkInformation() -> mozilla::jni::DoubleArray::LocalRef;
+
+    struct GetDefaultLocale_t {
+        typedef GeckoAppShell Owner;
+        typedef mozilla::jni::String::LocalRef ReturnType;
+        typedef mozilla::jni::String::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "getDefaultLocale";
+        static constexpr char signature[] =
+                "()Ljava/lang/String;";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto GetDefaultLocale() -> mozilla::jni::String::LocalRef;
 
     struct GetDensity_t {
         typedef GeckoAppShell Owner;
@@ -916,26 +994,6 @@ public:
     };
 
     static auto GetExtensionFromMimeType(mozilla::jni::String::Param) -> mozilla::jni::String::LocalRef;
-
-    struct GetExternalPublicDirectory_t {
-        typedef GeckoAppShell Owner;
-        typedef mozilla::jni::String::LocalRef ReturnType;
-        typedef mozilla::jni::String::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "getExternalPublicDirectory";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)Ljava/lang/String;";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto GetExternalPublicDirectory(mozilla::jni::String::Param) -> mozilla::jni::String::LocalRef;
 
     struct GetHWDecoderCapability_t {
         typedef GeckoAppShell Owner;
@@ -1057,27 +1115,6 @@ public:
 
     static auto GetMaxTouchPoints() -> int32_t;
 
-    struct GetMessage_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t> Args;
-        static constexpr char name[] = "getMessage";
-        static constexpr char signature[] =
-                "(II)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto GetMessage(int32_t, int32_t) -> void;
-
     struct GetMimeTypeFromExtensions_t {
         typedef GeckoAppShell Owner;
         typedef mozilla::jni::String::LocalRef ReturnType;
@@ -1116,46 +1153,6 @@ public:
     };
 
     static auto GetNetworkLinkType() -> int32_t;
-
-    struct GetNextMessage_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t> Args;
-        static constexpr char name[] = "getNextMessage";
-        static constexpr char signature[] =
-                "(I)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto GetNextMessage(int32_t) -> void;
-
-    struct GetNextThread_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t> Args;
-        static constexpr char name[] = "getNextThread";
-        static constexpr char signature[] =
-                "(I)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto GetNextThread(int32_t) -> void;
 
     struct GetProxyForURI_t {
         typedef GeckoAppShell Owner;
@@ -1293,26 +1290,6 @@ public:
     };
 
     static auto GetSystemColors() -> mozilla::jni::IntArray::LocalRef;
-
-    struct HandleGeckoMessage_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::Object::Param> Args;
-        static constexpr char name[] = "handleGeckoMessage";
-        static constexpr char signature[] =
-                "(Lorg/mozilla/gecko/util/NativeJSContainer;)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto HandleGeckoMessage(mozilla::jni::Object::Param) -> void;
 
     struct HandleUncaughtException_t {
         typedef GeckoAppShell Owner;
@@ -1452,27 +1429,6 @@ public:
 
     static auto KillAnyZombies() -> void;
 
-    struct LoadPluginClass_t {
-        typedef GeckoAppShell Owner;
-        typedef mozilla::jni::Class::LocalRef ReturnType;
-        typedef mozilla::jni::Class::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "loadPluginClass";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Class;";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto LoadPluginClass(mozilla::jni::String::Param, mozilla::jni::String::Param) -> mozilla::jni::Class::LocalRef;
-
     struct LockScreenOrientation_t {
         typedef GeckoAppShell Owner;
         typedef void ReturnType;
@@ -1492,49 +1448,6 @@ public:
     };
 
     static auto LockScreenOrientation(int32_t) -> void;
-
-    struct MarkMessageRead_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                bool,
-                bool,
-                int32_t> Args;
-        static constexpr char name[] = "markMessageRead";
-        static constexpr char signature[] =
-                "(IZZI)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto MarkMessageRead(int32_t, bool, bool, int32_t) -> void;
-
-    struct MarkURIVisited_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "markUriVisited";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto MarkURIVisited(mozilla::jni::String::Param) -> void;
 
     struct MoveTaskToBack_t {
         typedef GeckoAppShell Owner;
@@ -1580,10 +1493,11 @@ public:
         typedef void SetterType;
         typedef mozilla::jni::Args<
                 mozilla::jni::String::Param,
+                mozilla::jni::String::Param,
                 mozilla::jni::String::Param> Args;
         static constexpr char name[] = "notifyAlertListener";
         static constexpr char signature[] =
-                "(Ljava/lang/String;Ljava/lang/String;)V";
+                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
         static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -1632,24 +1546,6 @@ public:
 
     static auto NotifyWakeLockChanged(mozilla::jni::String::Param, mozilla::jni::String::Param) -> void;
 
-    struct OnFullScreenPluginHidden_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::Object::Param> Args;
-        static constexpr char name[] = "onFullScreenPluginHidden";
-        static constexpr char signature[] =
-                "(Landroid/view/View;)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
-
     struct OnLocationChanged_t {
         typedef GeckoAppShell Owner;
         typedef void ReturnType;
@@ -1669,7 +1565,7 @@ public:
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
+                mozilla::jni::CallingThread::ANY;
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::GECKO;
     };
@@ -1743,26 +1639,6 @@ public:
 
     static auto PerformHapticFeedback(bool) -> void;
 
-    struct RemoveFullScreenPluginView_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::Object::Param> Args;
-        static constexpr char name[] = "removeFullScreenPluginView";
-        static constexpr char signature[] =
-                "(Landroid/view/View;)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto RemoveFullScreenPluginView(mozilla::jni::Object::Param) -> void;
-
     struct ReportJavaCrash_t {
         typedef GeckoAppShell Owner;
         typedef void ReturnType;
@@ -1781,108 +1657,6 @@ public:
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::CURRENT;
     };
-
-    struct ScheduleRestart_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "scheduleRestart";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto ScheduleRestart() -> void;
-
-    struct SendMessage_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param,
-                int32_t> Args;
-        static constexpr char name[] = "sendMessage";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;Ljava/lang/String;I)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto SendMessage(mozilla::jni::String::Param, mozilla::jni::String::Param, int32_t) -> void;
-
-    struct SetAlarm_t {
-        typedef GeckoAppShell Owner;
-        typedef bool ReturnType;
-        typedef bool SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t> Args;
-        static constexpr char name[] = "setAlarm";
-        static constexpr char signature[] =
-                "(II)Z";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto SetAlarm(int32_t, int32_t) -> bool;
-
-    struct SetFullScreen_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                bool> Args;
-        static constexpr char name[] = "setFullScreen";
-        static constexpr char signature[] =
-                "(Z)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto SetFullScreen(bool) -> void;
-
-    struct SetKeepScreenOn_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                bool> Args;
-        static constexpr char name[] = "setKeepScreenOn";
-        static constexpr char signature[] =
-                "(Z)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto SetKeepScreenOn(bool) -> void;
 
     struct SetScreenDepthOverride_t {
         typedef GeckoAppShell Owner;
@@ -1904,28 +1678,7 @@ public:
 
     static auto SetScreenDepthOverride(int32_t) -> void;
 
-    struct SetURITitle_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "setUriTitle";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;Ljava/lang/String;)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto SetURITitle(mozilla::jni::String::Param, mozilla::jni::String::Param) -> void;
-
-    struct ShowAlertNotification_t {
+    struct ShowNotification_t {
         typedef GeckoAppShell Owner;
         typedef void ReturnType;
         typedef void SetterType;
@@ -1937,7 +1690,7 @@ public:
                 mozilla::jni::String::Param,
                 mozilla::jni::String::Param,
                 mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "showAlertNotification";
+        static constexpr char name[] = "showNotification";
         static constexpr char signature[] =
                 "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
         static const bool isStatic = true;
@@ -1949,26 +1702,7 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    static auto ShowAlertNotification(mozilla::jni::String::Param, mozilla::jni::String::Param, mozilla::jni::String::Param, mozilla::jni::String::Param, mozilla::jni::String::Param, mozilla::jni::String::Param, mozilla::jni::String::Param) -> void;
-
-    struct SyncNotifyObservers_t {
-        typedef GeckoAppShell Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "syncNotifyObservers";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;Ljava/lang/String;)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
+    static auto ShowNotification(mozilla::jni::String::Param, mozilla::jni::String::Param, mozilla::jni::String::Param, mozilla::jni::String::Param, mozilla::jni::String::Param, mozilla::jni::String::Param, mozilla::jni::String::Param) -> void;
 
     struct UnlockProfile_t {
         typedef GeckoAppShell Owner;
@@ -2120,22 +1854,22 @@ public:
     template<class Impl> class Natives;
 };
 
-class GeckoEditable : public mozilla::jni::ObjectBase<GeckoEditable>
+class GeckoEditableChild : public mozilla::jni::ObjectBase<GeckoEditableChild>
 {
 public:
     static const char name[];
 
-    explicit GeckoEditable(const Context& ctx) : ObjectBase<GeckoEditable>(ctx) {}
+    explicit GeckoEditableChild(const Context& ctx) : ObjectBase<GeckoEditableChild>(ctx) {}
 
     struct New_t {
-        typedef GeckoEditable Owner;
-        typedef GeckoEditable::LocalRef ReturnType;
-        typedef GeckoEditable::Param SetterType;
+        typedef GeckoEditableChild Owner;
+        typedef GeckoEditableChild::LocalRef ReturnType;
+        typedef GeckoEditableChild::Param SetterType;
         typedef mozilla::jni::Args<
                 mozilla::jni::Object::Param> Args;
         static constexpr char name[] = "<init>";
         static constexpr char signature[] =
-                "(Lorg/mozilla/gecko/GeckoView;)V";
+                "(Lorg/mozilla/gecko/IGeckoEditableParent;)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -2145,27 +1879,10 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    static auto New(mozilla::jni::Object::Param) -> GeckoEditable::LocalRef;
-
-    struct DisposeNative_t {
-        typedef GeckoEditable Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "disposeNative";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::PROXY;
-    };
+    static auto New(mozilla::jni::Object::Param) -> GeckoEditableChild::LocalRef;
 
     struct NotifyIME_t {
-        typedef GeckoEditable Owner;
+        typedef GeckoEditableChild Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
@@ -2185,17 +1902,18 @@ public:
     auto NotifyIME(int32_t) const -> void;
 
     struct NotifyIMEContext_t {
-        typedef GeckoEditable Owner;
+        typedef GeckoEditableChild Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
                 int32_t,
                 mozilla::jni::String::Param,
                 mozilla::jni::String::Param,
-                mozilla::jni::String::Param> Args;
+                mozilla::jni::String::Param,
+                int32_t> Args;
         static constexpr char name[] = "notifyIMEContext";
         static constexpr char signature[] =
-                "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
+                "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -2205,10 +1923,10 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    auto NotifyIMEContext(int32_t, mozilla::jni::String::Param, mozilla::jni::String::Param, mozilla::jni::String::Param) const -> void;
+    auto NotifyIMEContext(int32_t, mozilla::jni::String::Param, mozilla::jni::String::Param, mozilla::jni::String::Param, int32_t) const -> void;
 
     struct OnDefaultKeyEvent_t {
-        typedef GeckoEditable Owner;
+        typedef GeckoEditableChild Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
@@ -2227,25 +1945,8 @@ public:
 
     auto OnDefaultKeyEvent(mozilla::jni::Object::Param) const -> void;
 
-    struct OnImeAcknowledgeFocus_t {
-        typedef GeckoEditable Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "onImeAcknowledgeFocus";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::PROXY;
-    };
-
     struct OnImeAddCompositionRange_t {
-        typedef GeckoEditable Owner;
+        typedef GeckoEditableChild Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
@@ -2271,7 +1972,7 @@ public:
     };
 
     struct OnImeReplaceText_t {
-        typedef GeckoEditable Owner;
+        typedef GeckoEditableChild Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
@@ -2291,7 +1992,7 @@ public:
     };
 
     struct OnImeRequestCursorUpdates_t {
-        typedef GeckoEditable Owner;
+        typedef GeckoEditableChild Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
@@ -2309,7 +2010,7 @@ public:
     };
 
     struct OnImeSynchronize_t {
-        typedef GeckoEditable Owner;
+        typedef GeckoEditableChild Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<> Args;
@@ -2326,15 +2027,16 @@ public:
     };
 
     struct OnImeUpdateComposition_t {
-        typedef GeckoEditable Owner;
+        typedef GeckoEditableChild Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
                 int32_t,
+                int32_t,
                 int32_t> Args;
         static constexpr char name[] = "onImeUpdateComposition";
         static constexpr char signature[] =
-                "(II)V";
+                "(III)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -2345,10 +2047,11 @@ public:
     };
 
     struct OnKeyEvent_t {
-        typedef GeckoEditable Owner;
+        typedef GeckoEditableChild Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
+                int32_t,
                 int32_t,
                 int32_t,
                 int32_t,
@@ -2357,13 +2060,11 @@ public:
                 int32_t,
                 int32_t,
                 int32_t,
-                int32_t,
-                int32_t,
                 bool,
                 mozilla::jni::Object::Param> Args;
         static constexpr char name[] = "onKeyEvent";
         static constexpr char signature[] =
-                "(IIIIJIIIIIZLandroid/view/KeyEvent;)V";
+                "(IIIIIJIIIZLandroid/view/KeyEvent;)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -2374,7 +2075,7 @@ public:
     };
 
     struct OnSelectionChange_t {
-        typedef GeckoEditable Owner;
+        typedef GeckoEditableChild Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
@@ -2385,7 +2086,7 @@ public:
                 "(II)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
+                mozilla::jni::ExceptionMode::IGNORE;
         static const mozilla::jni::CallingThread callingThread =
                 mozilla::jni::CallingThread::GECKO;
         static const mozilla::jni::DispatchTarget dispatchTarget =
@@ -2395,7 +2096,7 @@ public:
     auto OnSelectionChange(int32_t, int32_t) const -> void;
 
     struct OnTextChange_t {
-        typedef GeckoEditable Owner;
+        typedef GeckoEditableChild Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
@@ -2408,7 +2109,7 @@ public:
                 "(Ljava/lang/CharSequence;III)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
+                mozilla::jni::ExceptionMode::IGNORE;
         static const mozilla::jni::CallingThread callingThread =
                 mozilla::jni::CallingThread::GECKO;
         static const mozilla::jni::DispatchTarget dispatchTarget =
@@ -2417,28 +2118,8 @@ public:
 
     auto OnTextChange(mozilla::jni::String::Param, int32_t, int32_t, int32_t) const -> void;
 
-    struct OnViewChange_t {
-        typedef GeckoEditable Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::Object::Param> Args;
-        static constexpr char name[] = "onViewChange";
-        static constexpr char signature[] =
-                "(Lorg/mozilla/gecko/GeckoView;)V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto OnViewChange(mozilla::jni::Object::Param) const -> void;
-
     struct UpdateCompositionRects_t {
-        typedef GeckoEditable Owner;
+        typedef GeckoEditableChild Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
@@ -2457,200 +2138,7 @@ public:
 
     auto UpdateCompositionRects(mozilla::jni::ObjectArray::Param) const -> void;
 
-    static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::ANY;
-
-    template<class Impl> class Natives;
-};
-
-class GeckoEditableListener : public mozilla::jni::ObjectBase<GeckoEditableListener>
-{
-public:
-    static const char name[];
-
-    explicit GeckoEditableListener(const Context& ctx) : ObjectBase<GeckoEditableListener>(ctx) {}
-
-    static const int32_t NOTIFY_IME_OF_BLUR = 2;
-
-    static const int32_t NOTIFY_IME_OF_FOCUS = 1;
-
-    static const int32_t NOTIFY_IME_OPEN_VKB = -2;
-
-    static const int32_t NOTIFY_IME_REPLY_EVENT = -1;
-
-    static const int32_t NOTIFY_IME_TO_CANCEL_COMPOSITION = 9;
-
-    static const int32_t NOTIFY_IME_TO_COMMIT_COMPOSITION = 8;
-
-    static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::ANY;
-
-};
-
-class GeckoJavaSampler : public mozilla::jni::ObjectBase<GeckoJavaSampler>
-{
-public:
-    static const char name[];
-
-    explicit GeckoJavaSampler(const Context& ctx) : ObjectBase<GeckoJavaSampler>(ctx) {}
-
-    struct GetFrameName_t {
-        typedef GeckoJavaSampler Owner;
-        typedef mozilla::jni::String::LocalRef ReturnType;
-        typedef mozilla::jni::String::Param SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t,
-                int32_t> Args;
-        static constexpr char name[] = "getFrameName";
-        static constexpr char signature[] =
-                "(III)Ljava/lang/String;";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto GetFrameName(int32_t, int32_t, int32_t) -> mozilla::jni::String::LocalRef;
-
-    struct GetProfilerTime_t {
-        typedef GeckoJavaSampler Owner;
-        typedef double ReturnType;
-        typedef double SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "getProfilerTime";
-        static constexpr char signature[] =
-                "()D";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct GetSampleTime_t {
-        typedef GeckoJavaSampler Owner;
-        typedef double ReturnType;
-        typedef double SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t> Args;
-        static constexpr char name[] = "getSampleTime";
-        static constexpr char signature[] =
-                "(II)D";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto GetSampleTime(int32_t, int32_t) -> double;
-
-    struct GetThreadName_t {
-        typedef GeckoJavaSampler Owner;
-        typedef mozilla::jni::String::LocalRef ReturnType;
-        typedef mozilla::jni::String::Param SetterType;
-        typedef mozilla::jni::Args<
-                int32_t> Args;
-        static constexpr char name[] = "getThreadName";
-        static constexpr char signature[] =
-                "(I)Ljava/lang/String;";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto GetThreadName(int32_t) -> mozilla::jni::String::LocalRef;
-
-    struct Pause_t {
-        typedef GeckoJavaSampler Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "pause";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto Pause() -> void;
-
-    struct Start_t {
-        typedef GeckoJavaSampler Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t> Args;
-        static constexpr char name[] = "start";
-        static constexpr char signature[] =
-                "(II)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto Start(int32_t, int32_t) -> void;
-
-    struct Stop_t {
-        typedef GeckoJavaSampler Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "stop";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto Stop() -> void;
-
-    struct Unpause_t {
-        typedef GeckoJavaSampler Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "unpause";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto Unpause() -> void;
+    static const int32_t FLAG_KEEP_CURRENT_COMPOSITION = 1;
 
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::ANY;
@@ -2742,309 +2230,165 @@ public:
     template<class Impl> class Natives;
 };
 
-class GeckoSmsManager : public mozilla::jni::ObjectBase<GeckoSmsManager>
+class GeckoSession : public mozilla::jni::ObjectBase<GeckoSession>
 {
 public:
     static const char name[];
 
-    explicit GeckoSmsManager(const Context& ctx) : ObjectBase<GeckoSmsManager>(ctx) {}
+    explicit GeckoSession(const Context& ctx) : ObjectBase<GeckoSession>(ctx) {}
 
-    struct NotifyCursorDone_t {
-        typedef GeckoSmsManager Owner;
+    class Window;
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+};
+
+class GeckoSession::Window : public mozilla::jni::ObjectBase<Window>
+{
+public:
+    static const char name[];
+
+    explicit Window(const Context& ctx) : ObjectBase<Window>(ctx) {}
+
+    struct AttachEditable_t {
+        typedef Window Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
-                int32_t> Args;
-        static constexpr char name[] = "notifyCursorDone";
+                mozilla::jni::Object::Param,
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "attachEditable";
         static constexpr char signature[] =
-                "(I)V";
-        static const bool isStatic = true;
+                "(Lorg/mozilla/gecko/IGeckoEditableParent;Lorg/mozilla/gecko/GeckoEditableChild;)V";
+        static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
+                mozilla::jni::CallingThread::ANY;
         static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
+                mozilla::jni::DispatchTarget::PROXY;
     };
 
-    struct NotifyCursorError_t {
-        typedef GeckoSmsManager Owner;
+    struct Close_t {
+        typedef Window Owner;
         typedef void ReturnType;
         typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t> Args;
-        static constexpr char name[] = "notifyCursorError";
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "close";
         static constexpr char signature[] =
-                "(II)V";
-        static const bool isStatic = true;
+                "()V";
+        static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
+                mozilla::jni::CallingThread::ANY;
         static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
+                mozilla::jni::DispatchTarget::PROXY;
     };
 
-    struct NotifyGetSms_t {
-        typedef GeckoSmsManager Owner;
+    struct DisposeNative_t {
+        typedef Window Owner;
         typedef void ReturnType;
         typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t,
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param,
-                int64_t,
-                bool,
-                int32_t> Args;
-        static constexpr char name[] = "notifyGetSms";
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "nativeDisposeNative";
         static constexpr char signature[] =
-                "(IILjava/lang/String;Ljava/lang/String;Ljava/lang/String;JZI)V";
-        static const bool isStatic = true;
+                "()V";
+        static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
+                mozilla::jni::CallingThread::ANY;
         static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
+                mozilla::jni::DispatchTarget::PROXY;
     };
 
-    struct NotifyGetSmsFailed_t {
-        typedef GeckoSmsManager Owner;
+    struct OnReady_t {
+        typedef Window Owner;
         typedef void ReturnType;
         typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t> Args;
-        static constexpr char name[] = "notifyGetSmsFailed";
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "onReady";
         static constexpr char signature[] =
-                "(II)V";
-        static const bool isStatic = true;
+                "()V";
+        static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
+                mozilla::jni::CallingThread::GECKO;
         static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
+                mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    struct NotifyMessageCursorResult_t {
-        typedef GeckoSmsManager Owner;
+    auto OnReady() const -> void;
+
+    struct OnTransfer_t {
+        typedef Window Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
-                int32_t,
-                int32_t,
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param,
-                int64_t,
-                int64_t,
-                bool,
-                int32_t> Args;
-        static constexpr char name[] = "notifyMessageCursorResult";
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "onTransfer";
         static constexpr char signature[] =
-                "(IILjava/lang/String;Ljava/lang/String;Ljava/lang/String;JJZI)V";
-        static const bool isStatic = true;
+                "(Lorg/mozilla/gecko/EventDispatcher;)V";
+        static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
+                mozilla::jni::CallingThread::GECKO;
         static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
+                mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    struct NotifySmsDeleteFailed_t {
-        typedef GeckoSmsManager Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t> Args;
-        static constexpr char name[] = "notifySmsDeleteFailed";
-        static constexpr char signature[] =
-                "(II)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
+    auto OnTransfer(mozilla::jni::Object::Param) const -> void;
 
-    struct NotifySmsDeleted_t {
-        typedef GeckoSmsManager Owner;
+    struct Open_t {
+        typedef Window Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
-                bool,
-                int32_t> Args;
-        static constexpr char name[] = "notifySmsDeleted";
-        static constexpr char signature[] =
-                "(ZI)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
-
-    struct NotifySmsDelivery_t {
-        typedef GeckoSmsManager Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t,
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param,
-                int64_t> Args;
-        static constexpr char name[] = "notifySmsDelivery";
-        static constexpr char signature[] =
-                "(IILjava/lang/String;Ljava/lang/String;J)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
-
-    struct NotifySmsMarkAsReadFailed_t {
-        typedef GeckoSmsManager Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t> Args;
-        static constexpr char name[] = "notifySmsMarkAsReadFailed";
-        static constexpr char signature[] =
-                "(II)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
-
-    struct NotifySmsMarkedAsRead_t {
-        typedef GeckoSmsManager Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                bool,
-                int32_t> Args;
-        static constexpr char name[] = "notifySmsMarkedAsRead";
-        static constexpr char signature[] =
-                "(ZI)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
-
-    struct NotifySmsReceived_t {
-        typedef GeckoSmsManager Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                mozilla::jni::String::Param,
+                Window::Param,
+                mozilla::jni::Object::Param,
+                mozilla::jni::Object::Param,
+                mozilla::jni::Object::Param,
                 mozilla::jni::String::Param,
                 int32_t,
-                int64_t,
-                int64_t> Args;
-        static constexpr char name[] = "notifySmsReceived";
+                bool> Args;
+        static constexpr char name[] = "open";
         static constexpr char signature[] =
-                "(ILjava/lang/String;Ljava/lang/String;IJJ)V";
+                "(Lorg/mozilla/gecko/GeckoSession$Window;Lorg/mozilla/gecko/gfx/LayerSession$Compositor;Lorg/mozilla/gecko/EventDispatcher;Lorg/mozilla/gecko/util/GeckoBundle;Ljava/lang/String;IZ)V";
         static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
+                mozilla::jni::CallingThread::ANY;
         static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
+                mozilla::jni::DispatchTarget::PROXY;
     };
 
-    struct NotifySmsSendFailed_t {
-        typedef GeckoSmsManager Owner;
+    struct Transfer_t {
+        typedef Window Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
-                int32_t,
-                int32_t> Args;
-        static constexpr char name[] = "notifySmsSendFailed";
+                mozilla::jni::Object::Param,
+                mozilla::jni::Object::Param,
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "transfer";
         static constexpr char signature[] =
-                "(II)V";
-        static const bool isStatic = true;
+                "(Lorg/mozilla/gecko/gfx/LayerSession$Compositor;Lorg/mozilla/gecko/EventDispatcher;Lorg/mozilla/gecko/util/GeckoBundle;)V";
+        static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
+                mozilla::jni::CallingThread::ANY;
         static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
-
-    struct NotifySmsSent_t {
-        typedef GeckoSmsManager Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param,
-                int64_t,
-                int32_t> Args;
-        static constexpr char name[] = "notifySmsSent";
-        static constexpr char signature[] =
-                "(ILjava/lang/String;Ljava/lang/String;JI)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
-
-    struct NotifyThreadCursorResult_t {
-        typedef GeckoSmsManager Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int64_t,
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param,
-                int64_t,
-                mozilla::jni::ObjectArray::Param,
-                int64_t,
-                mozilla::jni::String::Param,
-                int32_t> Args;
-        static constexpr char name[] = "notifyThreadCursorResult";
-        static constexpr char signature[] =
-                "(JLjava/lang/String;Ljava/lang/String;J[Ljava/lang/Object;JLjava/lang/String;I)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
+                mozilla::jni::DispatchTarget::PROXY;
     };
 
     static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::UI;
+            mozilla::jni::CallingThread::ANY;
 
     template<class Impl> class Natives;
 };
@@ -3078,6 +2422,42 @@ public:
     };
 
     static auto CheckAndSetState(mozilla::jni::Object::Param, mozilla::jni::Object::Param) -> bool;
+
+    struct ForceQuit_t {
+        typedef GeckoThread Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "forceQuit";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::GECKO;
+    };
+
+    struct IsChildProcess_t {
+        typedef GeckoThread Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "isChildProcess";
+        static constexpr char signature[] =
+                "()Z";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto IsChildProcess() -> bool;
 
     struct CreateServices_t {
         typedef GeckoThread Owner;
@@ -3284,6 +2664,27 @@ public:
 
     static auto MsgQueue(mozilla::jni::Object::Param) -> void;
 
+    struct UiThreadId_t {
+        typedef GeckoThread Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "uiThreadId";
+        static constexpr char signature[] =
+                "I";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto UiThreadId() -> int32_t;
+
+    static auto UiThreadId(int32_t) -> void;
+
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::ANY;
 
@@ -3449,6 +2850,25 @@ public:
 
     static auto PROFILE_READY() -> State::LocalRef;
 
+    struct RESTARTING_t {
+        typedef State Owner;
+        typedef State::LocalRef ReturnType;
+        typedef State::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "RESTARTING";
+        static constexpr char signature[] =
+                "Lorg/mozilla/gecko/GeckoThread$State;";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto RESTARTING() -> State::LocalRef;
+
     struct RUNNING_t {
         typedef State Owner;
         typedef State::LocalRef ReturnType;
@@ -3473,147 +2893,19 @@ public:
 
 };
 
-class GeckoView : public mozilla::jni::ObjectBase<GeckoView>
+class GeckoVRManager : public mozilla::jni::ObjectBase<GeckoVRManager>
 {
 public:
     static const char name[];
 
-    explicit GeckoView(const Context& ctx) : ObjectBase<GeckoView>(ctx) {}
+    explicit GeckoVRManager(const Context& ctx) : ObjectBase<GeckoVRManager>(ctx) {}
 
-    class Window;
-
-    static const int32_t LOAD_DEFAULT = 0;
-
-    static const int32_t LOAD_NEW_TAB = 1;
-
-    static const int32_t LOAD_SWITCH_TAB = 2;
-
-    static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::ANY;
-
-};
-
-class GeckoView::Window : public mozilla::jni::ObjectBase<Window>
-{
-public:
-    static const char name[];
-
-    explicit Window(const Context& ctx) : ObjectBase<Window>(ctx) {}
-
-    struct Close_t {
-        typedef Window Owner;
+    struct CleanupGVRNonPresentingContext_t {
+        typedef GeckoVRManager Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "close";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::PROXY;
-    };
-
-    struct DisposeNative_t {
-        typedef Window Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "disposeNative";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::PROXY;
-    };
-
-    struct LoadUri_t {
-        typedef Window Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                int32_t> Args;
-        static constexpr char name[] = "loadUri";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;I)V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::PROXY;
-    };
-
-    struct Open_t {
-        typedef Window Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                Window::Param,
-                GeckoView::Param,
-                mozilla::jni::Object::Param,
-                mozilla::jni::String::Param,
-                int32_t,
-                int32_t> Args;
-        static constexpr char name[] = "open";
-        static constexpr char signature[] =
-                "(Lorg/mozilla/gecko/GeckoView$Window;Lorg/mozilla/gecko/GeckoView;Ljava/lang/Object;Ljava/lang/String;II)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::PROXY;
-    };
-
-    struct Reattach_t {
-        typedef Window Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                GeckoView::Param,
-                mozilla::jni::Object::Param> Args;
-        static constexpr char name[] = "reattach";
-        static constexpr char signature[] =
-                "(Lorg/mozilla/gecko/GeckoView;Ljava/lang/Object;)V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::PROXY;
-    };
-
-    static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::ANY;
-
-    template<class Impl> class Natives;
-};
-
-class MemoryMonitor : public mozilla::jni::ObjectBase<MemoryMonitor>
-{
-public:
-    static const char name[];
-
-    explicit MemoryMonitor(const Context& ctx) : ObjectBase<MemoryMonitor>(ctx) {}
-
-    struct DispatchMemoryPressure_t {
-        typedef MemoryMonitor Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "dispatchMemoryPressure";
+        static constexpr char name[] = "cleanupGVRNonPresentingContext";
         static constexpr char signature[] =
                 "()V";
         static const bool isStatic = true;
@@ -3625,8 +2917,139 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
+    struct CreateGVRNonPresentingContext_t {
+        typedef GeckoVRManager Owner;
+        typedef int64_t ReturnType;
+        typedef int64_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "createGVRNonPresentingContext";
+        static constexpr char signature[] =
+                "()J";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto CreateGVRNonPresentingContext() -> int64_t;
+
+    struct DestroyGVRNonPresentingContext_t {
+        typedef GeckoVRManager Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "destroyGVRNonPresentingContext";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto DestroyGVRNonPresentingContext() -> void;
+
+    struct DisableVRMode_t {
+        typedef GeckoVRManager Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "disableVRMode";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto DisableVRMode() -> void;
+
+    struct EnableVRMode_t {
+        typedef GeckoVRManager Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "enableVRMode";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto EnableVRMode() -> void;
+
+    struct IsGVRPresent_t {
+        typedef GeckoVRManager Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "isGVRPresent";
+        static constexpr char signature[] =
+                "()Z";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto IsGVRPresent() -> bool;
+
+    struct SetGVRPaused_t {
+        typedef GeckoVRManager Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                bool> Args;
+        static constexpr char name[] = "setGVRPaused";
+        static constexpr char signature[] =
+                "(Z)V";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    struct SetGVRPresentingContext_t {
+        typedef GeckoVRManager Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int64_t> Args;
+        static constexpr char name[] = "setGVRPresentingContext";
+        static constexpr char signature[] =
+                "(J)V";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
     static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::UI;
+            mozilla::jni::CallingThread::ANY;
 
     template<class Impl> class Natives;
 };
@@ -3783,69 +3206,54 @@ public:
     template<class Impl> class Natives;
 };
 
-class PresentationMediaPlayerManager : public mozilla::jni::ObjectBase<PresentationMediaPlayerManager>
+class ScreenManagerHelper : public mozilla::jni::ObjectBase<ScreenManagerHelper>
 {
 public:
     static const char name[];
 
-    explicit PresentationMediaPlayerManager(const Context& ctx) : ObjectBase<PresentationMediaPlayerManager>(ctx) {}
+    explicit ScreenManagerHelper(const Context& ctx) : ObjectBase<ScreenManagerHelper>(ctx) {}
 
-    struct AddPresentationSurface_t {
-        typedef PresentationMediaPlayerManager Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
+    struct AddDisplay_t {
+        typedef ScreenManagerHelper Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
         typedef mozilla::jni::Args<
-                mozilla::jni::Object::Param,
-                mozilla::jni::Object::Param> Args;
-        static constexpr char name[] = "addPresentationSurface";
+                int32_t,
+                int32_t,
+                int32_t,
+                float> Args;
+        static constexpr char name[] = "addDisplay";
         static constexpr char signature[] =
-                "(Lorg/mozilla/gecko/GeckoView;Landroid/view/Surface;)V";
+                "(IIIF)I";
         static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
+                mozilla::jni::CallingThread::ANY;
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    struct InvalidateAndScheduleComposite_t {
-        typedef PresentationMediaPlayerManager Owner;
+    struct RemoveDisplay_t {
+        typedef ScreenManagerHelper Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
-                mozilla::jni::Object::Param> Args;
-        static constexpr char name[] = "invalidateAndScheduleComposite";
+                int32_t> Args;
+        static constexpr char name[] = "removeDisplay";
         static constexpr char signature[] =
-                "(Lorg/mozilla/gecko/GeckoView;)V";
+                "(I)V";
         static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct RemovePresentationSurface_t {
-        typedef PresentationMediaPlayerManager Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "removePresentationSurface";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
+                mozilla::jni::CallingThread::ANY;
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
     static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::UI;
+            mozilla::jni::CallingThread::ANY;
 
     template<class Impl> class Natives;
 };
@@ -3876,6 +3284,23 @@ public:
 
     static auto New() -> SurfaceTextureListener::LocalRef;
 
+    struct DisposeNative_t {
+        typedef SurfaceTextureListener Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "disposeNative";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::GECKO;
+    };
+
     struct OnFrameAvailable_t {
         typedef SurfaceTextureListener Owner;
         typedef void ReturnType;
@@ -3899,563 +3324,123 @@ public:
     template<class Impl> class Natives;
 };
 
-class Telemetry : public mozilla::jni::ObjectBase<Telemetry>
+class TextInputController : public mozilla::jni::ObjectBase<TextInputController>
 {
 public:
     static const char name[];
 
-    explicit Telemetry(const Context& ctx) : ObjectBase<Telemetry>(ctx) {}
+    explicit TextInputController(const Context& ctx) : ObjectBase<TextInputController>(ctx) {}
 
-    struct AddHistogram_t {
-        typedef Telemetry Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                int32_t> Args;
-        static constexpr char name[] = "nativeAddHistogram";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;I)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
-
-    struct AddKeyedHistogram_t {
-        typedef Telemetry Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param,
-                int32_t> Args;
-        static constexpr char name[] = "nativeAddKeyedHistogram";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;Ljava/lang/String;I)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
-
-    struct AddUIEvent_t {
-        typedef Telemetry Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param,
-                int64_t,
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "nativeAddUiEvent";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
-
-    struct StartUISession_t {
-        typedef Telemetry Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                int64_t> Args;
-        static constexpr char name[] = "nativeStartUiSession";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;J)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
-
-    struct StopUISession_t {
-        typedef Telemetry Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param,
-                int64_t> Args;
-        static constexpr char name[] = "nativeStopUiSession";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;Ljava/lang/String;J)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
+    class EditableClient;
+    class EditableListener;
 
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::ANY;
 
-    template<class Impl> class Natives;
 };
 
-class ThumbnailHelper : public mozilla::jni::ObjectBase<ThumbnailHelper>
+class TextInputController::EditableClient : public mozilla::jni::ObjectBase<EditableClient>
 {
 public:
     static const char name[];
 
-    explicit ThumbnailHelper(const Context& ctx) : ObjectBase<ThumbnailHelper>(ctx) {}
+    explicit EditableClient(const Context& ctx) : ObjectBase<EditableClient>(ctx) {}
 
-    struct SendThumbnail_t {
-        typedef ThumbnailHelper Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::ByteBuffer::Param,
-                int32_t,
-                bool,
-                bool> Args;
-        static constexpr char name[] = "notifyThumbnail";
-        static constexpr char signature[] =
-                "(Ljava/nio/ByteBuffer;IZZ)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
+    static const int32_t END_MONITOR = 3;
 
-    static auto SendThumbnail(mozilla::jni::ByteBuffer::Param, int32_t, bool, bool) -> void;
+    static const int32_t ONE_SHOT = 1;
 
-    struct RequestThumbnail_t {
-        typedef ThumbnailHelper Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::ByteBuffer::Param,
-                int32_t,
-                int32_t,
-                int32_t> Args;
-        static constexpr char name[] = "requestThumbnail";
-        static constexpr char signature[] =
-                "(Ljava/nio/ByteBuffer;III)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::PROXY;
-    };
+    static const int32_t START_MONITOR = 2;
 
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::ANY;
 
-    template<class Impl> class Natives;
 };
 
-class ZoomedView : public mozilla::jni::ObjectBase<ZoomedView>
+class TextInputController::EditableListener : public mozilla::jni::ObjectBase<EditableListener>
 {
 public:
     static const char name[];
 
-    explicit ZoomedView(const Context& ctx) : ObjectBase<ZoomedView>(ctx) {}
+    explicit EditableListener(const Context& ctx) : ObjectBase<EditableListener>(ctx) {}
 
-    struct RequestZoomedViewData_t {
-        typedef ZoomedView Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::ByteBuffer::Param,
-                int32_t,
-                int32_t,
-                int32_t,
-                int32_t,
-                int32_t,
-                float> Args;
-        static constexpr char name[] = "requestZoomedViewData";
-        static constexpr char signature[] =
-                "(Ljava/nio/ByteBuffer;IIIIIF)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::GECKO;
-    };
+    static const int32_t IME_FLAG_PRIVATE_BROWSING = 1;
+
+    static const int32_t IME_FLAG_USER_ACTION = 2;
+
+    static const int32_t NOTIFY_IME_OF_BLUR = 2;
+
+    static const int32_t NOTIFY_IME_OF_FOCUS = 1;
+
+    static const int32_t NOTIFY_IME_OF_TOKEN = -3;
+
+    static const int32_t NOTIFY_IME_OPEN_VKB = -2;
+
+    static const int32_t NOTIFY_IME_REPLY_EVENT = -1;
+
+    static const int32_t NOTIFY_IME_TO_CANCEL_COMPOSITION = 9;
+
+    static const int32_t NOTIFY_IME_TO_COMMIT_COMPOSITION = 8;
 
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::ANY;
 
-    template<class Impl> class Natives;
 };
 
-class Distribution : public mozilla::jni::ObjectBase<Distribution>
+class GeckoSurface : public mozilla::jni::ObjectBase<GeckoSurface>
 {
 public:
     static const char name[];
 
-    explicit Distribution(const Context& ctx) : ObjectBase<Distribution>(ctx) {}
-
-    struct GetDistributionDirectories_t {
-        typedef Distribution Owner;
-        typedef mozilla::jni::ObjectArray::LocalRef ReturnType;
-        typedef mozilla::jni::ObjectArray::Param SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "getDistributionDirectories";
-        static constexpr char signature[] =
-                "()[Ljava/lang/String;";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto GetDistributionDirectories() -> mozilla::jni::ObjectArray::LocalRef;
-
-    static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::GECKO;
-
-};
-
-class DisplayPortMetrics : public mozilla::jni::ObjectBase<DisplayPortMetrics>
-{
-public:
-    static const char name[];
-
-    explicit DisplayPortMetrics(const Context& ctx) : ObjectBase<DisplayPortMetrics>(ctx) {}
+    explicit GeckoSurface(const Context& ctx) : ObjectBase<GeckoSurface>(ctx) {}
 
     struct New_t {
-        typedef DisplayPortMetrics Owner;
-        typedef DisplayPortMetrics::LocalRef ReturnType;
-        typedef DisplayPortMetrics::Param SetterType;
+        typedef GeckoSurface Owner;
+        typedef GeckoSurface::LocalRef ReturnType;
+        typedef GeckoSurface::Param SetterType;
         typedef mozilla::jni::Args<
-                float,
-                float,
-                float,
-                float,
-                float> Args;
+                mozilla::jni::Object::Param> Args;
         static constexpr char name[] = "<init>";
         static constexpr char signature[] =
-                "(FFFFF)V";
+                "(Lorg/mozilla/gecko/gfx/GeckoSurfaceTexture;)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto New(float, float, float, float, float) -> DisplayPortMetrics::LocalRef;
-
-    struct MPosition_t {
-        typedef DisplayPortMetrics Owner;
-        typedef mozilla::jni::Object::LocalRef ReturnType;
-        typedef mozilla::jni::Object::Param SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "mPosition";
-        static constexpr char signature[] =
-                "Landroid/graphics/RectF;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto MPosition() const -> mozilla::jni::Object::LocalRef;
-
-    struct Resolution_t {
-        typedef DisplayPortMetrics Owner;
-        typedef float ReturnType;
-        typedef float SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "resolution";
-        static constexpr char signature[] =
-                "F";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto Resolution() const -> float;
-
-    static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::GECKO;
-
-};
-
-class GeckoLayerClient : public mozilla::jni::ObjectBase<GeckoLayerClient>
-{
-public:
-    static const char name[];
-
-    explicit GeckoLayerClient(const Context& ctx) : ObjectBase<GeckoLayerClient>(ctx) {}
-
-    struct ContentDocumentChanged_t {
-        typedef GeckoLayerClient Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "contentDocumentChanged";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto ContentDocumentChanged() const -> void;
-
-    struct CreateFrame_t {
-        typedef GeckoLayerClient Owner;
-        typedef mozilla::jni::Object::LocalRef ReturnType;
-        typedef mozilla::jni::Object::Param SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "createFrame";
-        static constexpr char signature[] =
-                "()Lorg/mozilla/gecko/gfx/LayerRenderer$Frame;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
+                mozilla::jni::ExceptionMode::NSRESULT;
         static const mozilla::jni::CallingThread callingThread =
                 mozilla::jni::CallingThread::ANY;
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    auto CreateFrame() const -> mozilla::jni::Object::LocalRef;
+    static auto New(mozilla::jni::Object::Param, GeckoSurface::LocalRef*) -> nsresult;
 
-    struct IsContentDocumentDisplayed_t {
-        typedef GeckoLayerClient Owner;
+    struct GetAvailable_t {
+        typedef GeckoSurface Owner;
         typedef bool ReturnType;
         typedef bool SetterType;
         typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "isContentDocumentDisplayed";
+        static constexpr char name[] = "getAvailable";
         static constexpr char signature[] =
                 "()Z";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto IsContentDocumentDisplayed() const -> bool;
-
-    struct OnGeckoReady_t {
-        typedef GeckoLayerClient Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "onGeckoReady";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto OnGeckoReady() const -> void;
-
-    struct SetFirstPaintViewport_t {
-        typedef GeckoLayerClient Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                float,
-                float,
-                float,
-                float,
-                float,
-                float,
-                float> Args;
-        static constexpr char name[] = "setFirstPaintViewport";
-        static constexpr char signature[] =
-                "(FFFFFFF)V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
                 mozilla::jni::CallingThread::ANY;
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    auto SetFirstPaintViewport(float, float, float, float, float, float, float) const -> void;
+    auto GetAvailable() const -> bool;
 
-    struct SetPageRect_t {
-        typedef GeckoLayerClient Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                float,
-                float,
-                float,
-                float> Args;
-        static constexpr char name[] = "setPageRect";
-        static constexpr char signature[] =
-                "(FFFF)V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto SetPageRect(float, float, float, float) const -> void;
-
-    struct SyncFrameMetrics_t {
-        typedef GeckoLayerClient Owner;
-        typedef mozilla::jni::Object::LocalRef ReturnType;
-        typedef mozilla::jni::Object::Param SetterType;
-        typedef mozilla::jni::Args<
-                float,
-                float,
-                float,
-                float,
-                float,
-                float,
-                float,
-                int32_t,
-                int32_t,
-                int32_t,
-                int32_t,
-                float,
-                bool,
-                int32_t> Args;
-        static constexpr char name[] = "syncFrameMetrics";
-        static constexpr char signature[] =
-                "(FFFFFFFIIIIFZI)Lorg/mozilla/gecko/gfx/ViewTransform;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto SyncFrameMetrics(float, float, float, float, float, float, float, int32_t, int32_t, int32_t, int32_t, float, bool, int32_t) const -> mozilla::jni::Object::LocalRef;
-
-    struct SyncViewportInfo_t {
-        typedef GeckoLayerClient Owner;
-        typedef mozilla::jni::Object::LocalRef ReturnType;
-        typedef mozilla::jni::Object::Param SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t,
-                int32_t,
-                int32_t,
-                float,
-                bool,
-                int32_t> Args;
-        static constexpr char name[] = "syncViewportInfo";
-        static constexpr char signature[] =
-                "(IIIIFZI)Lorg/mozilla/gecko/gfx/ViewTransform;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto SyncViewportInfo(int32_t, int32_t, int32_t, int32_t, float, bool, int32_t) const -> mozilla::jni::Object::LocalRef;
-
-    struct SynthesizeNativeMouseEvent_t {
-        typedef GeckoLayerClient Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t,
-                int32_t> Args;
-        static constexpr char name[] = "synthesizeNativeMouseEvent";
-        static constexpr char signature[] =
-                "(III)V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto SynthesizeNativeMouseEvent(int32_t, int32_t, int32_t) const -> void;
-
-    struct SynthesizeNativeTouchPoint_t {
-        typedef GeckoLayerClient Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int32_t,
-                int32_t,
-                int32_t,
-                int32_t,
-                double,
-                int32_t> Args;
-        static constexpr char name[] = "synthesizeNativeTouchPoint";
-        static constexpr char signature[] =
-                "(IIIIDI)V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto SynthesizeNativeTouchPoint(int32_t, int32_t, int32_t, int32_t, double, int32_t) const -> void;
-
-    struct ClearColor_t {
-        typedef GeckoLayerClient Owner;
+    struct GetHandle_t {
+        typedef GeckoSurface Owner;
         typedef int32_t ReturnType;
         typedef int32_t SetterType;
         typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "mClearColor";
+        static constexpr char name[] = "getHandle";
         static constexpr char signature[] =
-                "I";
+                "()I";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -4465,86 +3450,67 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    auto ClearColor() const -> int32_t;
+    auto GetHandle() const -> int32_t;
 
-    auto ClearColor(int32_t) const -> void;
-
-    static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::ANY;
-
-};
-
-class ImmutableViewportMetrics : public mozilla::jni::ObjectBase<ImmutableViewportMetrics>
-{
-public:
-    static const char name[];
-
-    explicit ImmutableViewportMetrics(const Context& ctx) : ObjectBase<ImmutableViewportMetrics>(ctx) {}
-
-    struct New_t {
-        typedef ImmutableViewportMetrics Owner;
-        typedef ImmutableViewportMetrics::LocalRef ReturnType;
-        typedef ImmutableViewportMetrics::Param SetterType;
+    struct SetAvailable_t {
+        typedef GeckoSurface Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
         typedef mozilla::jni::Args<
-                float,
-                float,
-                float,
-                float,
-                float,
-                float,
-                float,
-                float,
-                float,
-                float,
-                int32_t,
-                int32_t,
-                float> Args;
-        static constexpr char name[] = "<init>";
+                bool> Args;
+        static constexpr char name[] = "setAvailable";
         static constexpr char signature[] =
-                "(FFFFFFFFFFIIF)V";
+                "(Z)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
+                mozilla::jni::CallingThread::ANY;
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    static auto New(float, float, float, float, float, float, float, float, float, float, int32_t, int32_t, float) -> ImmutableViewportMetrics::LocalRef;
-
-    static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::GECKO;
-
-};
-
-class LayerRenderer : public mozilla::jni::ObjectBase<LayerRenderer>
-{
-public:
-    static const char name[];
-
-    explicit LayerRenderer(const Context& ctx) : ObjectBase<LayerRenderer>(ctx) {}
-
-    class Frame;
+    auto SetAvailable(bool) const -> void;
 
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::ANY;
 
 };
 
-class LayerRenderer::Frame : public mozilla::jni::ObjectBase<Frame>
+class GeckoSurfaceTexture : public mozilla::jni::ObjectBase<GeckoSurfaceTexture>
 {
 public:
     static const char name[];
 
-    explicit Frame(const Context& ctx) : ObjectBase<Frame>(ctx) {}
+    explicit GeckoSurfaceTexture(const Context& ctx) : ObjectBase<GeckoSurfaceTexture>(ctx) {}
 
-    struct BeginDrawing_t {
-        typedef Frame Owner;
+    struct AttachToGLContext_t {
+        typedef GeckoSurfaceTexture Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int64_t,
+                int32_t> Args;
+        static constexpr char name[] = "attachToGLContext";
+        static constexpr char signature[] =
+                "(JI)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::NSRESULT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto AttachToGLContext(int64_t, int32_t) const -> nsresult;
+
+    struct DecrementUse_t {
+        typedef GeckoSurfaceTexture Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "beginDrawing";
+        static constexpr char name[] = "decrementUse";
         static constexpr char signature[] =
                 "()V";
         static const bool isStatic = false;
@@ -4556,14 +3522,91 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    auto BeginDrawing() const -> void;
+    auto DecrementUse() const -> void;
 
-    struct EndDrawing_t {
-        typedef Frame Owner;
+    struct DestroyUnused_t {
+        typedef GeckoSurfaceTexture Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int64_t> Args;
+        static constexpr char name[] = "destroyUnused";
+        static constexpr char signature[] =
+                "(J)V";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto DestroyUnused(int64_t) -> void;
+
+    struct DetachFromGLContext_t {
+        typedef GeckoSurfaceTexture Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "endDrawing";
+        static constexpr char name[] = "detachFromGLContext";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::NSRESULT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto DetachFromGLContext() const -> nsresult;
+
+    struct GetHandle_t {
+        typedef GeckoSurfaceTexture Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "getHandle";
+        static constexpr char signature[] =
+                "()I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto GetHandle() const -> int32_t;
+
+    struct GetTexName_t {
+        typedef GeckoSurfaceTexture Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "getTexName";
+        static constexpr char signature[] =
+                "()I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto GetTexName() const -> int32_t;
+
+    struct IncrementUse_t {
+        typedef GeckoSurfaceTexture Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "incrementUse";
         static constexpr char signature[] =
                 "()V";
         static const bool isStatic = false;
@@ -4575,28 +3618,144 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    auto EndDrawing() const -> void;
+    auto IncrementUse() const -> void;
+
+    struct IsAttachedToGLContext_t {
+        typedef GeckoSurfaceTexture Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<
+                int64_t> Args;
+        static constexpr char name[] = "isAttachedToGLContext";
+        static constexpr char signature[] =
+                "(J)Z";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto IsAttachedToGLContext(int64_t) const -> bool;
+
+    struct IsSingleBuffer_t {
+        typedef GeckoSurfaceTexture Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "isSingleBuffer";
+        static constexpr char signature[] =
+                "()Z";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto IsSingleBuffer() const -> bool;
+
+    struct IsSingleBufferSupported_t {
+        typedef GeckoSurfaceTexture Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "isSingleBufferSupported";
+        static constexpr char signature[] =
+                "()Z";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto IsSingleBufferSupported() -> bool;
+
+    struct Lookup_t {
+        typedef GeckoSurfaceTexture Owner;
+        typedef GeckoSurfaceTexture::LocalRef ReturnType;
+        typedef GeckoSurfaceTexture::Param SetterType;
+        typedef mozilla::jni::Args<
+                int32_t> Args;
+        static constexpr char name[] = "lookup";
+        static constexpr char signature[] =
+                "(I)Lorg/mozilla/gecko/gfx/GeckoSurfaceTexture;";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto Lookup(int32_t) -> GeckoSurfaceTexture::LocalRef;
+
+    struct ReleaseTexImage_t {
+        typedef GeckoSurfaceTexture Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "releaseTexImage";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto ReleaseTexImage() const -> void;
+
+    struct UpdateTexImage_t {
+        typedef GeckoSurfaceTexture Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "updateTexImage";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto UpdateTexImage() const -> void;
 
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::ANY;
 
 };
 
-class LayerView : public mozilla::jni::ObjectBase<LayerView>
+class LayerSession : public mozilla::jni::ObjectBase<LayerSession>
 {
 public:
     static const char name[];
 
-    explicit LayerView(const Context& ctx) : ObjectBase<LayerView>(ctx) {}
+    explicit LayerSession(const Context& ctx) : ObjectBase<LayerSession>(ctx) {}
 
     class Compositor;
 
     struct GetCompositor_t {
-        typedef LayerView Owner;
+        typedef LayerSession Owner;
         typedef mozilla::jni::Object::LocalRef ReturnType;
         typedef mozilla::jni::Object::Param SetterType;
         typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "getCompositor";
+        static constexpr char name[] = "getCompositorFromNative";
         static constexpr char signature[] =
                 "()Ljava/lang/Object;";
         static const bool isStatic = false;
@@ -4610,69 +3769,27 @@ public:
 
     auto GetCompositor() const -> mozilla::jni::Object::LocalRef;
 
-    struct UpdateZoomedView_t {
-        typedef LayerView Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::ByteBuffer::Param> Args;
-        static constexpr char name[] = "updateZoomedView";
-        static constexpr char signature[] =
-                "(Ljava/nio/ByteBuffer;)V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto UpdateZoomedView(mozilla::jni::ByteBuffer::Param) -> void;
-
-    struct CompositorCreated_t {
-        typedef LayerView Owner;
-        typedef bool ReturnType;
-        typedef bool SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "mCompositorCreated";
-        static constexpr char signature[] =
-                "Z";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto CompositorCreated() const -> bool;
-
-    auto CompositorCreated(bool) const -> void;
-
     static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::ANY;
+            mozilla::jni::CallingThread::UI;
 
 };
 
-class LayerView::Compositor : public mozilla::jni::ObjectBase<Compositor>
+class LayerSession::Compositor : public mozilla::jni::ObjectBase<Compositor>
 {
 public:
     static const char name[];
 
     explicit Compositor(const Context& ctx) : ObjectBase<Compositor>(ctx) {}
 
-    struct AttachToJava_t {
+    struct AttachNPZC_t {
         typedef Compositor Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
-                mozilla::jni::Object::Param,
                 mozilla::jni::Object::Param> Args;
-        static constexpr char name[] = "attachToJava";
+        static constexpr char name[] = "attachNPZC";
         static constexpr char signature[] =
-                "(Lorg/mozilla/gecko/gfx/GeckoLayerClient;Lorg/mozilla/gecko/gfx/NativePanZoomController;)V";
+                "(Lorg/mozilla/gecko/gfx/NativePanZoomController;)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -4702,25 +3819,6 @@ public:
                 mozilla::jni::DispatchTarget::PROXY;
     };
 
-    struct Destroy_t {
-        typedef Compositor Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "destroy";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto Destroy() const -> void;
-
     struct DisposeNative_t {
         typedef Compositor Owner;
         typedef void ReturnType;
@@ -4738,7 +3836,25 @@ public:
                 mozilla::jni::DispatchTarget::GECKO;
     };
 
-    struct OnSizeChanged_t {
+    struct EnableLayerUpdateNotifications_t {
+        typedef Compositor Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                bool> Args;
+        static constexpr char name[] = "enableLayerUpdateNotifications";
+        static constexpr char signature[] =
+                "(Z)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    struct OnBoundsChanged_t {
         typedef Compositor Owner;
         typedef void ReturnType;
         typedef void SetterType;
@@ -4747,50 +3863,224 @@ public:
                 int32_t,
                 int32_t,
                 int32_t> Args;
-        static constexpr char name[] = "onSizeChanged";
+        static constexpr char name[] = "onBoundsChanged";
         static constexpr char signature[] =
                 "(IIII)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
+                mozilla::jni::CallingThread::UI;
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::GECKO;
     };
 
-    struct Reattach_t {
+    struct OnCompositorAttached_t {
         typedef Compositor Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "reattach";
+        static constexpr char name[] = "onCompositorAttached";
         static constexpr char signature[] =
                 "()V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
+                mozilla::jni::CallingThread::UI;
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    auto Reattach() const -> void;
+    auto OnCompositorAttached() const -> void;
 
-    struct SyncInvalidateAndScheduleComposite_t {
+    struct OnCompositorDetached_t {
         typedef Compositor Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "syncInvalidateAndScheduleComposite";
+        static constexpr char name[] = "onCompositorDetached";
         static constexpr char signature[] =
                 "()V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto OnCompositorDetached() const -> void;
+
+    struct OnSelectionCaretDrag_t {
+        typedef Compositor Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                bool> Args;
+        static constexpr char name[] = "onSelectionCaretDrag";
+        static constexpr char signature[] =
+                "(Z)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto OnSelectionCaretDrag(bool) const -> void;
+
+    struct RecvScreenPixels_t {
+        typedef Compositor Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t,
+                int32_t,
+                mozilla::jni::IntArray::Param> Args;
+        static constexpr char name[] = "recvScreenPixels";
+        static constexpr char signature[] =
+                "(II[I)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto RecvScreenPixels(int32_t, int32_t, mozilla::jni::IntArray::Param) const -> void;
+
+    struct RecvToolbarAnimatorMessage_t {
+        typedef Compositor Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t> Args;
+        static constexpr char name[] = "recvToolbarAnimatorMessage";
+        static constexpr char signature[] =
+                "(I)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto RecvToolbarAnimatorMessage(int32_t) const -> void;
+
+    struct RequestScreenPixels_t {
+        typedef Compositor Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "requestScreenPixels";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    struct SendToolbarAnimatorMessage_t {
+        typedef Compositor Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t> Args;
+        static constexpr char name[] = "sendToolbarAnimatorMessage";
+        static constexpr char signature[] =
+                "(I)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    struct SendToolbarPixelsToCompositor_t {
+        typedef Compositor Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t,
+                int32_t,
+                mozilla::jni::IntArray::Param> Args;
+        static constexpr char name[] = "sendToolbarPixelsToCompositor";
+        static constexpr char signature[] =
+                "(II[I)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    struct SetDefaultClearColor_t {
+        typedef Compositor Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t> Args;
+        static constexpr char name[] = "setDefaultClearColor";
+        static constexpr char signature[] =
+                "(I)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    struct SetMaxToolbarHeight_t {
+        typedef Compositor Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t> Args;
+        static constexpr char name[] = "setMaxToolbarHeight";
+        static constexpr char signature[] =
+                "(I)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    struct SetPinned_t {
+        typedef Compositor Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                bool,
+                int32_t> Args;
+        static constexpr char name[] = "setPinned";
+        static constexpr char signature[] =
+                "(ZI)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::CURRENT;
     };
@@ -4832,6 +4122,70 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
+    struct UpdateOverscrollOffset_t {
+        typedef Compositor Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                float,
+                float> Args;
+        static constexpr char name[] = "updateOverscrollOffset";
+        static constexpr char signature[] =
+                "(FF)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto UpdateOverscrollOffset(float, float) const -> void;
+
+    struct UpdateOverscrollVelocity_t {
+        typedef Compositor Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                float,
+                float> Args;
+        static constexpr char name[] = "updateOverscrollVelocity";
+        static constexpr char signature[] =
+                "(FF)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto UpdateOverscrollVelocity(float, float) const -> void;
+
+    struct UpdateRootFrameMetrics_t {
+        typedef Compositor Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                float,
+                float,
+                float> Args;
+        static constexpr char name[] = "updateRootFrameMetrics";
+        static constexpr char signature[] =
+                "(FFF)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::UI;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto UpdateRootFrameMetrics(float, float, float) const -> void;
+
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::ANY;
 
@@ -4844,44 +4198,6 @@ public:
     static const char name[];
 
     explicit NativePanZoomController(const Context& ctx) : ObjectBase<NativePanZoomController>(ctx) {}
-
-    struct AdjustScrollForSurfaceShift_t {
-        typedef NativePanZoomController Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                float,
-                float> Args;
-        static constexpr char name[] = "adjustScrollForSurfaceShift";
-        static constexpr char signature[] =
-                "(FF)V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct Destroy_t {
-        typedef NativePanZoomController Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "destroy";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto Destroy() const -> void;
 
     struct DisposeNative_t {
         typedef NativePanZoomController Owner;
@@ -4919,25 +4235,6 @@ public:
         static constexpr char name[] = "handleMotionEvent";
         static constexpr char signature[] =
                 "(IIJI[I[F[F[F[F[F[F)Z";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::UI;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct HandleMotionEventVelocity_t {
-        typedef NativePanZoomController Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                int64_t,
-                float> Args;
-        static constexpr char name[] = "handleMotionEventVelocity";
-        static constexpr char signature[] =
-                "(JF)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -5011,33 +4308,13 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    struct OnSelectionDragState_t {
+    struct SetAttached_t {
         typedef NativePanZoomController Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
                 bool> Args;
-        static constexpr char name[] = "onSelectionDragState";
-        static constexpr char signature[] =
-                "(Z)V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto OnSelectionDragState(bool) const -> void;
-
-    struct SetScrollingRootContent_t {
-        typedef NativePanZoomController Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                bool> Args;
-        static constexpr char name[] = "setScrollingRootContent";
+        static constexpr char name[] = "setAttached";
         static constexpr char signature[] =
                 "(Z)V";
         static const bool isStatic = false;
@@ -5049,189 +4326,59 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    auto SetScrollingRootContent(bool) const -> void;
+    auto SetAttached(bool) const -> void;
 
-    struct UpdateOverscrollOffset_t {
+    struct SynthesizeNativeMouseEvent_t {
         typedef NativePanZoomController Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
-                float,
-                float> Args;
-        static constexpr char name[] = "updateOverscrollOffset";
+                int32_t,
+                int32_t,
+                int32_t> Args;
+        static constexpr char name[] = "synthesizeNativeMouseEvent";
         static constexpr char signature[] =
-                "(FF)V";
+                "(III)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
+                mozilla::jni::CallingThread::UI;
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    auto UpdateOverscrollOffset(float, float) const -> void;
+    auto SynthesizeNativeMouseEvent(int32_t, int32_t, int32_t) const -> void;
 
-    struct UpdateOverscrollVelocity_t {
+    struct SynthesizeNativeTouchPoint_t {
         typedef NativePanZoomController Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
-                float,
-                float> Args;
-        static constexpr char name[] = "updateOverscrollVelocity";
+                int32_t,
+                int32_t,
+                int32_t,
+                int32_t,
+                double,
+                int32_t> Args;
+        static constexpr char name[] = "synthesizeNativeTouchPoint";
         static constexpr char signature[] =
-                "(FF)V";
+                "(IIIIDI)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
+                mozilla::jni::CallingThread::UI;
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    auto UpdateOverscrollVelocity(float, float) const -> void;
+    auto SynthesizeNativeTouchPoint(int32_t, int32_t, int32_t, int32_t, double, int32_t) const -> void;
 
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::ANY;
 
     template<class Impl> class Natives;
-};
-
-class ProgressiveUpdateData : public mozilla::jni::ObjectBase<ProgressiveUpdateData>
-{
-public:
-    static const char name[];
-
-    explicit ProgressiveUpdateData(const Context& ctx) : ObjectBase<ProgressiveUpdateData>(ctx) {}
-
-    struct New_t {
-        typedef ProgressiveUpdateData Owner;
-        typedef ProgressiveUpdateData::LocalRef ReturnType;
-        typedef ProgressiveUpdateData::Param SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "<init>";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto New() -> ProgressiveUpdateData::LocalRef;
-
-    struct SetViewport_t {
-        typedef ProgressiveUpdateData Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::Object::Param> Args;
-        static constexpr char name[] = "setViewport";
-        static constexpr char signature[] =
-                "(Lorg/mozilla/gecko/gfx/ImmutableViewportMetrics;)V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto SetViewport(mozilla::jni::Object::Param) const -> void;
-
-    struct Abort_t {
-        typedef ProgressiveUpdateData Owner;
-        typedef bool ReturnType;
-        typedef bool SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "abort";
-        static constexpr char signature[] =
-                "Z";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto Abort() const -> bool;
-
-    auto Abort(bool) const -> void;
-
-    struct Scale_t {
-        typedef ProgressiveUpdateData Owner;
-        typedef float ReturnType;
-        typedef float SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "scale";
-        static constexpr char signature[] =
-                "F";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto Scale() const -> float;
-
-    auto Scale(float) const -> void;
-
-    struct X_t {
-        typedef ProgressiveUpdateData Owner;
-        typedef float ReturnType;
-        typedef float SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "x";
-        static constexpr char signature[] =
-                "F";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto X() const -> float;
-
-    auto X(float) const -> void;
-
-    struct Y_t {
-        typedef ProgressiveUpdateData Owner;
-        typedef float ReturnType;
-        typedef float SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "y";
-        static constexpr char signature[] =
-                "F";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto Y() const -> float;
-
-    auto Y(float) const -> void;
-
-    static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::ANY;
-
 };
 
 class StackScroller : public mozilla::jni::ObjectBase<StackScroller>
@@ -5722,25 +4869,25 @@ public:
 
 };
 
-class ViewTransform : public mozilla::jni::ObjectBase<ViewTransform>
+class SurfaceAllocator : public mozilla::jni::ObjectBase<SurfaceAllocator>
 {
 public:
     static const char name[];
 
-    explicit ViewTransform(const Context& ctx) : ObjectBase<ViewTransform>(ctx) {}
+    explicit SurfaceAllocator(const Context& ctx) : ObjectBase<SurfaceAllocator>(ctx) {}
 
-    struct New_t {
-        typedef ViewTransform Owner;
-        typedef ViewTransform::LocalRef ReturnType;
-        typedef ViewTransform::Param SetterType;
+    struct AcquireSurface_t {
+        typedef SurfaceAllocator Owner;
+        typedef mozilla::jni::Object::LocalRef ReturnType;
+        typedef mozilla::jni::Object::Param SetterType;
         typedef mozilla::jni::Args<
-                float,
-                float,
-                float> Args;
-        static constexpr char name[] = "<init>";
+                int32_t,
+                int32_t,
+                bool> Args;
+        static constexpr char name[] = "acquireSurface";
         static constexpr char signature[] =
-                "(FFF)V";
-        static const bool isStatic = false;
+                "(IIZ)Lorg/mozilla/gecko/gfx/GeckoSurface;";
+        static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
@@ -5749,17 +4896,18 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    static auto New(float, float, float) -> ViewTransform::LocalRef;
+    static auto AcquireSurface(int32_t, int32_t, bool) -> mozilla::jni::Object::LocalRef;
 
-    struct FixedLayerMarginBottom_t {
-        typedef ViewTransform Owner;
-        typedef float ReturnType;
-        typedef float SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "fixedLayerMarginBottom";
+    struct DisposeSurface_t {
+        typedef SurfaceAllocator Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "disposeSurface";
         static constexpr char signature[] =
-                "F";
-        static const bool isStatic = false;
+                "(Lorg/mozilla/gecko/gfx/GeckoSurface;)V";
+        static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
@@ -5768,231 +4916,99 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    auto FixedLayerMarginBottom() const -> float;
-
-    auto FixedLayerMarginBottom(float) const -> void;
-
-    struct FixedLayerMarginLeft_t {
-        typedef ViewTransform Owner;
-        typedef float ReturnType;
-        typedef float SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "fixedLayerMarginLeft";
-        static constexpr char signature[] =
-                "F";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto FixedLayerMarginLeft() const -> float;
-
-    auto FixedLayerMarginLeft(float) const -> void;
-
-    struct FixedLayerMarginRight_t {
-        typedef ViewTransform Owner;
-        typedef float ReturnType;
-        typedef float SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "fixedLayerMarginRight";
-        static constexpr char signature[] =
-                "F";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto FixedLayerMarginRight() const -> float;
-
-    auto FixedLayerMarginRight(float) const -> void;
-
-    struct FixedLayerMarginTop_t {
-        typedef ViewTransform Owner;
-        typedef float ReturnType;
-        typedef float SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "fixedLayerMarginTop";
-        static constexpr char signature[] =
-                "F";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto FixedLayerMarginTop() const -> float;
-
-    auto FixedLayerMarginTop(float) const -> void;
-
-    struct Height_t {
-        typedef ViewTransform Owner;
-        typedef float ReturnType;
-        typedef float SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "height";
-        static constexpr char signature[] =
-                "F";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto Height() const -> float;
-
-    auto Height(float) const -> void;
-
-    struct Scale_t {
-        typedef ViewTransform Owner;
-        typedef float ReturnType;
-        typedef float SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "scale";
-        static constexpr char signature[] =
-                "F";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto Scale() const -> float;
-
-    auto Scale(float) const -> void;
-
-    struct Width_t {
-        typedef ViewTransform Owner;
-        typedef float ReturnType;
-        typedef float SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "width";
-        static constexpr char signature[] =
-                "F";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto Width() const -> float;
-
-    auto Width(float) const -> void;
-
-    struct X_t {
-        typedef ViewTransform Owner;
-        typedef float ReturnType;
-        typedef float SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "x";
-        static constexpr char signature[] =
-                "F";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto X() const -> float;
-
-    auto X(float) const -> void;
-
-    struct Y_t {
-        typedef ViewTransform Owner;
-        typedef float ReturnType;
-        typedef float SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "y";
-        static constexpr char signature[] =
-                "F";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::ANY;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto Y() const -> float;
-
-    auto Y(float) const -> void;
+    static auto DisposeSurface(mozilla::jni::Object::Param) -> void;
 
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::ANY;
 
 };
 
-class AudioFocusAgent : public mozilla::jni::ObjectBase<AudioFocusAgent>
+class VsyncSource : public mozilla::jni::ObjectBase<VsyncSource>
 {
 public:
     static const char name[];
 
-    explicit AudioFocusAgent(const Context& ctx) : ObjectBase<AudioFocusAgent>(ctx) {}
+    explicit VsyncSource(const Context& ctx) : ObjectBase<VsyncSource>(ctx) {}
 
-    struct NotifyStartedPlaying_t {
-        typedef AudioFocusAgent Owner;
+    struct GetRefreshRate_t {
+        typedef VsyncSource Owner;
+        typedef float ReturnType;
+        typedef float SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "getRefreshRate";
+        static constexpr char signature[] =
+                "()F";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto GetRefreshRate() const -> float;
+
+    struct NotifyVsync_t {
+        typedef VsyncSource Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "notifyStartedPlaying";
+        static constexpr char name[] = "nativeNotifyVsync";
         static constexpr char signature[] =
                 "()V";
         static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
+                mozilla::jni::CallingThread::ANY;
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    static auto NotifyStartedPlaying() -> void;
-
-    struct NotifyStoppedPlaying_t {
-        typedef AudioFocusAgent Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "notifyStoppedPlaying";
+    struct ObserveVsync_t {
+        typedef VsyncSource Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<
+                bool> Args;
+        static constexpr char name[] = "observeVsync";
         static constexpr char signature[] =
-                "()V";
+                "(Z)Z";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto ObserveVsync(bool) const -> bool;
+
+    struct INSTANCE_t {
+        typedef VsyncSource Owner;
+        typedef VsyncSource::LocalRef ReturnType;
+        typedef VsyncSource::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "INSTANCE";
+        static constexpr char signature[] =
+                "Lorg/mozilla/gecko/gfx/VsyncSource;";
         static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
         static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
+                mozilla::jni::CallingThread::ANY;
         static const mozilla::jni::DispatchTarget dispatchTarget =
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    static auto NotifyStoppedPlaying() -> void;
+    static auto INSTANCE() -> VsyncSource::LocalRef;
 
     static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::GECKO;
+            mozilla::jni::CallingThread::ANY;
 
+    template<class Impl> class Natives;
 };
 
 class CodecProxy : public mozilla::jni::ObjectBase<CodecProxy>
@@ -6009,12 +5025,14 @@ public:
         typedef CodecProxy::LocalRef ReturnType;
         typedef CodecProxy::Param SetterType;
         typedef mozilla::jni::Args<
+                bool,
                 mozilla::jni::Object::Param,
                 mozilla::jni::Object::Param,
-                mozilla::jni::Object::Param> Args;
+                mozilla::jni::Object::Param,
+                mozilla::jni::String::Param> Args;
         static constexpr char name[] = "create";
         static constexpr char signature[] =
-                "(Landroid/media/MediaFormat;Landroid/view/Surface;Lorg/mozilla/gecko/media/CodecProxy$Callbacks;)Lorg/mozilla/gecko/media/CodecProxy;";
+                "(ZLandroid/media/MediaFormat;Lorg/mozilla/gecko/gfx/GeckoSurface;Lorg/mozilla/gecko/media/CodecProxy$Callbacks;Ljava/lang/String;)Lorg/mozilla/gecko/media/CodecProxy;";
         static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -6024,7 +5042,7 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    static auto Create(mozilla::jni::Object::Param, mozilla::jni::Object::Param, mozilla::jni::Object::Param) -> CodecProxy::LocalRef;
+    static auto Create(bool, mozilla::jni::Object::Param, mozilla::jni::Object::Param, mozilla::jni::Object::Param, mozilla::jni::String::Param) -> CodecProxy::LocalRef;
 
     struct Flush_t {
         typedef CodecProxy Owner;
@@ -6050,11 +5068,12 @@ public:
         typedef bool ReturnType;
         typedef bool SetterType;
         typedef mozilla::jni::Args<
-                mozilla::jni::ByteArray::Param,
+                mozilla::jni::ByteBuffer::Param,
+                mozilla::jni::Object::Param,
                 mozilla::jni::Object::Param> Args;
         static constexpr char name[] = "input";
         static constexpr char signature[] =
-                "([BLandroid/media/MediaCodec$BufferInfo;)Z";
+                "(Ljava/nio/ByteBuffer;Landroid/media/MediaCodec$BufferInfo;Landroid/media/MediaCodec$CryptoInfo;)Z";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -6064,7 +5083,45 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    auto Input(mozilla::jni::ByteArray::Param, mozilla::jni::Object::Param) const -> bool;
+    auto Input(mozilla::jni::ByteBuffer::Param, mozilla::jni::Object::Param, mozilla::jni::Object::Param) const -> bool;
+
+    struct IsAdaptivePlaybackSupported_t {
+        typedef CodecProxy Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "isAdaptivePlaybackSupported";
+        static constexpr char signature[] =
+                "()Z";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto IsAdaptivePlaybackSupported() const -> bool;
+
+    struct IsTunneledPlaybackSupported_t {
+        typedef CodecProxy Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "isTunneledPlaybackSupported";
+        static constexpr char signature[] =
+                "()Z";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto IsTunneledPlaybackSupported() const -> bool;
 
     struct Release_t {
         typedef CodecProxy Owner;
@@ -6084,6 +5141,47 @@ public:
     };
 
     auto Release() const -> bool;
+
+    struct ReleaseOutput_t {
+        typedef CodecProxy Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param,
+                bool> Args;
+        static constexpr char name[] = "releaseOutput";
+        static constexpr char signature[] =
+                "(Lorg/mozilla/gecko/media/Sample;Z)Z";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto ReleaseOutput(mozilla::jni::Object::Param, bool) const -> bool;
+
+    struct SetRates_t {
+        typedef CodecProxy Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<
+                int32_t> Args;
+        static constexpr char name[] = "setRates";
+        static constexpr char signature[] =
+                "(I)Z";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto SetRates(int32_t) const -> bool;
 
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::ANY;
@@ -6133,6 +5231,8 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
+    auto DisposeNative() const -> void;
+
     struct OnError_t {
         typedef NativeCallbacks Owner;
         typedef void ReturnType;
@@ -6151,14 +5251,16 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    struct OnInputExhausted_t {
+    struct OnInputStatus_t {
         typedef NativeCallbacks Owner;
         typedef void ReturnType;
         typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "onInputExhausted";
+        typedef mozilla::jni::Args<
+                int64_t,
+                bool> Args;
+        static constexpr char name[] = "onInputStatus";
         static constexpr char signature[] =
-                "()V";
+                "(JZ)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -6173,11 +5275,10 @@ public:
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
-                mozilla::jni::ByteArray::Param,
                 mozilla::jni::Object::Param> Args;
         static constexpr char name[] = "onOutput";
         static constexpr char signature[] =
-                "([BLandroid/media/MediaCodec$BufferInfo;)V";
+                "(Lorg/mozilla/gecko/media/Sample;)V";
         static const bool isStatic = false;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -6211,23 +5312,196 @@ public:
     template<class Impl> class Natives;
 };
 
-class Restrictions : public mozilla::jni::ObjectBase<Restrictions>
+class GeckoAudioInfo : public mozilla::jni::ObjectBase<GeckoAudioInfo>
 {
 public:
     static const char name[];
 
-    explicit Restrictions(const Context& ctx) : ObjectBase<Restrictions>(ctx) {}
+    explicit GeckoAudioInfo(const Context& ctx) : ObjectBase<GeckoAudioInfo>(ctx) {}
 
-    struct IsAllowed_t {
-        typedef Restrictions Owner;
-        typedef bool ReturnType;
-        typedef bool SetterType;
+    struct New_t {
+        typedef GeckoAudioInfo Owner;
+        typedef GeckoAudioInfo::LocalRef ReturnType;
+        typedef GeckoAudioInfo::Param SetterType;
         typedef mozilla::jni::Args<
                 int32_t,
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "isAllowed";
+                int32_t,
+                int32_t,
+                int32_t,
+                int64_t,
+                mozilla::jni::String::Param,
+                mozilla::jni::ByteArray::Param> Args;
+        static constexpr char name[] = "<init>";
         static constexpr char signature[] =
-                "(ILjava/lang/String;)Z";
+                "(IIIIJLjava/lang/String;[B)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto New(int32_t, int32_t, int32_t, int32_t, int64_t, mozilla::jni::String::Param, mozilla::jni::ByteArray::Param) -> GeckoAudioInfo::LocalRef;
+
+    struct BitDepth_t {
+        typedef GeckoAudioInfo Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "bitDepth";
+        static constexpr char signature[] =
+                "I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto BitDepth() const -> int32_t;
+
+    struct Channels_t {
+        typedef GeckoAudioInfo Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "channels";
+        static constexpr char signature[] =
+                "I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Channels() const -> int32_t;
+
+    struct CodecSpecificData_t {
+        typedef GeckoAudioInfo Owner;
+        typedef mozilla::jni::ByteArray::LocalRef ReturnType;
+        typedef mozilla::jni::ByteArray::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "codecSpecificData";
+        static constexpr char signature[] =
+                "[B";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto CodecSpecificData() const -> mozilla::jni::ByteArray::LocalRef;
+
+    struct Duration_t {
+        typedef GeckoAudioInfo Owner;
+        typedef int64_t ReturnType;
+        typedef int64_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "duration";
+        static constexpr char signature[] =
+                "J";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Duration() const -> int64_t;
+
+    struct MimeType_t {
+        typedef GeckoAudioInfo Owner;
+        typedef mozilla::jni::String::LocalRef ReturnType;
+        typedef mozilla::jni::String::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "mimeType";
+        static constexpr char signature[] =
+                "Ljava/lang/String;";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto MimeType() const -> mozilla::jni::String::LocalRef;
+
+    struct Profile_t {
+        typedef GeckoAudioInfo Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "profile";
+        static constexpr char signature[] =
+                "I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Profile() const -> int32_t;
+
+    struct Rate_t {
+        typedef GeckoAudioInfo Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "rate";
+        static constexpr char signature[] =
+                "I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Rate() const -> int32_t;
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+};
+
+class GeckoHLSDemuxerWrapper : public mozilla::jni::ObjectBase<GeckoHLSDemuxerWrapper>
+{
+public:
+    static const char name[];
+
+    explicit GeckoHLSDemuxerWrapper(const Context& ctx) : ObjectBase<GeckoHLSDemuxerWrapper>(ctx) {}
+
+    class Callbacks;
+
+    struct Create_t {
+        typedef GeckoHLSDemuxerWrapper Owner;
+        typedef GeckoHLSDemuxerWrapper::LocalRef ReturnType;
+        typedef GeckoHLSDemuxerWrapper::Param SetterType;
+        typedef mozilla::jni::Args<
+                int32_t,
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "create";
+        static constexpr char signature[] =
+                "(ILorg/mozilla/gecko/media/BaseHlsPlayer$DemuxerCallbacks;)Lorg/mozilla/gecko/media/GeckoHLSDemuxerWrapper;";
         static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -6237,16 +5511,278 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    static auto IsAllowed(int32_t, mozilla::jni::String::Param) -> bool;
+    static auto Create(int32_t, mozilla::jni::Object::Param) -> GeckoHLSDemuxerWrapper::LocalRef;
 
-    struct IsUserRestricted_t {
-        typedef Restrictions Owner;
+    struct Destroy_t {
+        typedef GeckoHLSDemuxerWrapper Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "destroy";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Destroy() const -> void;
+
+    struct GetAudioInfo_t {
+        typedef GeckoHLSDemuxerWrapper Owner;
+        typedef mozilla::jni::Object::LocalRef ReturnType;
+        typedef mozilla::jni::Object::Param SetterType;
+        typedef mozilla::jni::Args<
+                int32_t> Args;
+        static constexpr char name[] = "getAudioInfo";
+        static constexpr char signature[] =
+                "(I)Lorg/mozilla/gecko/media/GeckoAudioInfo;";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto GetAudioInfo(int32_t) const -> mozilla::jni::Object::LocalRef;
+
+    struct GetBuffered_t {
+        typedef GeckoHLSDemuxerWrapper Owner;
+        typedef int64_t ReturnType;
+        typedef int64_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "getBuffered";
+        static constexpr char signature[] =
+                "()J";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto GetBuffered() const -> int64_t;
+
+    struct GetNextKeyFrameTime_t {
+        typedef GeckoHLSDemuxerWrapper Owner;
+        typedef int64_t ReturnType;
+        typedef int64_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "getNextKeyFrameTime";
+        static constexpr char signature[] =
+                "()J";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto GetNextKeyFrameTime() const -> int64_t;
+
+    struct GetNumberOfTracks_t {
+        typedef GeckoHLSDemuxerWrapper Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<
+                int32_t> Args;
+        static constexpr char name[] = "getNumberOfTracks";
+        static constexpr char signature[] =
+                "(I)I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto GetNumberOfTracks(int32_t) const -> int32_t;
+
+    struct GetSamples_t {
+        typedef GeckoHLSDemuxerWrapper Owner;
+        typedef mozilla::jni::ObjectArray::LocalRef ReturnType;
+        typedef mozilla::jni::ObjectArray::Param SetterType;
+        typedef mozilla::jni::Args<
+                int32_t,
+                int32_t> Args;
+        static constexpr char name[] = "getSamples";
+        static constexpr char signature[] =
+                "(II)[Lorg/mozilla/gecko/media/GeckoHLSSample;";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto GetSamples(int32_t, int32_t) const -> mozilla::jni::ObjectArray::LocalRef;
+
+    struct GetVideoInfo_t {
+        typedef GeckoHLSDemuxerWrapper Owner;
+        typedef mozilla::jni::Object::LocalRef ReturnType;
+        typedef mozilla::jni::Object::Param SetterType;
+        typedef mozilla::jni::Args<
+                int32_t> Args;
+        static constexpr char name[] = "getVideoInfo";
+        static constexpr char signature[] =
+                "(I)Lorg/mozilla/gecko/media/GeckoVideoInfo;";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto GetVideoInfo(int32_t) const -> mozilla::jni::Object::LocalRef;
+
+    struct IsLiveStream_t {
+        typedef GeckoHLSDemuxerWrapper Owner;
         typedef bool ReturnType;
         typedef bool SetterType;
         typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "isUserRestricted";
+        static constexpr char name[] = "isLiveStream";
         static constexpr char signature[] =
                 "()Z";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto IsLiveStream() const -> bool;
+
+    struct Seek_t {
+        typedef GeckoHLSDemuxerWrapper Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<
+                int64_t> Args;
+        static constexpr char name[] = "seek";
+        static constexpr char signature[] =
+                "(J)Z";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Seek(int64_t) const -> bool;
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+};
+
+class GeckoHLSDemuxerWrapper::Callbacks : public mozilla::jni::ObjectBase<Callbacks>
+{
+public:
+    static const char name[];
+
+    explicit Callbacks(const Context& ctx) : ObjectBase<Callbacks>(ctx) {}
+
+    struct New_t {
+        typedef Callbacks Owner;
+        typedef Callbacks::LocalRef ReturnType;
+        typedef Callbacks::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "<init>";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto New() -> Callbacks::LocalRef;
+
+    struct OnError_t {
+        typedef Callbacks Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t> Args;
+        static constexpr char name[] = "onError";
+        static constexpr char signature[] =
+                "(I)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    struct OnInitialized_t {
+        typedef Callbacks Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                bool,
+                bool> Args;
+        static constexpr char name[] = "onInitialized";
+        static constexpr char signature[] =
+                "(ZZ)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+    template<class Impl> class Natives;
+};
+
+class GeckoHLSResourceWrapper : public mozilla::jni::ObjectBase<GeckoHLSResourceWrapper>
+{
+public:
+    static const char name[];
+
+    explicit GeckoHLSResourceWrapper(const Context& ctx) : ObjectBase<GeckoHLSResourceWrapper>(ctx) {}
+
+    class Callbacks;
+
+    struct Create_t {
+        typedef GeckoHLSResourceWrapper Owner;
+        typedef GeckoHLSResourceWrapper::LocalRef ReturnType;
+        typedef GeckoHLSResourceWrapper::Param SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::String::Param,
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "create";
+        static constexpr char signature[] =
+                "(Ljava/lang/String;Lorg/mozilla/gecko/media/BaseHlsPlayer$ResourceCallbacks;)Lorg/mozilla/gecko/media/GeckoHLSResourceWrapper;";
         static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -6256,86 +5792,1278 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    static auto IsUserRestricted() -> bool;
+    static auto Create(mozilla::jni::String::Param, mozilla::jni::Object::Param) -> GeckoHLSResourceWrapper::LocalRef;
+
+    struct Destroy_t {
+        typedef GeckoHLSResourceWrapper Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "destroy";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Destroy() const -> void;
+
+    struct GetPlayerId_t {
+        typedef GeckoHLSResourceWrapper Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "getPlayerId";
+        static constexpr char signature[] =
+                "()I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto GetPlayerId() const -> int32_t;
+
+    struct Pause_t {
+        typedef GeckoHLSResourceWrapper Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "pause";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Pause() const -> void;
+
+    struct Play_t {
+        typedef GeckoHLSResourceWrapper Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "play";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Play() const -> void;
+
+    struct Resume_t {
+        typedef GeckoHLSResourceWrapper Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "resume";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Resume() const -> void;
+
+    struct Suspend_t {
+        typedef GeckoHLSResourceWrapper Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "suspend";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Suspend() const -> void;
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+};
+
+class GeckoHLSResourceWrapper::Callbacks : public mozilla::jni::ObjectBase<Callbacks>
+{
+public:
+    static const char name[];
+
+    explicit Callbacks(const Context& ctx) : ObjectBase<Callbacks>(ctx) {}
+
+    struct New_t {
+        typedef Callbacks Owner;
+        typedef Callbacks::LocalRef ReturnType;
+        typedef Callbacks::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "<init>";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto New() -> Callbacks::LocalRef;
+
+    struct OnDataArrived_t {
+        typedef Callbacks Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "onDataArrived";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    struct OnError_t {
+        typedef Callbacks Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t> Args;
+        static constexpr char name[] = "onError";
+        static constexpr char signature[] =
+                "(I)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+    template<class Impl> class Natives;
+};
+
+class GeckoHLSSample : public mozilla::jni::ObjectBase<GeckoHLSSample>
+{
+public:
+    static const char name[];
+
+    explicit GeckoHLSSample(const Context& ctx) : ObjectBase<GeckoHLSSample>(ctx) {}
+
+    struct IsEOS_t {
+        typedef GeckoHLSSample Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "isEOS";
+        static constexpr char signature[] =
+                "()Z";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto IsEOS() const -> bool;
+
+    struct IsKeyFrame_t {
+        typedef GeckoHLSSample Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "isKeyFrame";
+        static constexpr char signature[] =
+                "()Z";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto IsKeyFrame() const -> bool;
+
+    struct WriteToByteBuffer_t {
+        typedef GeckoHLSSample Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::ByteBuffer::Param> Args;
+        static constexpr char name[] = "writeToByteBuffer";
+        static constexpr char signature[] =
+                "(Ljava/nio/ByteBuffer;)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto WriteToByteBuffer(mozilla::jni::ByteBuffer::Param) const -> void;
+
+    struct CryptoInfo_t {
+        typedef GeckoHLSSample Owner;
+        typedef mozilla::jni::Object::LocalRef ReturnType;
+        typedef mozilla::jni::Object::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "cryptoInfo";
+        static constexpr char signature[] =
+                "Landroid/media/MediaCodec$CryptoInfo;";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto CryptoInfo() const -> mozilla::jni::Object::LocalRef;
+
+    struct Duration_t {
+        typedef GeckoHLSSample Owner;
+        typedef int64_t ReturnType;
+        typedef int64_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "duration";
+        static constexpr char signature[] =
+                "J";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Duration() const -> int64_t;
+
+    auto Duration(int64_t) const -> void;
+
+    struct FormatIndex_t {
+        typedef GeckoHLSSample Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "formatIndex";
+        static constexpr char signature[] =
+                "I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto FormatIndex() const -> int32_t;
+
+    struct Info_t {
+        typedef GeckoHLSSample Owner;
+        typedef mozilla::jni::Object::LocalRef ReturnType;
+        typedef mozilla::jni::Object::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "info";
+        static constexpr char signature[] =
+                "Landroid/media/MediaCodec$BufferInfo;";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Info() const -> mozilla::jni::Object::LocalRef;
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+};
+
+class GeckoVideoInfo : public mozilla::jni::ObjectBase<GeckoVideoInfo>
+{
+public:
+    static const char name[];
+
+    explicit GeckoVideoInfo(const Context& ctx) : ObjectBase<GeckoVideoInfo>(ctx) {}
+
+    struct New_t {
+        typedef GeckoVideoInfo Owner;
+        typedef GeckoVideoInfo::LocalRef ReturnType;
+        typedef GeckoVideoInfo::Param SetterType;
+        typedef mozilla::jni::Args<
+                int32_t,
+                int32_t,
+                int32_t,
+                int32_t,
+                int32_t,
+                int32_t,
+                int64_t,
+                mozilla::jni::String::Param,
+                mozilla::jni::ByteArray::Param,
+                mozilla::jni::ByteArray::Param> Args;
+        static constexpr char name[] = "<init>";
+        static constexpr char signature[] =
+                "(IIIIIIJLjava/lang/String;[B[B)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto New(int32_t, int32_t, int32_t, int32_t, int32_t, int32_t, int64_t, mozilla::jni::String::Param, mozilla::jni::ByteArray::Param, mozilla::jni::ByteArray::Param) -> GeckoVideoInfo::LocalRef;
+
+    struct CodecSpecificData_t {
+        typedef GeckoVideoInfo Owner;
+        typedef mozilla::jni::ByteArray::LocalRef ReturnType;
+        typedef mozilla::jni::ByteArray::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "codecSpecificData";
+        static constexpr char signature[] =
+                "[B";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto CodecSpecificData() const -> mozilla::jni::ByteArray::LocalRef;
+
+    struct DisplayHeight_t {
+        typedef GeckoVideoInfo Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "displayHeight";
+        static constexpr char signature[] =
+                "I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto DisplayHeight() const -> int32_t;
+
+    struct DisplayWidth_t {
+        typedef GeckoVideoInfo Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "displayWidth";
+        static constexpr char signature[] =
+                "I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto DisplayWidth() const -> int32_t;
+
+    struct Duration_t {
+        typedef GeckoVideoInfo Owner;
+        typedef int64_t ReturnType;
+        typedef int64_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "duration";
+        static constexpr char signature[] =
+                "J";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Duration() const -> int64_t;
+
+    struct ExtraData_t {
+        typedef GeckoVideoInfo Owner;
+        typedef mozilla::jni::ByteArray::LocalRef ReturnType;
+        typedef mozilla::jni::ByteArray::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "extraData";
+        static constexpr char signature[] =
+                "[B";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto ExtraData() const -> mozilla::jni::ByteArray::LocalRef;
+
+    struct MimeType_t {
+        typedef GeckoVideoInfo Owner;
+        typedef mozilla::jni::String::LocalRef ReturnType;
+        typedef mozilla::jni::String::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "mimeType";
+        static constexpr char signature[] =
+                "Ljava/lang/String;";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto MimeType() const -> mozilla::jni::String::LocalRef;
+
+    struct PictureHeight_t {
+        typedef GeckoVideoInfo Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "pictureHeight";
+        static constexpr char signature[] =
+                "I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto PictureHeight() const -> int32_t;
+
+    struct PictureWidth_t {
+        typedef GeckoVideoInfo Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "pictureWidth";
+        static constexpr char signature[] =
+                "I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto PictureWidth() const -> int32_t;
+
+    struct Rotation_t {
+        typedef GeckoVideoInfo Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "rotation";
+        static constexpr char signature[] =
+                "I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Rotation() const -> int32_t;
+
+    struct StereoMode_t {
+        typedef GeckoVideoInfo Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "stereoMode";
+        static constexpr char signature[] =
+                "I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto StereoMode() const -> int32_t;
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+};
+
+class MediaDrmProxy : public mozilla::jni::ObjectBase<MediaDrmProxy>
+{
+public:
+    static const char name[];
+
+    explicit MediaDrmProxy(const Context& ctx) : ObjectBase<MediaDrmProxy>(ctx) {}
+
+    class NativeMediaDrmProxyCallbacks;
+
+    struct CanDecode_t {
+        typedef MediaDrmProxy Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::String::Param> Args;
+        static constexpr char name[] = "CanDecode";
+        static constexpr char signature[] =
+                "(Ljava/lang/String;)Z";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto CanDecode(mozilla::jni::String::Param) -> bool;
+
+    struct IsCryptoSchemeSupported_t {
+        typedef MediaDrmProxy Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::String::Param,
+                mozilla::jni::String::Param> Args;
+        static constexpr char name[] = "IsCryptoSchemeSupported";
+        static constexpr char signature[] =
+                "(Ljava/lang/String;Ljava/lang/String;)Z";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto IsCryptoSchemeSupported(mozilla::jni::String::Param, mozilla::jni::String::Param) -> bool;
+
+    struct CloseSession_t {
+        typedef MediaDrmProxy Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t,
+                mozilla::jni::String::Param> Args;
+        static constexpr char name[] = "closeSession";
+        static constexpr char signature[] =
+                "(ILjava/lang/String;)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto CloseSession(int32_t, mozilla::jni::String::Param) const -> void;
+
+    struct Create_t {
+        typedef MediaDrmProxy Owner;
+        typedef MediaDrmProxy::LocalRef ReturnType;
+        typedef MediaDrmProxy::Param SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::String::Param,
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "create";
+        static constexpr char signature[] =
+                "(Ljava/lang/String;Lorg/mozilla/gecko/media/MediaDrmProxy$Callbacks;)Lorg/mozilla/gecko/media/MediaDrmProxy;";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto Create(mozilla::jni::String::Param, mozilla::jni::Object::Param) -> MediaDrmProxy::LocalRef;
+
+    struct CreateSession_t {
+        typedef MediaDrmProxy Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t,
+                int32_t,
+                mozilla::jni::String::Param,
+                mozilla::jni::ByteArray::Param> Args;
+        static constexpr char name[] = "createSession";
+        static constexpr char signature[] =
+                "(IILjava/lang/String;[B)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto CreateSession(int32_t, int32_t, mozilla::jni::String::Param, mozilla::jni::ByteArray::Param) const -> void;
+
+    struct Destroy_t {
+        typedef MediaDrmProxy Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "destroy";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Destroy() const -> void;
+
+    struct GetMediaCrypto_t {
+        typedef MediaDrmProxy Owner;
+        typedef mozilla::jni::Object::LocalRef ReturnType;
+        typedef mozilla::jni::Object::Param SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::String::Param> Args;
+        static constexpr char name[] = "getMediaCrypto";
+        static constexpr char signature[] =
+                "(Ljava/lang/String;)Landroid/media/MediaCrypto;";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto GetMediaCrypto(mozilla::jni::String::Param) -> mozilla::jni::Object::LocalRef;
+
+    struct GetStubId_t {
+        typedef MediaDrmProxy Owner;
+        typedef mozilla::jni::String::LocalRef ReturnType;
+        typedef mozilla::jni::String::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "getStubId";
+        static constexpr char signature[] =
+                "()Ljava/lang/String;";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto GetStubId() const -> mozilla::jni::String::LocalRef;
+
+    struct IsSchemeSupported_t {
+        typedef MediaDrmProxy Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::String::Param> Args;
+        static constexpr char name[] = "isSchemeSupported";
+        static constexpr char signature[] =
+                "(Ljava/lang/String;)Z";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto IsSchemeSupported(mozilla::jni::String::Param) -> bool;
+
+    struct UpdateSession_t {
+        typedef MediaDrmProxy Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t,
+                mozilla::jni::String::Param,
+                mozilla::jni::ByteArray::Param> Args;
+        static constexpr char name[] = "updateSession";
+        static constexpr char signature[] =
+                "(ILjava/lang/String;[B)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto UpdateSession(int32_t, mozilla::jni::String::Param, mozilla::jni::ByteArray::Param) const -> void;
+
+    static const char16_t AAC[];
+
+    static const char16_t AVC[];
+
+    static const char16_t OPUS[];
+
+    static const char16_t VORBIS[];
+
+    static const char16_t VP8[];
+
+    static const char16_t VP9[];
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+};
+
+class MediaDrmProxy::NativeMediaDrmProxyCallbacks : public mozilla::jni::ObjectBase<NativeMediaDrmProxyCallbacks>
+{
+public:
+    static const char name[];
+
+    explicit NativeMediaDrmProxyCallbacks(const Context& ctx) : ObjectBase<NativeMediaDrmProxyCallbacks>(ctx) {}
+
+    struct New_t {
+        typedef NativeMediaDrmProxyCallbacks Owner;
+        typedef NativeMediaDrmProxyCallbacks::LocalRef ReturnType;
+        typedef NativeMediaDrmProxyCallbacks::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "<init>";
+        static constexpr char signature[] =
+                "()V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto New() -> NativeMediaDrmProxyCallbacks::LocalRef;
+
+    struct OnRejectPromise_t {
+        typedef NativeMediaDrmProxyCallbacks Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t,
+                mozilla::jni::String::Param> Args;
+        static constexpr char name[] = "onRejectPromise";
+        static constexpr char signature[] =
+                "(ILjava/lang/String;)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::GECKO;
+    };
+
+    struct OnSessionBatchedKeyChanged_t {
+        typedef NativeMediaDrmProxyCallbacks Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::ByteArray::Param,
+                mozilla::jni::ObjectArray::Param> Args;
+        static constexpr char name[] = "onSessionBatchedKeyChanged";
+        static constexpr char signature[] =
+                "([B[Lorg/mozilla/gecko/media/SessionKeyInfo;)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::GECKO;
+    };
+
+    struct OnSessionClosed_t {
+        typedef NativeMediaDrmProxyCallbacks Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t,
+                mozilla::jni::ByteArray::Param> Args;
+        static constexpr char name[] = "onSessionClosed";
+        static constexpr char signature[] =
+                "(I[B)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::GECKO;
+    };
+
+    struct OnSessionCreated_t {
+        typedef NativeMediaDrmProxyCallbacks Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t,
+                int32_t,
+                mozilla::jni::ByteArray::Param,
+                mozilla::jni::ByteArray::Param> Args;
+        static constexpr char name[] = "onSessionCreated";
+        static constexpr char signature[] =
+                "(II[B[B)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::GECKO;
+    };
+
+    struct OnSessionError_t {
+        typedef NativeMediaDrmProxyCallbacks Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::ByteArray::Param,
+                mozilla::jni::String::Param> Args;
+        static constexpr char name[] = "onSessionError";
+        static constexpr char signature[] =
+                "([BLjava/lang/String;)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::GECKO;
+    };
+
+    struct OnSessionMessage_t {
+        typedef NativeMediaDrmProxyCallbacks Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::ByteArray::Param,
+                int32_t,
+                mozilla::jni::ByteArray::Param> Args;
+        static constexpr char name[] = "onSessionMessage";
+        static constexpr char signature[] =
+                "([BI[B)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::GECKO;
+    };
+
+    struct OnSessionUpdated_t {
+        typedef NativeMediaDrmProxyCallbacks Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                int32_t,
+                mozilla::jni::ByteArray::Param> Args;
+        static constexpr char name[] = "onSessionUpdated";
+        static constexpr char signature[] =
+                "(I[B)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::GECKO;
+    };
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+    template<class Impl> class Natives;
+};
+
+class Sample : public mozilla::jni::ObjectBase<Sample>
+{
+public:
+    static const char name[];
+
+    explicit Sample(const Context& ctx) : ObjectBase<Sample>(ctx) {}
+
+    struct WriteToByteBuffer_t {
+        typedef Sample Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::ByteBuffer::Param> Args;
+        static constexpr char name[] = "writeToByteBuffer";
+        static constexpr char signature[] =
+                "(Ljava/nio/ByteBuffer;)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto WriteToByteBuffer(mozilla::jni::ByteBuffer::Param) const -> void;
+
+    struct Info_t {
+        typedef Sample Owner;
+        typedef mozilla::jni::Object::LocalRef ReturnType;
+        typedef mozilla::jni::Object::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "info";
+        static constexpr char signature[] =
+                "Landroid/media/MediaCodec$BufferInfo;";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Info() const -> mozilla::jni::Object::LocalRef;
+
+    auto Info(mozilla::jni::Object::Param) const -> void;
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+};
+
+class SessionKeyInfo : public mozilla::jni::ObjectBase<SessionKeyInfo>
+{
+public:
+    static const char name[];
+
+    explicit SessionKeyInfo(const Context& ctx) : ObjectBase<SessionKeyInfo>(ctx) {}
+
+    struct New_t {
+        typedef SessionKeyInfo Owner;
+        typedef SessionKeyInfo::LocalRef ReturnType;
+        typedef SessionKeyInfo::Param SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::ByteArray::Param,
+                int32_t> Args;
+        static constexpr char name[] = "<init>";
+        static constexpr char signature[] =
+                "([BI)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto New(mozilla::jni::ByteArray::Param, int32_t) -> SessionKeyInfo::LocalRef;
+
+    struct KeyId_t {
+        typedef SessionKeyInfo Owner;
+        typedef mozilla::jni::ByteArray::LocalRef ReturnType;
+        typedef mozilla::jni::ByteArray::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "keyId";
+        static constexpr char signature[] =
+                "[B";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto KeyId() const -> mozilla::jni::ByteArray::LocalRef;
+
+    auto KeyId(mozilla::jni::ByteArray::Param) const -> void;
+
+    struct Status_t {
+        typedef SessionKeyInfo Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "status";
+        static constexpr char signature[] =
+                "I";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Status() const -> int32_t;
+
+    auto Status(int32_t) const -> void;
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+};
+
+class GeckoProcessManager : public mozilla::jni::ObjectBase<GeckoProcessManager>
+{
+public:
+    static const char name[];
+
+    explicit GeckoProcessManager(const Context& ctx) : ObjectBase<GeckoProcessManager>(ctx) {}
+
+    struct GetEditableParent_t {
+        typedef GeckoProcessManager Owner;
+        typedef mozilla::jni::Object::LocalRef ReturnType;
+        typedef mozilla::jni::Object::Param SetterType;
+        typedef mozilla::jni::Args<
+                int64_t,
+                int64_t> Args;
+        static constexpr char name[] = "nativeGetEditableParent";
+        static constexpr char signature[] =
+                "(JJ)Lorg/mozilla/gecko/IGeckoEditableParent;";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    struct Start_t {
+        typedef GeckoProcessManager Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::String::Param,
+                mozilla::jni::ObjectArray::Param,
+                int32_t,
+                int32_t> Args;
+        static constexpr char name[] = "start";
+        static constexpr char signature[] =
+                "(Ljava/lang/String;[Ljava/lang/String;II)I";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto Start(mozilla::jni::String::Param, mozilla::jni::ObjectArray::Param, int32_t, int32_t) -> int32_t;
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::ANY;
+
+    template<class Impl> class Natives;
+};
+
+class GeckoServiceChildProcess : public mozilla::jni::ObjectBase<GeckoServiceChildProcess>
+{
+public:
+    static const char name[];
+
+    explicit GeckoServiceChildProcess(const Context& ctx) : ObjectBase<GeckoServiceChildProcess>(ctx) {}
+
+    struct GetEditableParent_t {
+        typedef GeckoServiceChildProcess Owner;
+        typedef mozilla::jni::Object::LocalRef ReturnType;
+        typedef mozilla::jni::Object::Param SetterType;
+        typedef mozilla::jni::Args<
+                int64_t,
+                int64_t> Args;
+        static constexpr char name[] = "getEditableParent";
+        static constexpr char signature[] =
+                "(JJ)Lorg/mozilla/gecko/IGeckoEditableParent;";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto GetEditableParent(int64_t, int64_t) -> mozilla::jni::Object::LocalRef;
 
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::GECKO;
 
 };
 
-class Clipboard : public mozilla::jni::ObjectBase<Clipboard>
+class EventCallback : public mozilla::jni::ObjectBase<EventCallback>
 {
 public:
     static const char name[];
 
-    explicit Clipboard(const Context& ctx) : ObjectBase<Clipboard>(ctx) {}
+    explicit EventCallback(const Context& ctx) : ObjectBase<EventCallback>(ctx) {}
 
-    struct ClearText_t {
-        typedef Clipboard Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "clearText";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto ClearText() -> void;
-
-    struct GetText_t {
-        typedef Clipboard Owner;
-        typedef mozilla::jni::String::LocalRef ReturnType;
-        typedef mozilla::jni::String::Param SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "getText";
-        static constexpr char signature[] =
-                "()Ljava/lang/String;";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto GetText() -> mozilla::jni::String::LocalRef;
-
-    struct HasText_t {
-        typedef Clipboard Owner;
-        typedef bool ReturnType;
-        typedef bool SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "hasText";
-        static constexpr char signature[] =
-                "()Z";
-        static const bool isStatic = true;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto HasText() -> bool;
-
-    struct SetText_t {
-        typedef Clipboard Owner;
+    struct SendError_t {
+        typedef EventCallback Owner;
         typedef void ReturnType;
         typedef void SetterType;
         typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "setText";
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "sendError";
         static constexpr char signature[] =
-                "(Ljava/lang/CharSequence;)V";
+                "(Ljava/lang/Object;)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto SendError(mozilla::jni::Object::Param) const -> void;
+
+    struct SendSuccess_t {
+        typedef EventCallback Owner;
+        typedef void ReturnType;
+        typedef void SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "sendSuccess";
+        static constexpr char signature[] =
+                "(Ljava/lang/Object;)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto SendSuccess(mozilla::jni::Object::Param) const -> void;
+
+    static const mozilla::jni::CallingThread callingThread =
+            mozilla::jni::CallingThread::GECKO;
+
+};
+
+class GeckoBundle : public mozilla::jni::ObjectBase<GeckoBundle>
+{
+public:
+    static const char name[];
+
+    explicit GeckoBundle(const Context& ctx) : ObjectBase<GeckoBundle>(ctx) {}
+
+    struct New_t {
+        typedef GeckoBundle Owner;
+        typedef GeckoBundle::LocalRef ReturnType;
+        typedef GeckoBundle::Param SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::ObjectArray::Param,
+                mozilla::jni::ObjectArray::Param> Args;
+        static constexpr char name[] = "<init>";
+        static constexpr char signature[] =
+                "([Ljava/lang/String;[Ljava/lang/Object;)V";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto New(mozilla::jni::ObjectArray::Param, mozilla::jni::ObjectArray::Param) -> GeckoBundle::LocalRef;
+
+    struct Box_t {
+        typedef GeckoBundle Owner;
+        typedef mozilla::jni::Object::LocalRef ReturnType;
+        typedef mozilla::jni::Object::Param SetterType;
+        typedef mozilla::jni::Args<
+                double> Args;
+        static constexpr char name[] = "box";
+        static constexpr char signature[] =
+                "(D)Ljava/lang/Object;";
         static const bool isStatic = true;
         static const mozilla::jni::ExceptionMode exceptionMode =
                 mozilla::jni::ExceptionMode::ABORT;
@@ -6345,7 +7073,184 @@ public:
                 mozilla::jni::DispatchTarget::CURRENT;
     };
 
-    static auto SetText(mozilla::jni::String::Param) -> void;
+    static auto Box(double) -> mozilla::jni::Object::LocalRef;
+
+    struct Box2_t {
+        typedef GeckoBundle Owner;
+        typedef mozilla::jni::Object::LocalRef ReturnType;
+        typedef mozilla::jni::Object::Param SetterType;
+        typedef mozilla::jni::Args<
+                int32_t> Args;
+        static constexpr char name[] = "box";
+        static constexpr char signature[] =
+                "(I)Ljava/lang/Object;";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto Box(int32_t) -> mozilla::jni::Object::LocalRef;
+
+    struct Box3_t {
+        typedef GeckoBundle Owner;
+        typedef mozilla::jni::Object::LocalRef ReturnType;
+        typedef mozilla::jni::Object::Param SetterType;
+        typedef mozilla::jni::Args<
+                bool> Args;
+        static constexpr char name[] = "box";
+        static constexpr char signature[] =
+                "(Z)Ljava/lang/Object;";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto Box(bool) -> mozilla::jni::Object::LocalRef;
+
+    struct Keys_t {
+        typedef GeckoBundle Owner;
+        typedef mozilla::jni::ObjectArray::LocalRef ReturnType;
+        typedef mozilla::jni::ObjectArray::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "keys";
+        static constexpr char signature[] =
+                "()[Ljava/lang/String;";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Keys() const -> mozilla::jni::ObjectArray::LocalRef;
+
+    struct UnboxBoolean_t {
+        typedef GeckoBundle Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "unboxBoolean";
+        static constexpr char signature[] =
+                "(Ljava/lang/Boolean;)Z";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto UnboxBoolean(mozilla::jni::Object::Param) -> bool;
+
+    struct UnboxDouble_t {
+        typedef GeckoBundle Owner;
+        typedef double ReturnType;
+        typedef double SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "unboxDouble";
+        static constexpr char signature[] =
+                "(Ljava/lang/Number;)D";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto UnboxDouble(mozilla::jni::Object::Param) -> double;
+
+    struct UnboxInteger_t {
+        typedef GeckoBundle Owner;
+        typedef int32_t ReturnType;
+        typedef int32_t SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "unboxInteger";
+        static constexpr char signature[] =
+                "(Ljava/lang/Number;)I";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto UnboxInteger(mozilla::jni::Object::Param) -> int32_t;
+
+    struct UnboxString_t {
+        typedef GeckoBundle Owner;
+        typedef mozilla::jni::String::LocalRef ReturnType;
+        typedef mozilla::jni::String::Param SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param> Args;
+        static constexpr char name[] = "unboxString";
+        static constexpr char signature[] =
+                "(Ljava/lang/Object;)Ljava/lang/String;";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto UnboxString(mozilla::jni::Object::Param) -> mozilla::jni::String::LocalRef;
+
+    struct Values_t {
+        typedef GeckoBundle Owner;
+        typedef mozilla::jni::ObjectArray::LocalRef ReturnType;
+        typedef mozilla::jni::ObjectArray::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "values";
+        static constexpr char signature[] =
+                "()[Ljava/lang/Object;";
+        static const bool isStatic = false;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    auto Values() const -> mozilla::jni::ObjectArray::LocalRef;
+
+    struct EMPTY_BOOLEAN_ARRAY_t {
+        typedef GeckoBundle Owner;
+        typedef mozilla::jni::BooleanArray::LocalRef ReturnType;
+        typedef mozilla::jni::BooleanArray::Param SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "EMPTY_BOOLEAN_ARRAY";
+        static constexpr char signature[] =
+                "[Z";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::GECKO;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto EMPTY_BOOLEAN_ARRAY() -> mozilla::jni::BooleanArray::LocalRef;
 
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::GECKO;
@@ -6358,6 +7263,46 @@ public:
     static const char name[];
 
     explicit HardwareCodecCapabilityUtils(const Context& ctx) : ObjectBase<HardwareCodecCapabilityUtils>(ctx) {}
+
+    struct HasHWVP9_t {
+        typedef HardwareCodecCapabilityUtils Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<> Args;
+        static constexpr char name[] = "HasHWVP9";
+        static constexpr char signature[] =
+                "()Z";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto HasHWVP9() -> bool;
+
+    struct CheckSupportsAdaptivePlayback_t {
+        typedef HardwareCodecCapabilityUtils Owner;
+        typedef bool ReturnType;
+        typedef bool SetterType;
+        typedef mozilla::jni::Args<
+                mozilla::jni::Object::Param,
+                mozilla::jni::String::Param> Args;
+        static constexpr char name[] = "checkSupportsAdaptivePlayback";
+        static constexpr char signature[] =
+                "(Landroid/media/MediaCodec;Ljava/lang/String;)Z";
+        static const bool isStatic = true;
+        static const mozilla::jni::ExceptionMode exceptionMode =
+                mozilla::jni::ExceptionMode::ABORT;
+        static const mozilla::jni::CallingThread callingThread =
+                mozilla::jni::CallingThread::ANY;
+        static const mozilla::jni::DispatchTarget dispatchTarget =
+                mozilla::jni::DispatchTarget::CURRENT;
+    };
+
+    static auto CheckSupportsAdaptivePlayback(mozilla::jni::Object::Param, mozilla::jni::String::Param) -> bool;
 
     struct FindDecoderCodecInfoForMimeType_t {
         typedef HardwareCodecCapabilityUtils Owner;
@@ -6382,619 +7327,6 @@ public:
     static const mozilla::jni::CallingThread callingThread =
             mozilla::jni::CallingThread::ANY;
 
-};
-
-class NativeJSContainer : public mozilla::jni::ObjectBase<NativeJSContainer>
-{
-public:
-    static const char name[];
-
-    explicit NativeJSContainer(const Context& ctx) : ObjectBase<NativeJSContainer>(ctx) {}
-
-    struct New_t {
-        typedef NativeJSContainer Owner;
-        typedef NativeJSContainer::LocalRef ReturnType;
-        typedef NativeJSContainer::Param SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "<init>";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto New() -> NativeJSContainer::LocalRef;
-
-    struct Clone2_t {
-        typedef NativeJSContainer Owner;
-        typedef NativeJSContainer::LocalRef ReturnType;
-        typedef NativeJSContainer::Param SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "clone";
-        static constexpr char signature[] =
-                "()Lorg/mozilla/gecko/util/NativeJSContainer;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct DisposeNative_t {
-        typedef NativeJSContainer Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "disposeNative";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::GECKO;
-
-    template<class Impl> class Natives;
-};
-
-class NativeJSObject : public mozilla::jni::ObjectBase<NativeJSObject>
-{
-public:
-    static const char name[];
-
-    explicit NativeJSObject(const Context& ctx) : ObjectBase<NativeJSObject>(ctx) {}
-
-    struct New_t {
-        typedef NativeJSObject Owner;
-        typedef NativeJSObject::LocalRef ReturnType;
-        typedef NativeJSObject::Param SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "<init>";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static auto New() -> NativeJSObject::LocalRef;
-
-    struct DisposeNative_t {
-        typedef NativeJSObject Owner;
-        typedef void ReturnType;
-        typedef void SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "disposeNative";
-        static constexpr char signature[] =
-                "()V";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    auto DisposeNative() const -> void;
-
-    struct GetBoolean_t {
-        typedef NativeJSObject Owner;
-        typedef bool ReturnType;
-        typedef bool SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "getBoolean";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)Z";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct GetBooleanArray_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::BooleanArray::LocalRef ReturnType;
-        typedef mozilla::jni::BooleanArray::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "getBooleanArray";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)[Z";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct GetBundle_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::Object::LocalRef ReturnType;
-        typedef mozilla::jni::Object::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "getBundle";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)Landroid/os/Bundle;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct GetBundleArray_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::ObjectArray::LocalRef ReturnType;
-        typedef mozilla::jni::ObjectArray::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "getBundleArray";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)[Landroid/os/Bundle;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct GetDouble_t {
-        typedef NativeJSObject Owner;
-        typedef double ReturnType;
-        typedef double SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "getDouble";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)D";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct GetDoubleArray_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::DoubleArray::LocalRef ReturnType;
-        typedef mozilla::jni::DoubleArray::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "getDoubleArray";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)[D";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct GetInt_t {
-        typedef NativeJSObject Owner;
-        typedef int32_t ReturnType;
-        typedef int32_t SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "getInt";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)I";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct GetIntArray_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::IntArray::LocalRef ReturnType;
-        typedef mozilla::jni::IntArray::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "getIntArray";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)[I";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct GetObject_t {
-        typedef NativeJSObject Owner;
-        typedef NativeJSObject::LocalRef ReturnType;
-        typedef NativeJSObject::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "getObject";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)Lorg/mozilla/gecko/util/NativeJSObject;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct GetObjectArray_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::ObjectArray::LocalRef ReturnType;
-        typedef mozilla::jni::ObjectArray::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "getObjectArray";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)[Lorg/mozilla/gecko/util/NativeJSObject;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct GetString_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::String::LocalRef ReturnType;
-        typedef mozilla::jni::String::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "getString";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)Ljava/lang/String;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct GetStringArray_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::ObjectArray::LocalRef ReturnType;
-        typedef mozilla::jni::ObjectArray::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "getStringArray";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)[Ljava/lang/String;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct Has_t {
-        typedef NativeJSObject Owner;
-        typedef bool ReturnType;
-        typedef bool SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "has";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;)Z";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct OptBoolean_t {
-        typedef NativeJSObject Owner;
-        typedef bool ReturnType;
-        typedef bool SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                bool> Args;
-        static constexpr char name[] = "optBoolean";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;Z)Z";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct OptBooleanArray_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::BooleanArray::LocalRef ReturnType;
-        typedef mozilla::jni::BooleanArray::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::BooleanArray::Param> Args;
-        static constexpr char name[] = "optBooleanArray";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;[Z)[Z";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct OptBundle_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::Object::LocalRef ReturnType;
-        typedef mozilla::jni::Object::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::Object::Param> Args;
-        static constexpr char name[] = "optBundle";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;Landroid/os/Bundle;)Landroid/os/Bundle;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct OptBundleArray_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::ObjectArray::LocalRef ReturnType;
-        typedef mozilla::jni::ObjectArray::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::ObjectArray::Param> Args;
-        static constexpr char name[] = "optBundleArray";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;[Landroid/os/Bundle;)[Landroid/os/Bundle;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct OptDouble_t {
-        typedef NativeJSObject Owner;
-        typedef double ReturnType;
-        typedef double SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                double> Args;
-        static constexpr char name[] = "optDouble";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;D)D";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct OptDoubleArray_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::DoubleArray::LocalRef ReturnType;
-        typedef mozilla::jni::DoubleArray::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::DoubleArray::Param> Args;
-        static constexpr char name[] = "optDoubleArray";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;[D)[D";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct OptInt_t {
-        typedef NativeJSObject Owner;
-        typedef int32_t ReturnType;
-        typedef int32_t SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                int32_t> Args;
-        static constexpr char name[] = "optInt";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;I)I";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct OptIntArray_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::IntArray::LocalRef ReturnType;
-        typedef mozilla::jni::IntArray::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::IntArray::Param> Args;
-        static constexpr char name[] = "optIntArray";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;[I)[I";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct OptObject_t {
-        typedef NativeJSObject Owner;
-        typedef NativeJSObject::LocalRef ReturnType;
-        typedef NativeJSObject::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                NativeJSObject::Param> Args;
-        static constexpr char name[] = "optObject";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;Lorg/mozilla/gecko/util/NativeJSObject;)Lorg/mozilla/gecko/util/NativeJSObject;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct OptObjectArray_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::ObjectArray::LocalRef ReturnType;
-        typedef mozilla::jni::ObjectArray::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::ObjectArray::Param> Args;
-        static constexpr char name[] = "optObjectArray";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;[Lorg/mozilla/gecko/util/NativeJSObject;)[Lorg/mozilla/gecko/util/NativeJSObject;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct OptString_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::String::LocalRef ReturnType;
-        typedef mozilla::jni::String::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::String::Param> Args;
-        static constexpr char name[] = "optString";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct OptStringArray_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::ObjectArray::LocalRef ReturnType;
-        typedef mozilla::jni::ObjectArray::Param SetterType;
-        typedef mozilla::jni::Args<
-                mozilla::jni::String::Param,
-                mozilla::jni::ObjectArray::Param> Args;
-        static constexpr char name[] = "optStringArray";
-        static constexpr char signature[] =
-                "(Ljava/lang/String;[Ljava/lang/String;)[Ljava/lang/String;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct ToBundle_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::Object::LocalRef ReturnType;
-        typedef mozilla::jni::Object::Param SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "toBundle";
-        static constexpr char signature[] =
-                "()Landroid/os/Bundle;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    struct ToString_t {
-        typedef NativeJSObject Owner;
-        typedef mozilla::jni::String::LocalRef ReturnType;
-        typedef mozilla::jni::String::Param SetterType;
-        typedef mozilla::jni::Args<> Args;
-        static constexpr char name[] = "toString";
-        static constexpr char signature[] =
-                "()Ljava/lang/String;";
-        static const bool isStatic = false;
-        static const mozilla::jni::ExceptionMode exceptionMode =
-                mozilla::jni::ExceptionMode::ABORT;
-        static const mozilla::jni::CallingThread callingThread =
-                mozilla::jni::CallingThread::GECKO;
-        static const mozilla::jni::DispatchTarget dispatchTarget =
-                mozilla::jni::DispatchTarget::CURRENT;
-    };
-
-    static const mozilla::jni::CallingThread callingThread =
-            mozilla::jni::CallingThread::GECKO;
-
-    template<class Impl> class Natives;
 };
 
 } /* java */

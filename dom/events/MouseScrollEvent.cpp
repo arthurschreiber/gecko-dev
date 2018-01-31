@@ -42,7 +42,7 @@ void
 MouseScrollEvent::InitMouseScrollEvent(const nsAString& aType,
                                        bool aCanBubble,
                                        bool aCancelable,
-                                       nsGlobalWindow* aView,
+                                       nsGlobalWindowInner* aView,
                                        int32_t aDetail,
                                        int32_t aScreenX,
                                        int32_t aScreenY,
@@ -56,6 +56,8 @@ MouseScrollEvent::InitMouseScrollEvent(const nsAString& aType,
                                        EventTarget* aRelatedTarget,
                                        int32_t aAxis)
 {
+  NS_ENSURE_TRUE_VOID(!mEvent->mFlags.mIsBeingDispatched);
+
   MouseEvent::InitMouseEvent(aType, aCanBubble, aCancelable, aView, aDetail,
                              aScreenX, aScreenY, aClientX, aClientY,
                              aCtrlKey, aAltKey, aShiftKey, aMetaKey, aButton,

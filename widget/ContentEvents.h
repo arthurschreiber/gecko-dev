@@ -13,7 +13,7 @@
 #include "mozilla/dom/EventTarget.h"
 #include "nsCOMPtr.h"
 #include "nsRect.h"
-#include "nsStringGlue.h"
+#include "nsString.h"
 
 class nsIContent;
 
@@ -212,9 +212,6 @@ public:
     return result;
   }
 
-  /// The possible related target
-  nsCOMPtr<dom::EventTarget> mRelatedTarget;
-
   bool mFromRaise;
   bool mIsRefocus;
 
@@ -222,7 +219,6 @@ public:
   {
     AssignUIEventData(aEvent, aCopyTargets);
 
-    mRelatedTarget = aCopyTargets ? aEvent.mRelatedTarget : nullptr;
     mFromRaise = aEvent.mFromRaise;
     mIsRefocus = aEvent.mIsRefocus;
   }
@@ -245,6 +241,11 @@ public:
     , mElapsedTime(0.0)
   {
   }
+
+  InternalTransitionEvent(const InternalTransitionEvent& aOther) = delete;
+  InternalTransitionEvent& operator=(const InternalTransitionEvent& aOther) = delete;
+  InternalTransitionEvent(InternalTransitionEvent&& aOther) = default;
+  InternalTransitionEvent& operator=(InternalTransitionEvent&& aOther) = default;
 
   virtual WidgetEvent* Duplicate() const override
   {
@@ -290,6 +291,11 @@ public:
   {
   }
 
+  InternalAnimationEvent(const InternalAnimationEvent& aOther) = delete;
+  InternalAnimationEvent& operator=(const InternalAnimationEvent& aOther) = delete;
+  InternalAnimationEvent(InternalAnimationEvent&& aOther) = default;
+  InternalAnimationEvent& operator=(InternalAnimationEvent&& aOther) = default;
+
   virtual WidgetEvent* Duplicate() const override
   {
     MOZ_ASSERT(mClass == eAnimationEventClass,
@@ -313,38 +319,6 @@ public:
     mAnimationName = aEvent.mAnimationName;
     mElapsedTime = aEvent.mElapsedTime;
     mPseudoElement = aEvent.mPseudoElement;
-  }
-};
-
-/******************************************************************************
- * mozilla::InternalSVGZoomEvent
- ******************************************************************************/
-
-class InternalSVGZoomEvent : public WidgetGUIEvent
-{
-public:
-  virtual InternalSVGZoomEvent* AsSVGZoomEvent() override { return this; }
-
-  InternalSVGZoomEvent(bool aIsTrusted, EventMessage aMessage)
-    : WidgetGUIEvent(aIsTrusted, aMessage, nullptr, eSVGZoomEventClass)
-  {
-  }
-
-  virtual WidgetEvent* Duplicate() const override
-  {
-    MOZ_ASSERT(mClass == eSVGZoomEventClass,
-               "Duplicate() must be overridden by sub class");
-    // Not copying widget, it is a weak reference.
-    InternalSVGZoomEvent* result = new InternalSVGZoomEvent(false, mMessage);
-    result->AssignSVGZoomEventData(*this, true);
-    result->mFlags = mFlags;
-    return result;
-  }
-
-  void AssignSVGZoomEventData(const InternalSVGZoomEvent& aEvent,
-                              bool aCopyTargets)
-  {
-    AssignGUIEventData(aEvent, aCopyTargets);
   }
 };
 

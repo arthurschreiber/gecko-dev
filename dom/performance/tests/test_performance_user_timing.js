@@ -180,15 +180,18 @@ var steps = [
            "Measure duration ( " + measure.duration + ") should be difference between two marks");
     },
     function() {
-        ok(true, "Running measure addition with no start/end time test");
-        performance.measure("test", "navigationStart");
-        var measures = performance.getEntriesByType("measure");
-        is(measures.length, 1, "number of measures should be 1");
-        var measure = measures[0];
-        is(measure.name, "test", "measure name should be 'test'");
-        is(measure.entryType, "measure", "measure type should be 'measure'");
-        is(measure.startTime, 0, "measure start time should be zero");
-        ok(measure.duration >= 0, "measure duration should not be negative");
+        // We don't have navigationStart in workers.
+        if ("window" in self) {
+          ok(true, "Running measure addition with no start/end time test");
+          performance.measure("test", "navigationStart");
+          var measures = performance.getEntriesByType("measure");
+          is(measures.length, 1, "number of measures should be 1");
+          var measure = measures[0];
+          is(measure.name, "test", "measure name should be 'test'");
+          is(measure.entryType, "measure", "measure type should be 'measure'");
+          is(measure.startTime, 0, "measure start time should be zero");
+          ok(measure.duration >= 0, "measure duration should not be negative");
+        }
     },
     // Test all measure removal
     function () {
@@ -263,7 +266,7 @@ var steps = [
                 performance.measure("test", n);
                 ok(true, "Measure created from reserved name as starting time: " + n);
             } catch (e) {
-                ok(["redirectStart", "redirectEnd", "unloadEventStart", "unloadEventEnd", "loadEventEnd"].indexOf(n) >= 0,
+                ok(["redirectStart", "redirectEnd", "unloadEventStart", "unloadEventEnd", "loadEventEnd", "secureConnectionStart"].indexOf(n) >= 0,
                    "Measure created from reserved name as starting time: " + n + " and threw expected error");
             }
         };

@@ -8,6 +8,7 @@
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/EventForwards.h"
+#include "nsStringFwd.h"
 #include <windows.h>
 
 namespace mozilla {
@@ -18,7 +19,7 @@ class MOZ_STACK_CLASS ModifierKeyState final
 public:
   ModifierKeyState();
   ModifierKeyState(bool aIsShiftDown, bool aIsControlDown, bool aIsAltDown);
-  ModifierKeyState(Modifiers aModifiers);
+  explicit ModifierKeyState(Modifiers aModifiers);
 
   void Update();
 
@@ -51,6 +52,8 @@ private:
 
   void InitMouseEvent(WidgetInputEvent& aMouseEvent) const;
 };
+
+const nsCString ToString(const ModifierKeyState& aModifierKeyState);
 
 } // namespace widget
 } // namespace mozilla

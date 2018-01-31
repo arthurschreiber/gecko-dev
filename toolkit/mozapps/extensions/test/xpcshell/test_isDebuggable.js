@@ -23,13 +23,13 @@ function run_test() {
   startupManager();
   AddonManager.checkCompatibility = false;
 
-  installAllFiles(ADDONS.map(do_get_addon), function () {
+  installAllFiles(ADDONS.map(do_get_addon), function() {
     restartManager();
 
     AddonManager.getAddonsByIDs(IDS, function([a1, a2, a3]) {
-      do_check_eq(a1.isDebuggable, false);
-      do_check_eq(a2.isDebuggable, true);
-      do_check_eq(a3.isDebuggable, true);
+      Assert.equal(a1.isDebuggable, false);
+      Assert.equal(a2.isDebuggable, true);
+      Assert.equal(a3.isDebuggable, true);
       do_test_finished();
     });
   }, true);

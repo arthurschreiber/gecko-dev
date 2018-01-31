@@ -86,6 +86,11 @@ public:
   virtual bool DispatchPluginEvent(const MSG& aMsg);
 
   /*
+   * Returns true if this should dispatch a plugin event.
+   */
+  bool ShouldDispatchPluginEvent();
+
+  /*
    * Touch input injection apis
    */
   virtual nsresult SynthesizeNativeTouchPoint(uint32_t aPointerId,
@@ -102,6 +107,8 @@ public:
    */
   virtual bool HandleAppCommandMsg(const MSG& aAppCommandMsg,
                                    LRESULT *aRetValue);
+
+  const InputContext& InputContextRef() const { return mInputContext; }
 
 protected:
   virtual int32_t LogToPhys(double aValue) = 0;

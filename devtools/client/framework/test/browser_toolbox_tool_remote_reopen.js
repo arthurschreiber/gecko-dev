@@ -5,15 +5,11 @@
 
 "use strict";
 
-/**
- * Whitelisting this test.
- * As part of bug 1077403, the leaking uncaught rejection should be fixed.
- */
-thisTestLeaksUncaughtRejectionsAndShouldBeFixed("Error: Shader Editor is " +
-  "still waiting for a WebGL context to be created.");
-
 const { DebuggerServer } = require("devtools/server/main");
-const { DebuggerClient } = require("devtools/shared/client/main");
+const { DebuggerClient } = require("devtools/shared/client/debugger-client");
+
+// Bug 1277805: Too slow for debug runs
+requestLongerTimeout(2);
 
 /**
  * Bug 979536: Ensure fronts are destroyed after toolbox close.
@@ -67,10 +63,8 @@ function runTools(target) {
 function getClient() {
   let deferred = defer();
 
-  if (!DebuggerServer.initialized) {
-    DebuggerServer.init();
-    DebuggerServer.addBrowserActors();
-  }
+  DebuggerServer.init();
+  DebuggerServer.registerAllActors();
 
   let transport = DebuggerServer.connectPipe();
   let client = new DebuggerClient(transport);
@@ -81,7 +75,7 @@ function getClient() {
 function getTarget(client) {
   let deferred = defer();
 
-  client.listTabs(tabList => {
+  client.listTabs().then(tabList => {
     let target = TargetFactory.forRemoteTab({
       client: client,
       form: tabList.tabs[tabList.selected],

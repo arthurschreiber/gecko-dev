@@ -10,6 +10,7 @@ DIRS += [
     'acorn',
     'apps',
     'client',
+    'css',
     'discovery',
     'fronts',
     'gcli',
@@ -26,13 +27,15 @@ DIRS += [
     'security',
     'sourcemap',
     'sprintfjs',
-    'shims',
     'specs',
-    'touch',
     'transport',
     'webconsole',
     'worker',
 ]
+
+# Only ship test helpers in local builds
+if not CONFIG['MOZILLA_OFFICIAL']:
+    DIRS += ['test-helpers']
 
 BROWSER_CHROME_MANIFESTS += ['tests/browser/browser.ini']
 MOCHITEST_CHROME_MANIFESTS += ['tests/mochitest/chrome.ini']
@@ -43,24 +46,25 @@ JAR_MANIFESTS += ['jar.mn']
 DevToolsModules(
     'async-storage.js',
     'async-utils.js',
+    'base-loader.js',
     'builtin-modules.js',
     'content-observer.js',
-    'css-color-db.js',
-    'css-color.js',
-    'css-lexer.js',
-    'css-parsing-utils.js',
-    'css-properties-db.js',
+    'debounce.js',
     'defer.js',
     'deprecated-sync-thenables.js',
     'DevToolsUtils.js',
     'dom-node-constants.js',
     'dom-node-filter-constants.js',
     'event-emitter.js',
+    'extend.js',
     'flags.js',
+    'generate-uuid.js',
     'indentation.js',
+    'indexed-db.js',
     'l10n.js',
     'loader-plugin-raw.jsm',
     'Loader.jsm',
+    'old-event-emitter.js',
     'Parser.jsm',
     'path.js',
     'plural-form.js',
@@ -68,4 +72,9 @@ DevToolsModules(
     'system.js',
     'task.js',
     'ThreadSafeDevToolsUtils.js',
+    'throttle.js',
+    'wasm-source-map.js',
 )
+
+with Files('**'):
+    BUG_COMPONENT = ('Firefox', 'Developer Tools')

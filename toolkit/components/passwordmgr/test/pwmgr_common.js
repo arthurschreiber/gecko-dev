@@ -115,10 +115,10 @@ function doKey(aKey, modifier) {
                QueryInterface(SpecialPowers.Ci.nsIInterfaceRequestor).
                getInterface(SpecialPowers.Ci.nsIDOMWindowUtils);
 
-  if (wutils.sendKeyEvent("keydown",  key, 0, modifier)) {
+  if (wutils.sendKeyEvent("keydown", key, 0, modifier)) {
     wutils.sendKeyEvent("keypress", key, 0, modifier);
   }
-  wutils.sendKeyEvent("keyup",    key, 0, modifier);
+  wutils.sendKeyEvent("keyup", key, 0, modifier);
 }
 
 /**
@@ -128,6 +128,7 @@ function doKey(aKey, modifier) {
  * notifications might be confused by this.
  */
 function commonInit(selfFilling) {
+  // eslint-disable-next-line mozilla/use-services
   var pwmgr = SpecialPowers.Cc["@mozilla.org/login-manager;1"].
               getService(SpecialPowers.Ci.nsILoginManager);
   ok(pwmgr != null, "Access LoginManager");
@@ -166,35 +167,38 @@ function commonInit(selfFilling) {
 }
 
 function registerRunTests() {
-  // We provide a general mechanism for our tests to know when they can
-  // safely run: we add a final form that we know will be filled in, wait
-  // for the login manager to tell us that it's filled in and then continue
-  // with the rest of the tests.
-  window.addEventListener("DOMContentLoaded", (event) => {
-    var form = document.createElement('form');
-    form.id = 'observerforcer';
-    var username = document.createElement('input');
-    username.name = 'testuser';
-    form.appendChild(username);
-    var password = document.createElement('input');
-    password.name = 'testpass';
-    password.type = 'password';
-    form.appendChild(password);
+  return new Promise(resolve => {
+    // We provide a general mechanism for our tests to know when they can
+    // safely run: we add a final form that we know will be filled in, wait
+    // for the login manager to tell us that it's filled in and then continue
+    // with the rest of the tests.
+    window.addEventListener("DOMContentLoaded", (event) => {
+      var form = document.createElement("form");
+      form.id = "observerforcer";
+      var username = document.createElement("input");
+      username.name = "testuser";
+      form.appendChild(username);
+      var password = document.createElement("input");
+      password.name = "testpass";
+      password.type = "password";
+      form.appendChild(password);
 
-    var observer = SpecialPowers.wrapCallback(function(subject, topic, data) {
-      var formLikeRoot = subject.QueryInterface(SpecialPowers.Ci.nsIDOMNode);
-      if (formLikeRoot.id !== 'observerforcer')
-        return;
-      SpecialPowers.removeObserver(observer, "passwordmgr-processed-form");
-      formLikeRoot.remove();
-      SimpleTest.executeSoon(() => {
-        var event = new Event("runTests");
-        window.dispatchEvent(event);
+      var observer = SpecialPowers.wrapCallback(function(subject, topic, data) {
+        var formLikeRoot = subject.QueryInterface(SpecialPowers.Ci.nsIDOMNode);
+        if (formLikeRoot.id !== "observerforcer")
+          return;
+        SpecialPowers.removeObserver(observer, "passwordmgr-processed-form");
+        formLikeRoot.remove();
+        SimpleTest.executeSoon(() => {
+          var runTestEvent = new Event("runTests");
+          window.dispatchEvent(runTestEvent);
+          resolve();
+        });
       });
-    });
-    SpecialPowers.addObserver(observer, "passwordmgr-processed-form", false);
+      SpecialPowers.addObserver(observer, "passwordmgr-processed-form");
 
-    document.body.appendChild(form);
+      document.body.appendChild(form);
+    });
   });
 }
 
@@ -217,13 +221,15 @@ function setMasterPassword(enable) {
     oldPW = masterPassword;
     newPW = "";
   }
-  // Set master password. Note that this does not log you in, so the next
-  // invocation of pwmgr can trigger a MP prompt.
+  // Set master password. Note that this logs in the user if no password was
+  // set before. But after logging out the next invocation of pwmgr can
+  // trigger a MP prompt.
 
   var pk11db = Cc["@mozilla.org/security/pk11tokendb;1"].getService(Ci.nsIPK11TokenDB);
-  var token = pk11db.findTokenByName("");
+  var token = pk11db.getInternalKeyToken();
   info("MP change from " + oldPW + " to " + newPW);
   token.changePassword(oldPW, newPW);
+  token.logoutSimple();
 }
 
 function logoutMasterPassword() {
@@ -280,7 +286,7 @@ function promiseFormsProcessed(expectedCount = 1) {
         resolve(SpecialPowers.Cu.waiveXrays(subject), data);
       }
     }
-    SpecialPowers.addObserver(onProcessedForm, "passwordmgr-processed-form", false);
+    SpecialPowers.addObserver(onProcessedForm, "passwordmgr-processed-form");
   });
 }
 
@@ -317,6 +323,17 @@ function promiseStorageChanged(expectedChangeTypes) {
       }
     }
     chromeScript.addMessageListener("storageChanged", onStorageChanged);
+  });
+}
+
+function promisePromptShown(expectedTopic) {
+  return new Promise((resolve, reject) => {
+    function onPromptShown({ topic, data }) {
+      is(topic, expectedTopic, "Check expected prompt topic");
+      chromeScript.removeMessageListener("promptShown", onPromptShown);
+      resolve();
+    }
+    chromeScript.addMessageListener("promptShown", onPromptShown);
   });
 }
 
@@ -359,10 +376,10 @@ if (this.addMessageListener) {
   // Ignore ok/is in commonInit since they aren't defined in a chrome script.
   ok = is = () => {}; // eslint-disable-line no-native-reassign
 
-  Cu.import("resource://gre/modules/LoginHelper.jsm");
-  Cu.import("resource://gre/modules/LoginManagerParent.jsm");
-  Cu.import("resource://gre/modules/Services.jsm");
-  Cu.import("resource://gre/modules/Task.jsm");
+  ChromeUtils.import("resource://gre/modules/AppConstants.jsm");
+  ChromeUtils.import("resource://gre/modules/LoginHelper.jsm");
+  ChromeUtils.import("resource://gre/modules/LoginManagerParent.jsm");
+  ChromeUtils.import("resource://gre/modules/Services.jsm");
 
   function onStorageChanged(subject, topic, data) {
     sendAsyncMessage("storageChanged", {
@@ -370,29 +387,37 @@ if (this.addMessageListener) {
       data,
     });
   }
-  Services.obs.addObserver(onStorageChanged, "passwordmgr-storage-changed", false);
+  Services.obs.addObserver(onStorageChanged, "passwordmgr-storage-changed");
+
+  function onPrompt(subject, topic, data) {
+    sendAsyncMessage("promptShown", {
+      topic,
+      data,
+    });
+  }
+  Services.obs.addObserver(onPrompt, "passwordmgr-prompt-change");
+  Services.obs.addObserver(onPrompt, "passwordmgr-prompt-save");
 
   addMessageListener("setupParent", ({selfFilling = false} = {selfFilling: false}) => {
-    // Force LoginManagerParent to init for the tests since it's normally delayed
-    // by apps such as on Android.
-    LoginManagerParent.init();
-
     commonInit(selfFilling);
     sendAsyncMessage("doneSetup");
   });
 
-  addMessageListener("loadRecipes", Task.async(function* loadRecipes(recipes) {
+  addMessageListener("loadRecipes", function(recipes) {
+    (async function() {
+      var recipeParent = await LoginManagerParent.recipeParentPromise;
+      await recipeParent.load(recipes);
+      sendAsyncMessage("loadedRecipes", recipes);
+    })();
+  });
 
-    var recipeParent = yield LoginManagerParent.recipeParentPromise;
-    yield recipeParent.load(recipes);
-    sendAsyncMessage("loadedRecipes", recipes);
-  }));
-
-  addMessageListener("resetRecipes", Task.async(function* resetRecipes() {
-    let recipeParent = yield LoginManagerParent.recipeParentPromise;
-    yield recipeParent.reset();
-    sendAsyncMessage("recipesReset");
-  }));
+  addMessageListener("resetRecipes", function() {
+    (async function() {
+      let recipeParent = await LoginManagerParent.recipeParentPromise;
+      await recipeParent.reset();
+      sendAsyncMessage("recipesReset");
+    })();
+  });
 
   addMessageListener("proxyLoginManager", msg => {
     // Recreate nsILoginInfo objects from vanilla JS objects.
@@ -404,7 +429,11 @@ if (this.addMessageListener) {
       return arg;
     });
 
-    return Services.logins[msg.methodName](...recreatedArgs);
+    let rv = Services.logins[msg.methodName](...recreatedArgs);
+    if (rv instanceof Ci.nsILoginInfo) {
+      rv = LoginHelper.loginToVanillaObject(rv);
+    }
+    return rv;
   });
 
   var globalMM = Cc["@mozilla.org/globalmessagemanager;1"].getService(Ci.nsIMessageListenerManager);
@@ -413,11 +442,17 @@ if (this.addMessageListener) {
   });
 } else {
   // Code to only run in the mochitest pages (not in the chrome script).
+  SpecialPowers.pushPrefEnv({"set": [["signon.rememberSignons", true],
+                                     ["signon.autofillForms.http", true],
+                                     ["security.insecure_field_warning.contextual.enabled", false],
+                                     ["network.auth.non-web-content-triggered-resources-http-auth-allow", true]]
+                           });
   SimpleTest.registerCleanupFunction(() => {
+    SpecialPowers.popPrefEnv();
     runInParent(function cleanupParent() {
       const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
-      Cu.import("resource://gre/modules/Services.jsm");
-      Cu.import("resource://gre/modules/LoginManagerParent.jsm");
+      ChromeUtils.import("resource://gre/modules/Services.jsm");
+      ChromeUtils.import("resource://gre/modules/LoginManagerParent.jsm");
 
       // Remove all logins and disabled hosts
       Services.logins.removeAllLogins();
@@ -431,6 +466,18 @@ if (this.addMessageListener) {
 
       if (LoginManagerParent._recipeManager) {
         LoginManagerParent._recipeManager.reset();
+      }
+
+      // Cleanup PopupNotifications (if on a relevant platform)
+      let chromeWin = Services.wm.getMostRecentWindow("navigator:browser");
+      if (chromeWin && chromeWin.PopupNotifications) {
+        let notes = chromeWin.PopupNotifications._currentNotifications;
+        if (notes.length > 0) {
+          dump("Removing " + notes.length + " popup notifications.\n");
+        }
+        for (let note of notes) {
+          note.remove();
+        }
       }
     });
   });

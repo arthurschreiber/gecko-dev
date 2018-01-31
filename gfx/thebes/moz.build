@@ -4,8 +4,13 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+with Files('*Text*'):
+    BUG_COMPONENT = ('Core', 'Graphics: Text')
+
+with Files('*DWrite*'):
+    BUG_COMPONENT = ('Core', 'Graphics: Text')
+
 EXPORTS += [
-    'ContextStateTracker.h',
     'DrawMode.h',
     'gfx2DGlue.h',
     'gfxAlphaRecovery.h',
@@ -24,8 +29,10 @@ EXPORTS += [
     'gfxFontFeatures.h',
     'gfxFontInfoLoader.h',
     'gfxFontPrefLangList.h',
-    'gfxFontTest.h',
+    'gfxFontSrcPrincipal.h',
+    'gfxFontSrcURI.h',
     'gfxFontUtils.h',
+    'gfxFontVariations.h',
     'gfxGradientCache.h',
     'gfxImageSurface.h',
     'gfxLineSegment.h',
@@ -33,6 +40,7 @@ EXPORTS += [
     'gfxMatrix.h',
     'gfxPattern.h',
     'gfxPlatform.h',
+    'gfxPlatformFontList.h',
     'gfxPoint.h',
     'gfxPrefs.h',
     'gfxQuad.h',
@@ -74,23 +82,6 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
         'gfxFT2Utils.cpp',
         'PrintTargetPDF.cpp',
     ]
-elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-    EXPORTS += [
-        'gfxAndroidPlatform.h',
-        'gfxFT2FontBase.h',
-        'gfxFT2Fonts.h',
-    ]
-    EXPORTS.mozilla.gfx += [
-        'PrintTargetPDF.h',
-    ]
-    SOURCES += [
-        'gfxAndroidPlatform.cpp',
-        'gfxFT2FontBase.cpp',
-        'gfxFT2FontList.cpp',
-        'gfxFT2Fonts.cpp',
-        'gfxFT2Utils.cpp',
-        'PrintTargetPDF.cpp',
-    ]
 elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     EXPORTS += [
         'gfxPlatformMac.h',
@@ -106,11 +97,10 @@ elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
         'gfxPlatformMac.cpp',
         'gfxQuartzNativeDrawing.cpp',
         'gfxQuartzSurface.cpp',
-        'PrintTargetCG.cpp',
+        'PrintTargetCG.mm',
     ]
 elif 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
     EXPORTS += [
-        'gfxFontconfigFonts.h',
         'gfxFT2FontBase.h',
         'gfxGdkNativeRenderer.h',
         'gfxPlatformGtk.h',
@@ -121,8 +111,6 @@ elif 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
     ]
     SOURCES += [
         'gfxFcPlatformFontList.cpp',
-        'gfxFontconfigFonts.cpp',
-        'gfxFontconfigUtils.cpp',
         'gfxFT2FontBase.cpp',
         'gfxFT2Utils.cpp',
         'gfxGdkNativeRenderer.cpp',
@@ -146,7 +134,6 @@ elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
         'gfxDWriteFonts.h',
         'gfxGDIFont.h',
         'gfxGDIFontList.h',
-        'gfxPlatformFontList.h',
         'gfxWindowsNativeDrawing.h',
         'gfxWindowsPlatform.h',
         'gfxWindowsSurface.h',
@@ -156,6 +143,8 @@ elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
         'PrintTargetWindows.h',
     ]
     SOURCES += [
+        'gfxDWriteCommon.cpp',
+        'gfxDWriteFonts.cpp',
         'gfxGDIFont.cpp',
         'gfxGDIFontList.cpp',
         'gfxWindowsNativeDrawing.cpp',
@@ -164,14 +153,9 @@ elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
         'PrintTargetPDF.cpp',
         'PrintTargetWindows.cpp',
     ]
-    if CONFIG['MOZ_ENABLE_DWRITE_FONT']:
-        UNIFIED_SOURCES += [
-            'gfxDWriteFontList.cpp',
-        ]
-        SOURCES += [
-            'gfxDWriteCommon.cpp',
-            'gfxDWriteFonts.cpp',
-        ]
+    UNIFIED_SOURCES += [
+        'gfxDWriteFontList.cpp',
+    ]
 
 # Are we targeting x86 or x64?  If so, build gfxAlphaRecoverySSE2.cpp.
 if CONFIG['INTEL_ARCHITECTURE']:
@@ -181,7 +165,6 @@ if CONFIG['INTEL_ARCHITECTURE']:
     SOURCES['gfxAlphaRecoverySSE2.cpp'].flags += CONFIG['SSE2_FLAGS']
 
 SOURCES += [
-    'ContextStateTracker.cpp',
     # Includes mac system header conflicting with point/size,
     # and includes glxXlibSurface.h which drags in Xrender.h
     'gfxASurface.cpp',
@@ -189,7 +172,8 @@ SOURCES += [
     # we could consider removing soon (affects Ubuntus older than 10.04 LTS)
     # which currently prevent it from joining UNIFIED_SOURCES.
     'gfxDrawable.cpp',
-    # gfxPlatform.cpp includes mac system header conflicting with point/size
+    # gfxFontUtils.cpp and gfxPlatform.cpp include mac system header conflicting with point/size
+    'gfxFontUtils.cpp',
     'gfxPlatform.cpp',
     'gfxPrefs.cpp',
     'PrintTarget.cpp',
@@ -207,18 +191,16 @@ UNIFIED_SOURCES += [
     'gfxFontFeatures.cpp',
     'gfxFontInfoLoader.cpp',
     'gfxFontMissingGlyphs.cpp',
-    'gfxFontTest.cpp',
-    'gfxFontUtils.cpp',
+    'gfxFontSrcPrincipal.cpp',
+    'gfxFontSrcURI.cpp',
     'gfxGlyphExtents.cpp',
     'gfxGradientCache.cpp',
     'gfxGraphiteShaper.cpp',
     'gfxHarfBuzzShaper.cpp',
     'gfxImageSurface.cpp',
     'gfxMathTable.cpp',
-    'gfxMatrix.cpp',
     'gfxPattern.cpp',
     'gfxPlatformFontList.cpp',
-    'gfxRect.cpp',
     'gfxScriptItemizer.cpp',
     'gfxSkipChars.cpp',
     'gfxSVGGlyphs.cpp',
@@ -239,36 +221,42 @@ elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
         'D3D11Checks.cpp',
         'DeviceManagerDx.cpp',
     ]
+    if CONFIG['MOZ_ENABLE_SKIA_PDF']:
+        EXPORTS.mozilla.gfx += [
+            'PrintTargetEMF.h',
+        ]
+        UNIFIED_SOURCES += [
+            'PrintTargetEMF.cpp',
+        ]
 
-# We prefer to use ICU for normalization functions, but currently it is only
-# available if we're building with the Intl API enabled:
-if CONFIG['ENABLE_INTL_API']:
-    USE_LIBS += [
-        'icu',
+if CONFIG['MOZ_ENABLE_SKIA_PDF']:
+    EXPORTS.mozilla.gfx += [
+        'PrintTargetSkPDF.h',
     ]
+    SOURCES += [
+        'PrintTargetSkPDF.cpp',
+    ]
+
+# We use ICU for normalization functions:
+USE_LIBS += [
+    'icu',
+]
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 
-GENERATED_FILES = [
-    'DeprecatedPremultiplyTables.h',
-]
-GENERATED_FILES['DeprecatedPremultiplyTables.h'].script = 'genTables.py:generate'
-
 LOCAL_INCLUDES += [
+    '/dom/base',
     '/dom/workers',
     '/dom/xml',
 ]
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
-  LOCAL_INCLUDES += ['/widget/gonk']
-
-if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android', 'gtk2', 'gtk3', 'gonk'):
+if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android', 'gtk3'):
     DEFINES['MOZ_ENABLE_FREETYPE'] = True
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
-    for var in ('MOZ_ENABLE_D3D9_LAYER', 'MOZ_ENABLE_D3D10_LAYER'):
+    for var in ('MOZ_ENABLE_D3D10_LAYER',):
         if CONFIG[var]:
             DEFINES[var] = True
 
@@ -277,21 +265,16 @@ CXXFLAGS += CONFIG['TK_CFLAGS']
 CFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
 CFLAGS += CONFIG['TK_CFLAGS']
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android', 'gonk'):
+if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android'):
     CXXFLAGS += CONFIG['CAIRO_FT_CFLAGS']
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
-    # This is set for "normal Android", that is, when Gecko is running on
-    # top of the android java runtime.
-    DEFINES['MOZ_USING_ANDROID_JAVA_WIDGETS'] = True
-
-if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('gtk2', 'gtk3'):
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk3':
     CXXFLAGS += CONFIG['MOZ_PANGO_CFLAGS']
 
 LOCAL_INCLUDES += CONFIG['SKIA_INCLUDES']
 
 DEFINES['GRAPHITE2_STATIC'] = True
 
-if CONFIG['CLANG_CXX']:
+if CONFIG['CC_TYPE'] == 'clang':
     # Suppress warnings from Skia header files.
     SOURCES['gfxPlatform.cpp'].flags += ['-Wno-implicit-fallthrough']

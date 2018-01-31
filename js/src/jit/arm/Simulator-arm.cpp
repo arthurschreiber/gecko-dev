@@ -33,16 +33,15 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MathAlgorithms.h"
-#include "mozilla/SizePrintfMacros.h"
 
-#include "asmjs/WasmInstance.h"
-#include "asmjs/WasmSignalHandlers.h"
 #include "jit/arm/Assembler-arm.h"
 #include "jit/arm/disasm/Constants-arm.h"
 #include "jit/AtomicOperations.h"
 #include "threading/LockGuard.h"
 #include "vm/Runtime.h"
 #include "vm/SharedMem.h"
+#include "wasm/WasmInstance.h"
+#include "wasm/WasmSignalHandlers.h"
 
 extern "C" {
 
@@ -65,6 +64,33 @@ __aeabi_uidivmod(int x, int y)
 
 namespace js {
 namespace jit {
+
+// For decoding load-exclusive and store-exclusive instructions.
+namespace excl {
+
+// Bit positions.
+enum {
+    ExclusiveOpHi = 24,         // Hi bit of opcode field
+    ExclusiveOpLo = 23,         // Lo bit of opcode field
+    ExclusiveSizeHi = 22,       // Hi bit of operand size field
+    ExclusiveSizeLo = 21,       // Lo bit of operand size field
+    ExclusiveLoad = 20          // Bit indicating load
+};
+
+// Opcode bits for exclusive instructions.
+enum {
+    ExclusiveOpcode = 3
+};
+
+// Operand size, Bits(ExclusiveSizeHi,ExclusiveSizeLo).
+enum {
+    ExclusiveWord = 0,
+    ExclusiveDouble = 1,
+    ExclusiveByte = 2,
+    ExclusiveHalf = 3
+};
+
+}
 
 // Load/store multiple addressing mode.
 enum BlockAddrMode {
@@ -261,6 +287,11 @@ class SimInstruction {
         return typeValue() == 7 && bit(24) == 1 && svcValue() >= kStopCode;
     }
 
+    // Test for a udf instruction, which falls under type 3.
+    inline bool isUDF() const {
+      return (instructionBits() & 0xfff000f0) == 0xe7f000f0;
+    }
+
     // Special accessors that test for existence of a value.
     inline bool hasS()    const { return sValue() == 1; }
     inline bool hasB()    const { return bValue() == 1; }
@@ -365,28 +396,16 @@ class AutoLockSimulatorCache : public LockGuard<Mutex>
     using Base = LockGuard<Mutex>;
 
   public:
-    explicit AutoLockSimulatorCache(Simulator* sim)
-      : Base(sim->cacheLock_)
-      , sim_(sim)
-    {
-        MOZ_ASSERT(sim_->cacheLockHolder_.isNothing());
-#ifdef DEBUG
-        sim_->cacheLockHolder_ = mozilla::Some(ThisThread::GetId());
-#endif
-    }
-
-    ~AutoLockSimulatorCache() {
-        MOZ_ASSERT(sim_->cacheLockHolder_.isSome());
-#ifdef DEBUG
-        sim_->cacheLockHolder_.reset();
-#endif
-    }
-
-  private:
-    Simulator* const sim_;
+    explicit AutoLockSimulatorCache()
+      : Base(SimulatorProcess::singleton_->cacheLock_)
+    {}
 };
 
-bool Simulator::ICacheCheckingEnabled = false;
+mozilla::Atomic<size_t, mozilla::ReleaseAcquire>
+    SimulatorProcess::ICacheCheckingDisableCount(1); // Checking is disabled by default.
+mozilla::Atomic<bool, mozilla::ReleaseAcquire>
+    SimulatorProcess::cacheInvalidatedBySignalHandler_(false);
+SimulatorProcess* SimulatorProcess::singleton_ = nullptr;
 
 int64_t Simulator::StopSimAt = -1L;
 
@@ -402,9 +421,6 @@ Simulator::Create(JSContext* cx)
         return nullptr;
     }
 
-    if (getenv("ARM_SIM_ICACHE_CHECKS"))
-        Simulator::ICacheCheckingEnabled = true;
-
     char* stopAtStr = getenv("ARM_SIM_STOP_AT");
     int64_t stopAt;
     if (stopAtStr && sscanf(stopAtStr, "%lld", &stopAt) == 1) {
@@ -419,6 +435,40 @@ void
 Simulator::Destroy(Simulator* sim)
 {
     js_delete(sim);
+}
+
+void
+Simulator::disassemble(SimInstruction* instr, size_t n)
+{
+#ifdef JS_DISASM_ARM
+    disasm::NameConverter converter;
+    disasm::Disassembler dasm(converter);
+    disasm::EmbeddedVector<char, disasm::ReasonableBufferSize> buffer;
+    while (n-- > 0) {
+        dasm.InstructionDecode(buffer,
+                               reinterpret_cast<uint8_t*>(instr));
+        fprintf(stderr, "  0x%08x  %s\n", uint32_t(instr), buffer.start());
+        instr = reinterpret_cast<SimInstruction*>(reinterpret_cast<uint8_t*>(instr) + 4);
+    }
+#endif
+}
+
+void
+Simulator::disasm(SimInstruction* instr)
+{
+    disassemble(instr, 1);
+}
+
+void
+Simulator::disasm(SimInstruction* instr, size_t n)
+{
+    disassemble(instr, n);
+}
+
+void
+Simulator::disasm(SimInstruction* instr, size_t m, size_t n)
+{
+    disassemble(reinterpret_cast<SimInstruction*>(reinterpret_cast<uint8_t*>(instr)-m*4), n);
 }
 
 // The ArmDebugger class is used by the simulator while debugging simulated ARM
@@ -510,12 +560,19 @@ ArmDebugger::getValue(const char* desc, int32_t* value)
 bool
 ArmDebugger::getVFPDoubleValue(const char* desc, double* value)
 {
-    FloatRegister reg(FloatRegister::FromName(desc));
-    if (reg != InvalidFloatReg) {
-        sim_->get_double_from_d_register(reg.code(), value);
+    FloatRegister reg = FloatRegister::FromCode(FloatRegister::FromName(desc));
+    if (reg == InvalidFloatReg)
+        return false;
+
+    if (reg.isSingle()) {
+        float fval;
+        sim_->get_float_from_s_register(reg.id(), &fval);
+        *value = fval;
         return true;
     }
-    return false;
+
+    sim_->get_double_from_d_register(reg.id(), value);
+    return true;
 }
 
 bool
@@ -966,11 +1023,9 @@ AllOnOnePage(uintptr_t start, int size)
 }
 
 static CachePage*
-GetCachePageLocked(Simulator::ICacheMap& i_cache, void* page)
+GetCachePageLocked(SimulatorProcess::ICacheMap& i_cache, void* page)
 {
-    MOZ_ASSERT(Simulator::ICacheCheckingEnabled);
-
-    Simulator::ICacheMap::AddPtr p = i_cache.lookupForAdd(page);
+    SimulatorProcess::ICacheMap::AddPtr p = i_cache.lookupForAdd(page);
     if (p)
         return p->value();
 
@@ -984,7 +1039,7 @@ GetCachePageLocked(Simulator::ICacheMap& i_cache, void* page)
 
 // Flush from start up to and not including start + size.
 static void
-FlushOnePageLocked(Simulator::ICacheMap& i_cache, intptr_t start, int size)
+FlushOnePageLocked(SimulatorProcess::ICacheMap& i_cache, intptr_t start, int size)
 {
     MOZ_ASSERT(size <= CachePage::kPageSize);
     MOZ_ASSERT(AllOnOnePage(start, size - 1));
@@ -999,7 +1054,7 @@ FlushOnePageLocked(Simulator::ICacheMap& i_cache, intptr_t start, int size)
 }
 
 static void
-FlushICacheLocked(Simulator::ICacheMap& i_cache, void* start_addr, size_t size)
+FlushICacheLocked(SimulatorProcess::ICacheMap& i_cache, void* start_addr, size_t size)
 {
     intptr_t start = reinterpret_cast<intptr_t>(start_addr);
     int intra_line = (start & CachePage::kLineMask);
@@ -1019,22 +1074,38 @@ FlushICacheLocked(Simulator::ICacheMap& i_cache, void* start_addr, size_t size)
         FlushOnePageLocked(i_cache, start, size);
 }
 
-static void
-CheckICacheLocked(Simulator::ICacheMap& i_cache, SimInstruction* instr)
+/* static */ void
+SimulatorProcess::checkICacheLocked(SimInstruction* instr)
 {
     intptr_t address = reinterpret_cast<intptr_t>(instr);
     void* page = reinterpret_cast<void*>(address & (~CachePage::kPageMask));
     void* line = reinterpret_cast<void*>(address & (~CachePage::kLineMask));
     int offset = (address & CachePage::kPageMask);
-    CachePage* cache_page = GetCachePageLocked(i_cache, page);
+    CachePage* cache_page = GetCachePageLocked(icache(), page);
     char* cache_valid_byte = cache_page->validityByte(offset);
     bool cache_hit = (*cache_valid_byte == CachePage::LINE_VALID);
     char* cached_line = cache_page->cachedData(offset & ~CachePage::kLineMask);
+
+    // Read all state before considering signal handler effects.
+    int cmpret = 0;
     if (cache_hit) {
         // Check that the data in memory matches the contents of the I-cache.
-        MOZ_ASSERT(memcmp(reinterpret_cast<void*>(instr),
-                          cache_page->cachedData(offset),
-                          SimInstruction::kInstrSize) == 0);
+        cmpret = memcmp(reinterpret_cast<void*>(instr),
+                        cache_page->cachedData(offset),
+                        SimInstruction::kInstrSize);
+    }
+
+    // Check for signal handler interruption between reading state and asserting.
+    // It is safe for the signal to arrive during the !cache_hit path, since it
+    // will be cleared the next time this function is called.
+    if (cacheInvalidatedBySignalHandler_) {
+        icache().clear();
+        cacheInvalidatedBySignalHandler_ = false;
+        return;
+    }
+
+    if (cache_hit) {
+        MOZ_ASSERT(cmpret == 0);
     } else {
         // Cache miss. Load memory into the cache.
         memcpy(cached_line, line, CachePage::kLineLength);
@@ -1043,13 +1114,13 @@ CheckICacheLocked(Simulator::ICacheMap& i_cache, SimInstruction* instr)
 }
 
 HashNumber
-Simulator::ICacheHasher::hash(const Lookup& l)
+SimulatorProcess::ICacheHasher::hash(const Lookup& l)
 {
     return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(l)) >> 2;
 }
 
 bool
-Simulator::ICacheHasher::match(const Key& k, const Lookup& l)
+SimulatorProcess::ICacheHasher::match(const Key& k, const Lookup& l)
 {
     MOZ_ASSERT((reinterpret_cast<intptr_t>(k) & CachePage::kPageMask) == 0);
     MOZ_ASSERT((reinterpret_cast<intptr_t>(l) & CachePage::kPageMask) == 0);
@@ -1063,16 +1134,13 @@ Simulator::setLastDebuggerInput(char* input)
     lastDebuggerInput_ = input;
 }
 
-void
-Simulator::FlushICache(void* start_addr, size_t size)
+/* static */ void
+SimulatorProcess::FlushICache(void* start_addr, size_t size)
 {
-    JitSpewCont(JitSpew_CacheFlush, "[%p %" PRIxSIZE "]", start_addr, size);
-    if (Simulator::ICacheCheckingEnabled) {
-        Simulator* sim = Simulator::Current();
-
-        AutoLockSimulatorCache als(sim);
-
-        js::jit::FlushICacheLocked(sim->icache(), start_addr, size);
+    JitSpewCont(JitSpew_CacheFlush, "[%p %zx]", start_addr, size);
+    if (!ICacheCheckingDisableCount) {
+        AutoLockSimulatorCache als;
+        js::jit::FlushICacheLocked(icache(), start_addr, size);
     }
 }
 
@@ -1089,7 +1157,7 @@ Simulator::Simulator(JSContext* cx)
     stackLimit_ = 0;
     pc_modified_ = false;
     icount_ = 0L;
-    resume_pc_ = 0;
+    wasm_interrupt_ = false;
     break_pc_ = nullptr;
     break_instr_ = 0;
     single_stepping_ = false;
@@ -1130,7 +1198,6 @@ Simulator::Simulator(JSContext* cx)
 
     lastDebuggerInput_ = nullptr;
 
-    redirection_ = nullptr;
     exclusiveMonitorHeld_ = false;
     exclusiveMonitor_ = 0;
 }
@@ -1138,9 +1205,6 @@ Simulator::Simulator(JSContext* cx)
 bool
 Simulator::init()
 {
-    if (!icache_.init())
-        return false;
-
     // Allocate 2MB for the stack. Note that we will only use 1MB, see below.
     static const size_t stackSize = 2 * 1024*1024;
     stack_ = reinterpret_cast<char*>(js_malloc(stackSize));
@@ -1167,19 +1231,21 @@ Simulator::init()
 // offset from the svc instruction so the simulator knows what to call.
 class Redirection
 {
-    friend class Simulator;
+    friend class SimulatorProcess;
 
     // sim's lock must already be held.
-    Redirection(void* nativeFunction, ABIFunctionType type, Simulator* sim)
+    Redirection(void* nativeFunction, ABIFunctionType type)
       : nativeFunction_(nativeFunction),
         swiInstruction_(Assembler::AL | (0xf * (1 << 24)) | kCallRtRedirected),
         type_(type),
         next_(nullptr)
     {
-        next_ = sim->redirection();
-        if (Simulator::ICacheCheckingEnabled)
-            FlushICacheLocked(sim->icache(), addressOfSwiInstruction(), SimInstruction::kInstrSize);
-        sim->setRedirection(this);
+        next_ = SimulatorProcess::redirection();
+        if (!SimulatorProcess::ICacheCheckingDisableCount) {
+            FlushICacheLocked(SimulatorProcess::icache(), addressOfSwiInstruction(),
+                              SimInstruction::kInstrSize);
+        }
+        SimulatorProcess::setRedirection(this);
     }
 
   public:
@@ -1188,11 +1254,9 @@ class Redirection
     ABIFunctionType type() const { return type_; }
 
     static Redirection* Get(void* nativeFunction, ABIFunctionType type) {
-        Simulator* sim = Simulator::Current();
+        AutoLockSimulatorCache als;
 
-        AutoLockSimulatorCache als(sim);
-
-        Redirection* current = sim->redirection();
+        Redirection* current = SimulatorProcess::redirection();
         for (; current != nullptr; current = current->next_) {
             if (current->nativeFunction_ == nativeFunction) {
                 MOZ_ASSERT(current->type() == type);
@@ -1204,7 +1268,7 @@ class Redirection
         Redirection* redir = (Redirection*)js_malloc(sizeof(Redirection));
         if (!redir)
             oomUnsafe.crash("Simulator redirection");
-        new(redir) Redirection(nativeFunction, type, sim);
+        new(redir) Redirection(nativeFunction, type);
         return redir;
     }
 
@@ -1224,12 +1288,30 @@ class Redirection
 Simulator::~Simulator()
 {
     js_free(stack_);
+}
+
+SimulatorProcess::SimulatorProcess()
+  : cacheLock_(mutexid::SimulatorCacheLock)
+  , redirection_(nullptr)
+{}
+
+SimulatorProcess::~SimulatorProcess()
+{
     Redirection* r = redirection_;
     while (r) {
         Redirection* next = r->next_;
         js_delete(r);
         r = next;
     }
+}
+
+bool
+SimulatorProcess::init()
+{
+    if (getenv("ARM_SIM_ICACHE_CHECKS"))
+        ICacheCheckingDisableCount = 0;
+
+    return icache_.init();
 }
 
 /* static */ void*
@@ -1498,6 +1580,53 @@ Simulator::exclusiveMonitorClear()
     exclusiveMonitorHeld_ = false;
 }
 
+void
+Simulator::startWasmInterrupt(JitActivation* activation)
+{
+    JS::ProfilingFrameIterator::RegisterState state;
+    state.pc = (void*) get_pc();
+    state.fp = (void*) get_register(fp);
+    state.sp = (void*) get_register(sp);
+    state.lr = (void*) get_register(lr);
+    activation->startWasmInterrupt(state);
+}
+
+// The signal handler only redirects the PC to the interrupt stub when the PC is
+// in function code. However, this guard is racy for the ARM simulator since the
+// signal handler samples PC in the middle of simulating an instruction and thus
+// the current PC may have advanced once since the signal handler's guard. So we
+// re-check here.
+void
+Simulator::handleWasmInterrupt()
+{
+    if (!wasm::CodeExists)
+        return;
+
+    uint8_t* pc = (uint8_t*)get_pc();
+    uint8_t* fp = (uint8_t*)get_register(r11);
+
+    const wasm::CodeSegment* cs = nullptr;
+    if (!wasm::InInterruptibleCode(cx_, pc, &cs))
+        return;
+
+    // fp can be null during the prologue/epilogue of the entry function.
+    if (!fp)
+        return;
+
+    startWasmInterrupt(cx_->activation()->asJit());
+    set_pc(int32_t(cs->interruptCode()));
+}
+
+static inline JitActivation*
+GetJitActivation(JSContext* cx)
+{
+    if (!wasm::CodeExists)
+        return nullptr;
+    if (!cx->activation() || !cx->activation()->isJit())
+        return nullptr;
+    return cx->activation()->asJit();
+}
+
 // WebAssembly memories contain an extra region of guard pages (see
 // WasmArrayRawBuffer comment). The guard pages catch out-of-bounds accesses
 // using a signal handler that redirects PC to a stub that safely reports an
@@ -1505,25 +1634,111 @@ Simulator::exclusiveMonitorClear()
 // and cannot be redirected. Therefore, we must avoid hitting the handler by
 // redirecting in the simulator before the real handler would have been hit.
 bool
-Simulator::handleWasmFault(int32_t addr, unsigned numBytes)
+Simulator::handleWasmSegFault(int32_t addr, unsigned numBytes)
 {
-    WasmActivation* act = cx_->wasmActivationStack();
+    JitActivation* act = GetJitActivation(cx_);
     if (!act)
         return false;
 
     void* pc = reinterpret_cast<void*>(get_pc());
-    wasm::Instance* instance = act->compartment()->wasm.lookupInstanceDeprecated(pc);
+    uint8_t* fp = reinterpret_cast<uint8_t*>(get_register(r11));
+
+    const wasm::CodeSegment* segment = wasm::LookupCodeSegment(pc);
+    if (!segment)
+        return false;
+
+    wasm::Instance* instance = wasm::LookupFaultingInstance(*segment, pc, fp);
     if (!instance || !instance->memoryAccessInGuardRegion((uint8_t*)addr, numBytes))
         return false;
 
-    set_pc(int32_t(instance->codeSegment().outOfBoundsCode()));
+    const wasm::MemoryAccess* memoryAccess = instance->code().lookupMemoryAccess(pc);
+    if (!memoryAccess) {
+        startWasmInterrupt(act);
+        if (!instance->code().containsCodePC(pc))
+            MOZ_CRASH("Cannot map PC to trap handler");
+        set_pc(int32_t(segment->outOfBoundsCode()));
+        return true;
+    }
+
+    MOZ_ASSERT(memoryAccess->hasTrapOutOfLineCode());
+    set_pc(int32_t(memoryAccess->trapOutOfLineCode(segment->base())));
     return true;
+}
+
+bool
+Simulator::handleWasmIllFault()
+{
+    JitActivation* act = GetJitActivation(cx_);
+    if (!act)
+        return false;
+
+    void* pc = reinterpret_cast<void*>(get_pc());
+    uint8_t* fp = reinterpret_cast<uint8_t*>(get_register(r11));
+
+    const wasm::CodeSegment* segment = wasm::LookupCodeSegment(pc);
+    if (!segment)
+        return false;
+
+    wasm::Trap trap;
+    wasm::BytecodeOffset bytecode;
+    if (!segment->code().lookupTrap(pc, &trap, &bytecode))
+        return false;
+
+    act->startWasmTrap(trap, bytecode.offset, pc, fp);
+    set_pc(int32_t(segment->trapCode()));
+    return true;
+}
+
+uint64_t
+Simulator::readQ(int32_t addr, SimInstruction* instr, UnalignedPolicy f)
+{
+    if (handleWasmSegFault(addr, 8))
+        return UINT64_MAX;
+
+    if ((addr & 3) == 0 || (f == AllowUnaligned && !HasAlignmentFault())) {
+        uint64_t* ptr = reinterpret_cast<uint64_t*>(addr);
+        return *ptr;
+    }
+
+    // See the comments below in readW.
+    if (FixupFault() && wasm::InCompiledCode(reinterpret_cast<void*>(get_pc()))) {
+        char* ptr = reinterpret_cast<char*>(addr);
+        uint64_t value;
+        memcpy(&value, ptr, sizeof(value));
+        return value;
+    }
+
+    printf("Unaligned read at 0x%08x, pc=%p\n", addr, instr);
+    MOZ_CRASH();
+}
+
+void
+Simulator::writeQ(int32_t addr, uint64_t value, SimInstruction* instr, UnalignedPolicy f)
+{
+    if (handleWasmSegFault(addr, 8))
+        return;
+
+    if ((addr & 3) == 0 || (f == AllowUnaligned && !HasAlignmentFault())) {
+        uint64_t* ptr = reinterpret_cast<uint64_t*>(addr);
+        *ptr = value;
+        return;
+    }
+
+    // See the comments below in readW.
+    if (FixupFault() && wasm::InCompiledCode(reinterpret_cast<void*>(get_pc()))) {
+        char* ptr = reinterpret_cast<char*>(addr);
+        memcpy(ptr, &value, sizeof(value));
+        return;
+    }
+
+    printf("Unaligned write at 0x%08x, pc=%p\n", addr, instr);
+    MOZ_CRASH();
 }
 
 int
 Simulator::readW(int32_t addr, SimInstruction* instr, UnalignedPolicy f)
 {
-    if (handleWasmFault(addr, 4))
+    if (handleWasmSegFault(addr, 4))
         return -1;
 
     if ((addr & 3) == 0 || (f == AllowUnaligned && !HasAlignmentFault())) {
@@ -1535,7 +1750,7 @@ Simulator::readW(int32_t addr, SimInstruction* instr, UnalignedPolicy f)
     // do the right thing. Making this simulator properly emulate the behavior
     // of raising a signal is complex, so as a special-case, when in wasm code,
     // we just do the right thing.
-    if (wasm::IsPCInWasmCode(reinterpret_cast<void *>(get_pc()))) {
+    if (FixupFault() && wasm::InCompiledCode(reinterpret_cast<void*>(get_pc()))) {
         char* ptr = reinterpret_cast<char*>(addr);
         int value;
         memcpy(&value, ptr, sizeof(value));
@@ -1549,7 +1764,7 @@ Simulator::readW(int32_t addr, SimInstruction* instr, UnalignedPolicy f)
 void
 Simulator::writeW(int32_t addr, int value, SimInstruction* instr, UnalignedPolicy f)
 {
-    if (handleWasmFault(addr, 4))
+    if (handleWasmSegFault(addr, 4))
         return;
 
     if ((addr & 3) == 0 || (f == AllowUnaligned && !HasAlignmentFault())) {
@@ -1559,7 +1774,7 @@ Simulator::writeW(int32_t addr, int value, SimInstruction* instr, UnalignedPolic
     }
 
     // See the comments above in readW.
-    if (wasm::IsPCInWasmCode(reinterpret_cast<void *>(get_pc()))) {
+    if (FixupFault() && wasm::InCompiledCode(reinterpret_cast<void*>(get_pc()))) {
         char* ptr = reinterpret_cast<char*>(addr);
         memcpy(ptr, &value, sizeof(value));
         return;
@@ -1591,40 +1806,40 @@ T compareExchangeRelaxed(SharedMem<T*> addr, T oldval, T newval)
 int
 Simulator::readExW(int32_t addr, SimInstruction* instr)
 {
-    // The regexp engine emits unaligned loads, so we don't check for them here
-    // like most of the other methods do.
-    if ((addr & 3) == 0 || !HasAlignmentFault()) {
-        SharedMem<int32_t*> ptr = SharedMem<int32_t*>::shared(reinterpret_cast<int32_t*>(addr));
-        int32_t value = loadRelaxed(ptr);
-        exclusiveMonitorSet(value);
-        return value;
-    } else {
-        printf("Unaligned write at 0x%08x, pc=%p\n", addr, instr);
-        MOZ_CRASH();
-    }
+    if (addr & 3)
+        MOZ_CRASH("Unaligned exclusive read");
+
+    if (handleWasmSegFault(addr, 4))
+        return -1;
+
+    SharedMem<int32_t*> ptr = SharedMem<int32_t*>::shared(reinterpret_cast<int32_t*>(addr));
+    int32_t value = loadRelaxed(ptr);
+    exclusiveMonitorSet(value);
+    return value;
 }
 
 int32_t
 Simulator::writeExW(int32_t addr, int value, SimInstruction* instr)
 {
-    if ((addr & 3) == 0) {
-        SharedMem<int32_t*> ptr = SharedMem<int32_t*>::shared(reinterpret_cast<int32_t*>(addr));
-        bool held;
-        int32_t expected = int32_t(exclusiveMonitorGetAndClear(&held));
-        if (!held)
-            return 1;
-        int32_t old = compareExchangeRelaxed(ptr, expected, int32_t(value));
-        return old != expected;
-    }
+    if (addr & 3)
+        MOZ_CRASH("Unaligned exclusive write");
 
-    printf("Unaligned write at 0x%08x, pc=%p\n", addr, instr);
-    MOZ_CRASH();
+    if (handleWasmSegFault(addr, 4))
+        return -1;
+
+    SharedMem<int32_t*> ptr = SharedMem<int32_t*>::shared(reinterpret_cast<int32_t*>(addr));
+    bool held;
+    int32_t expected = int32_t(exclusiveMonitorGetAndClear(&held));
+    if (!held)
+        return 1;
+    int32_t old = compareExchangeRelaxed(ptr, expected, int32_t(value));
+    return old != expected;
 }
 
 uint16_t
 Simulator::readHU(int32_t addr, SimInstruction* instr)
 {
-    if (handleWasmFault(addr, 2))
+    if (handleWasmSegFault(addr, 2))
         return UINT16_MAX;
 
     // The regexp engine emits unaligned loads, so we don't check for them here
@@ -1634,8 +1849,8 @@ Simulator::readHU(int32_t addr, SimInstruction* instr)
         return *ptr;
     }
 
-    // See comments in readW.
-    if (wasm::IsPCInWasmCode(reinterpret_cast<void *>(get_pc()))) {
+    // See comments above in readW.
+    if (FixupFault() && wasm::InCompiledCode(reinterpret_cast<void*>(get_pc()))) {
         char* ptr = reinterpret_cast<char*>(addr);
         uint16_t value;
         memcpy(&value, ptr, sizeof(value));
@@ -1650,7 +1865,7 @@ Simulator::readHU(int32_t addr, SimInstruction* instr)
 int16_t
 Simulator::readH(int32_t addr, SimInstruction* instr)
 {
-    if (handleWasmFault(addr, 2))
+    if (handleWasmSegFault(addr, 2))
         return -1;
 
     if ((addr & 1) == 0 || !HasAlignmentFault()) {
@@ -1658,8 +1873,8 @@ Simulator::readH(int32_t addr, SimInstruction* instr)
         return *ptr;
     }
 
-    // See comments in readW.
-    if (wasm::IsPCInWasmCode(reinterpret_cast<void *>(get_pc()))) {
+    // See comments above in readW.
+    if (FixupFault() && wasm::InCompiledCode(reinterpret_cast<void*>(get_pc()))) {
         char* ptr = reinterpret_cast<char*>(addr);
         int16_t value;
         memcpy(&value, ptr, sizeof(value));
@@ -1674,7 +1889,7 @@ Simulator::readH(int32_t addr, SimInstruction* instr)
 void
 Simulator::writeH(int32_t addr, uint16_t value, SimInstruction* instr)
 {
-    if (handleWasmFault(addr, 2))
+    if (handleWasmSegFault(addr, 2))
         return;
 
     if ((addr & 1) == 0 || !HasAlignmentFault()) {
@@ -1684,7 +1899,7 @@ Simulator::writeH(int32_t addr, uint16_t value, SimInstruction* instr)
     }
 
     // See the comments above in readW.
-    if (wasm::IsPCInWasmCode(reinterpret_cast<void *>(get_pc()))) {
+    if (FixupFault() && wasm::InCompiledCode(reinterpret_cast<void*>(get_pc()))) {
         char* ptr = reinterpret_cast<char*>(addr);
         memcpy(ptr, &value, sizeof(value));
         return;
@@ -1697,7 +1912,7 @@ Simulator::writeH(int32_t addr, uint16_t value, SimInstruction* instr)
 void
 Simulator::writeH(int32_t addr, int16_t value, SimInstruction* instr)
 {
-    if (handleWasmFault(addr, 2))
+    if (handleWasmSegFault(addr, 2))
         return;
 
     if ((addr & 1) == 0 || !HasAlignmentFault()) {
@@ -1707,7 +1922,7 @@ Simulator::writeH(int32_t addr, int16_t value, SimInstruction* instr)
     }
 
     // See the comments above in readW.
-    if (wasm::IsPCInWasmCode(reinterpret_cast<void *>(get_pc()))) {
+    if (FixupFault() && wasm::InCompiledCode(reinterpret_cast<void*>(get_pc()))) {
         char* ptr = reinterpret_cast<char*>(addr);
         memcpy(ptr, &value, sizeof(value));
         return;
@@ -1720,40 +1935,40 @@ Simulator::writeH(int32_t addr, int16_t value, SimInstruction* instr)
 uint16_t
 Simulator::readExHU(int32_t addr, SimInstruction* instr)
 {
-    // The regexp engine emits unaligned loads, so we don't check for them here
-    // like most of the other methods do.
-    if ((addr & 1) == 0 || !HasAlignmentFault()) {
-        SharedMem<uint16_t*> ptr = SharedMem<uint16_t*>::shared(reinterpret_cast<uint16_t*>(addr));
-        uint16_t value = loadRelaxed(ptr);
-        exclusiveMonitorSet(value);
-        return value;
-    }
-    printf("Unaligned atomic unsigned halfword read at 0x%08x, pc=%p\n", addr, instr);
-    MOZ_CRASH();
-    return 0;
+    if (addr & 1)
+        MOZ_CRASH("Unaligned exclusive read");
+
+    if (handleWasmSegFault(addr, 2))
+        return UINT16_MAX;
+
+    SharedMem<uint16_t*> ptr = SharedMem<uint16_t*>::shared(reinterpret_cast<uint16_t*>(addr));
+    uint16_t value = loadRelaxed(ptr);
+    exclusiveMonitorSet(value);
+    return value;
 }
 
 int32_t
 Simulator::writeExH(int32_t addr, uint16_t value, SimInstruction* instr)
 {
-    if ((addr & 1) == 0) {
-        SharedMem<uint16_t*> ptr = SharedMem<uint16_t*>::shared(reinterpret_cast<uint16_t*>(addr));
-        bool held;
-        uint16_t expected = uint16_t(exclusiveMonitorGetAndClear(&held));
-        if (!held)
-            return 1;
-        uint16_t old = compareExchangeRelaxed(ptr, expected, value);
-        return old != expected;
-    } else {
-        printf("Unaligned atomic unsigned halfword write at 0x%08x, pc=%p\n", addr, instr);
-        MOZ_CRASH();
-    }
+    if (addr & 1)
+        MOZ_CRASH("Unaligned exclusive write");
+
+    if (handleWasmSegFault(addr, 2))
+        return -1;
+
+    SharedMem<uint16_t*> ptr = SharedMem<uint16_t*>::shared(reinterpret_cast<uint16_t*>(addr));
+    bool held;
+    uint16_t expected = uint16_t(exclusiveMonitorGetAndClear(&held));
+    if (!held)
+        return 1;
+    uint16_t old = compareExchangeRelaxed(ptr, expected, value);
+    return old != expected;
 }
 
 uint8_t
 Simulator::readBU(int32_t addr)
 {
-    if (handleWasmFault(addr, 1))
+    if (handleWasmSegFault(addr, 1))
         return UINT8_MAX;
 
     uint8_t* ptr = reinterpret_cast<uint8_t*>(addr);
@@ -1763,6 +1978,9 @@ Simulator::readBU(int32_t addr)
 uint8_t
 Simulator::readExBU(int32_t addr)
 {
+    if (handleWasmSegFault(addr, 1))
+        return UINT8_MAX;
+
     SharedMem<uint8_t*> ptr = SharedMem<uint8_t*>::shared(reinterpret_cast<uint8_t*>(addr));
     uint8_t value = loadRelaxed(ptr);
     exclusiveMonitorSet(value);
@@ -1772,6 +1990,9 @@ Simulator::readExBU(int32_t addr)
 int32_t
 Simulator::writeExB(int32_t addr, uint8_t value)
 {
+    if (handleWasmSegFault(addr, 1))
+        return -1;
+
     SharedMem<uint8_t*> ptr = SharedMem<uint8_t*>::shared(reinterpret_cast<uint8_t*>(addr));
     bool held;
     uint8_t expected = uint8_t(exclusiveMonitorGetAndClear(&held));
@@ -1784,7 +2005,7 @@ Simulator::writeExB(int32_t addr, uint8_t value)
 int8_t
 Simulator::readB(int32_t addr)
 {
-    if (handleWasmFault(addr, 1))
+    if (handleWasmSegFault(addr, 1))
         return -1;
 
     int8_t* ptr = reinterpret_cast<int8_t*>(addr);
@@ -1794,7 +2015,7 @@ Simulator::readB(int32_t addr)
 void
 Simulator::writeB(int32_t addr, uint8_t value)
 {
-    if (handleWasmFault(addr, 1))
+    if (handleWasmSegFault(addr, 1))
         return;
 
     uint8_t* ptr = reinterpret_cast<uint8_t*>(addr);
@@ -1804,7 +2025,7 @@ Simulator::writeB(int32_t addr, uint8_t value)
 void
 Simulator::writeB(int32_t addr, int8_t value)
 {
-    if (handleWasmFault(addr, 1))
+    if (handleWasmSegFault(addr, 1))
         return;
 
     int8_t* ptr = reinterpret_cast<int8_t*>(addr);
@@ -1814,69 +2035,77 @@ Simulator::writeB(int32_t addr, int8_t value)
 int32_t*
 Simulator::readDW(int32_t addr)
 {
+    if (handleWasmSegFault(addr, 8))
+        return nullptr;
+
     if ((addr & 3) == 0) {
         int32_t* ptr = reinterpret_cast<int32_t*>(addr);
         return ptr;
     }
+
     printf("Unaligned read at 0x%08x\n", addr);
     MOZ_CRASH();
-    return 0;
 }
 
 void
 Simulator::writeDW(int32_t addr, int32_t value1, int32_t value2)
 {
+    if (handleWasmSegFault(addr, 8))
+        return;
+
     if ((addr & 3) == 0) {
         int32_t* ptr = reinterpret_cast<int32_t*>(addr);
         *ptr++ = value1;
         *ptr = value2;
-    } else {
-        printf("Unaligned write at 0x%08x\n", addr);
-        MOZ_CRASH();
+        return;
     }
+
+    printf("Unaligned write at 0x%08x\n", addr);
+    MOZ_CRASH();
 }
 
 int32_t
 Simulator::readExDW(int32_t addr, int32_t* hibits)
 {
-#if defined(__clang__) && defined(__i386)
-    // This is OK for now, we don't yet generate LDREXD.
-    MOZ_CRASH("Unimplemented - 8-byte atomics are unsupported in Clang on i386");
-#else
-    if ((addr & 3) == 0) {
-        SharedMem<uint64_t*> ptr = SharedMem<uint64_t*>::shared(reinterpret_cast<uint64_t*>(addr));
-        uint64_t value = loadRelaxed(ptr);
-        exclusiveMonitorSet(value);
-        *hibits = int32_t(value);
-        return int32_t(value >> 32);
-    }
-    printf("Unaligned read at 0x%08x\n", addr);
-    MOZ_CRASH();
-    return 0;
-#endif
+    if (addr & 3)
+        MOZ_CRASH("Unaligned exclusive read");
+
+    if (handleWasmSegFault(addr, 8))
+        return -1;
+
+    SharedMem<uint64_t*> ptr = SharedMem<uint64_t*>::shared(reinterpret_cast<uint64_t*>(addr));
+    // The spec says that the low part of value shall be read from addr and
+    // the high part shall be read from addr+4.  On a little-endian system
+    // where we read a 64-bit quadword the low part of the value will be in
+    // the low part of the quadword, and the high part of the value in the
+    // high part of the quadword.
+    uint64_t value = loadRelaxed(ptr);
+    exclusiveMonitorSet(value);
+    *hibits = int32_t(value >> 32);
+    return int32_t(value);
 }
 
 int32_t
 Simulator::writeExDW(int32_t addr, int32_t value1, int32_t value2)
 {
-#if defined(__clang__) && defined(__i386)
-    // This is OK for now, we don't yet generate STREXD.
-    MOZ_CRASH("Unimplemented - 8-byte atomics are unsupported in Clang on i386");
-#else
-    if ((addr & 3) == 0) {
-        SharedMem<uint64_t*> ptr = SharedMem<uint64_t*>::shared(reinterpret_cast<uint64_t*>(addr));
-        uint64_t value = (uint64_t(value1) << 32) | uint32_t(value2);
-        bool held;
-        uint64_t expected = exclusiveMonitorGetAndClear(&held);
-        if (!held)
-            return 1;
-        uint64_t old = compareExchangeRelaxed(ptr, expected, value);
-        return old != expected;
-    } else {
-        printf("Unaligned write at 0x%08x\n", addr);
-        MOZ_CRASH();
-    }
-#endif
+    if (addr & 3)
+        MOZ_CRASH("Unaligned exclusive write");
+
+    if (handleWasmSegFault(addr, 8))
+        return -1;
+
+    SharedMem<uint64_t*> ptr = SharedMem<uint64_t*>::shared(reinterpret_cast<uint64_t*>(addr));
+    // The spec says that value1 shall be stored at addr and value2 at
+    // addr+4.  On a little-endian system that means constructing a 64-bit
+    // value where value1 is in the low half of a 64-bit quadword and value2
+    // is in the high half of the quadword.
+    uint64_t value = (uint64_t(value2) << 32) | uint32_t(value1);
+    bool held;
+    uint64_t expected = exclusiveMonitorGetAndClear(&held);
+    if (!held)
+        return 1;
+    uint64_t old = compareExchangeRelaxed(ptr, expected, value);
+    return old != expected;
 }
 
 uintptr_t
@@ -2332,6 +2561,10 @@ typedef int64_t (*Prototype_General7)(int32_t arg0, int32_t arg1, int32_t arg2, 
                                       int32_t arg4, int32_t arg5, int32_t arg6);
 typedef int64_t (*Prototype_General8)(int32_t arg0, int32_t arg1, int32_t arg2, int32_t arg3,
                                       int32_t arg4, int32_t arg5, int32_t arg6, int32_t arg7);
+typedef int64_t (*Prototype_GeneralGeneralGeneralInt64)(int32_t arg0, int32_t arg1, int32_t arg2,
+                                                        int64_t arg3);
+typedef int64_t (*Prototype_GeneralGeneralInt64Int64)(int32_t arg0, int32_t arg1, int64_t arg2,
+                                                      int64_t arg3);
 
 typedef double (*Prototype_Double_None)();
 typedef double (*Prototype_Double_Double)(double arg0);
@@ -2343,6 +2576,8 @@ typedef int32_t (*Prototype_Int_DoubleIntInt)(double arg0, int32_t arg1, int32_t
 typedef int32_t (*Prototype_Int_IntDoubleIntInt)(int32_t arg0, double arg1, int32_t arg2,
                                                  int32_t arg3);
 typedef float (*Prototype_Float32_Float32)(float arg0);
+typedef float (*Prototype_Float32_Float32Float32)(float arg0, float arg1);
+typedef float (*Prototype_Float32_IntInt)(int arg0, int arg1);
 
 typedef double (*Prototype_DoubleInt)(double arg0, int32_t arg1);
 typedef double (*Prototype_Double_IntDouble)(int32_t arg0, double arg1);
@@ -2379,6 +2614,13 @@ Simulator::scratchVolatileRegisters(bool scratchFloat)
         for (uint32_t i = d16; i < FloatRegisters::TotalPhys; i++)
             set_d_register(i, &scratch_value_d);
     }
+}
+
+static int64_t
+MakeInt64(int32_t first, int32_t second)
+{
+    // Little-endian order.
+    return ((int64_t)second << 32) | (uint32_t)first;
 }
 
 // Software interrupt instructions are used by the simulator to call into C++.
@@ -2481,6 +2723,23 @@ Simulator::softwareInterrupt(SimInstruction* instr)
             setCallResult(result);
             break;
           }
+          case Args_Int_GeneralGeneralGeneralInt64: {
+            Prototype_GeneralGeneralGeneralInt64 target =
+                reinterpret_cast<Prototype_GeneralGeneralGeneralInt64>(external);
+            // The int64 arg is not split across register and stack
+            int64_t result = target(arg0, arg1, arg2, MakeInt64(arg4, arg5));
+            scratchVolatileRegisters(/* scratchFloat = true */);
+            setCallResult(result);
+            break;
+          }
+          case Args_Int_GeneralGeneralInt64Int64: {
+            Prototype_GeneralGeneralInt64Int64 target =
+                reinterpret_cast<Prototype_GeneralGeneralInt64Int64>(external);
+            int64_t result = target(arg0, arg1, MakeInt64(arg2, arg3), MakeInt64(arg4, arg5));
+            scratchVolatileRegisters(/* scratchFloat = true */);
+            setCallResult(result);
+            break;
+          }
           case Args_Int64_Double: {
             double dval0, dval1;
             int32_t ival;
@@ -2526,6 +2785,28 @@ Simulator::softwareInterrupt(SimInstruction* instr)
                 fval0 = mozilla::BitwiseCast<float>(arg0);
             Prototype_Float32_Float32 target = reinterpret_cast<Prototype_Float32_Float32>(external);
             float fresult = target(fval0);
+            scratchVolatileRegisters(/* scratchFloat = true */);
+            setCallResultFloat(fresult);
+            break;
+          }
+          case Args_Float32_Float32Float32: {
+            float fval0, fval1;
+            if (UseHardFpABI()) {
+                get_float_from_s_register(0, &fval0);
+                get_float_from_s_register(1, &fval1);
+            } else {
+                fval0 = mozilla::BitwiseCast<float>(arg0);
+                fval1 = mozilla::BitwiseCast<float>(arg1);
+            }
+            Prototype_Float32_Float32Float32 target = reinterpret_cast<Prototype_Float32_Float32Float32>(external);
+            float fresult = target(fval0, fval1);
+            scratchVolatileRegisters(/* scratchFloat = true */);
+            setCallResultFloat(fresult);
+            break;
+          }
+          case Args_Float32_IntInt: {
+            Prototype_Float32_IntInt target = reinterpret_cast<Prototype_Float32_IntInt>(external);
+            float fresult = target(arg0, arg1);
             scratchVolatileRegisters(/* scratchFloat = true */);
             setCallResultFloat(fresult);
             break;
@@ -2687,17 +2968,15 @@ Simulator::softwareInterrupt(SimInstruction* instr)
 void
 Simulator::canonicalizeNaN(double* value)
 {
-    *value = !JitOptions.wasmTestMode && FPSCR_default_NaN_mode_
-             ? JS::CanonicalizeNaN(*value)
-             : *value;
+    if (!wasm::CodeExists && !wasm::LookupCodeSegment(get_pc_as<void*>()) && FPSCR_default_NaN_mode_)
+        *value = JS::CanonicalizeNaN(*value);
 }
 
 void
 Simulator::canonicalizeNaN(float* value)
 {
-    *value = !JitOptions.wasmTestMode && FPSCR_default_NaN_mode_
-             ? JS::CanonicalizeNaN(*value)
-             : *value;
+    if (!wasm::CodeExists && !wasm::LookupCodeSegment(get_pc_as<void*>()) && FPSCR_default_NaN_mode_)
+        *value = JS::CanonicalizeNaN(*value);
 }
 
 // Stop helper functions.
@@ -2854,17 +3133,17 @@ Simulator::decodeType01(SimInstruction* instr)
                         MOZ_CRASH();
                 }
             } else {
-                if (instr->bits(disasm::ExclusiveOpHi, disasm::ExclusiveOpLo) == disasm::ExclusiveOpcode) {
+                if (instr->bits(excl::ExclusiveOpHi, excl::ExclusiveOpLo) == excl::ExclusiveOpcode) {
                     // Load-exclusive / store-exclusive.
-                    if (instr->bit(disasm::ExclusiveLoad)) {
+                    if (instr->bit(excl::ExclusiveLoad)) {
                         int rn = instr->rnValue();
                         int rt = instr->rtValue();
                         int32_t address = get_register(rn);
-                        switch (instr->bits(disasm::ExclusiveSizeHi, disasm::ExclusiveSizeLo)) {
-                          case disasm::ExclusiveWord:
+                        switch (instr->bits(excl::ExclusiveSizeHi, excl::ExclusiveSizeLo)) {
+                          case excl::ExclusiveWord:
                             set_register(rt, readExW(address, instr));
                             break;
-                          case disasm::ExclusiveDouble: {
+                          case excl::ExclusiveDouble: {
                             MOZ_ASSERT((rt % 2) == 0);
                             int32_t hibits;
                             int32_t lobits = readExDW(address, &hibits);
@@ -2872,10 +3151,10 @@ Simulator::decodeType01(SimInstruction* instr)
                             set_register(rt+1, hibits);
                             break;
                           }
-                          case disasm::ExclusiveByte:
+                          case excl::ExclusiveByte:
                             set_register(rt, readExBU(address));
                             break;
-                          case disasm::ExclusiveHalf:
+                          case excl::ExclusiveHalf:
                             set_register(rt, readExHU(address, instr));
                             break;
                         }
@@ -2886,20 +3165,20 @@ Simulator::decodeType01(SimInstruction* instr)
                         int32_t address = get_register(rn);
                         int32_t value = get_register(rt);
                         int32_t result = 0;
-                        switch (instr->bits(disasm::ExclusiveSizeHi, disasm::ExclusiveSizeLo)) {
-                          case disasm::ExclusiveWord:
+                        switch (instr->bits(excl::ExclusiveSizeHi, excl::ExclusiveSizeLo)) {
+                          case excl::ExclusiveWord:
                             result = writeExW(address, value, instr);
                             break;
-                          case disasm::ExclusiveDouble: {
+                          case excl::ExclusiveDouble: {
                             MOZ_ASSERT((rt % 2) == 0);
                             int32_t value2 = get_register(rt+1);
                             result = writeExDW(address, value, value2);
                             break;
                           }
-                          case disasm::ExclusiveByte:
+                          case excl::ExclusiveByte:
                             result = writeExB(address, (uint8_t)value);
                             break;
-                          case disasm::ExclusiveHalf:
+                          case excl::ExclusiveHalf:
                             result = writeExH(address, (uint16_t)value, instr);
                             break;
                         }
@@ -2991,7 +3270,8 @@ Simulator::decodeType01(SimInstruction* instr)
                 } else {
                     // The ldrd instruction.
                     int* rn_data = readDW(addr);
-                    set_dw_register(rd, rn_data);
+                    if (rn_data)
+                        set_dw_register(rd, rn_data);
                 }
             } else if (instr->hasH()) {
                 if (instr->hasSign()) {
@@ -3337,6 +3617,12 @@ rotateBytes(uint32_t val, int32_t rotate)
 void
 Simulator::decodeType3(SimInstruction* instr)
 {
+    if (MOZ_UNLIKELY(instr->isUDF())) {
+        if (handleWasmIllFault())
+            return;
+        MOZ_CRASH("illegal instruction encountered");
+    }
+
     int rd = instr->rdValue();
     int rn = instr->rnValue();
     int32_t rn_val = get_register(rn);
@@ -3689,25 +3975,23 @@ Simulator::decodeTypeVFP(SimInstruction* instr)
             } else if ((instr->opc2Value() == 0x0) && (instr->opc3Value() == 0x3)) {
                 // vabs
                 if (instr->szValue() == 0x1) {
-                    double dm_value;
-                    get_double_from_d_register(vm, &dm_value);
-
-                    uint64_t u64 = mozilla::BitwiseCast<uint64_t>(dm_value);
-                    u64 &= 0x7fffffffffffffffu;
-                    double dd_value;
-                    mozilla::BitwiseCast(u64, &dd_value);
-
+                    union {
+                        double f64;
+                        uint64_t u64;
+                    } u;
+                    get_double_from_d_register(vm, &u.f64);
+                    u.u64 &= 0x7fffffffffffffffu;
+                    double dd_value = u.f64;
                     canonicalizeNaN(&dd_value);
                     set_d_register_from_double(vd, dd_value);
                 } else {
-                    float fm_value;
-                    get_float_from_s_register(vm, &fm_value);
-
-                    uint32_t u32 = mozilla::BitwiseCast<uint32_t>(fm_value);
-                    u32 &= 0x7fffffffu;
-                    float fd_value;
-                    mozilla::BitwiseCast(u32, &fd_value);
-
+                    union {
+                        float f32;
+                        uint32_t u32;
+                    } u;
+                    get_float_from_s_register(vm, &u.f32);
+                    u.u32 &= 0x7fffffffu;
+                    float fd_value = u.f32;
                     canonicalizeNaN(&fd_value);
                     set_s_register_from_float(vd, fd_value);
                 }
@@ -4345,21 +4629,17 @@ Simulator::decodeType6CoprocessorIns(SimInstruction* instr)
             int32_t address = get_register(rn) + 4 * offset;
             if (instr->hasL()) {
                 // Load double from memory: vldr.
-                int32_t data[] = {
-                    readW(address, instr),
-                    readW(address + 4, instr)
-                };
+                uint64_t data = readQ(address, instr);
                 double val;
-                memcpy(&val, data, 8);
+                memcpy(&val, &data, 8);
                 set_d_register_from_double(vd, val);
             } else {
                 // Store double to memory: vstr.
-                int32_t data[2];
+                uint64_t data;
                 double val;
                 get_double_from_d_register(vd, &val);
-                memcpy(data, &val, 8);
-                writeW(address, data[0], instr);
-                writeW(address + 4, data[1], instr);
+                memcpy(&data, &val, 8);
+                writeQ(address, data, instr);
             }
             break;
           }
@@ -4526,6 +4806,9 @@ Simulator::decodeSpecialCondition(SimInstruction* instr)
       case 0xA:
         if (instr->bits(31,20) == 0xf57) {
             switch (instr->bits(7,4)) {
+              case 1: // CLREX
+                exclusiveMonitorClear();
+                break;
               case 5: // DMB
                 AtomicOperations::fenceSeqCst();
                 break;
@@ -4567,9 +4850,9 @@ Simulator::decodeSpecialCondition(SimInstruction* instr)
 void
 Simulator::instructionDecode(SimInstruction* instr)
 {
-    if (Simulator::ICacheCheckingEnabled) {
-        AutoLockSimulatorCache als(this);
-        CheckICacheLocked(icache(), instr);
+    if (!SimulatorProcess::ICacheCheckingDisableCount) {
+        AutoLockSimulatorCache als;
+        SimulatorProcess::checkICacheLocked(instr);
     }
 
     pc_modified_ = false;
@@ -4634,6 +4917,19 @@ Simulator::disable_single_stepping()
     single_step_callback_arg_ = nullptr;
 }
 
+static void
+FakeInterruptHandler()
+{
+    JSContext* cx = TlsContext.get();
+    uint8_t* pc = cx->simulator()->get_pc_as<uint8_t*>();
+
+    const wasm::CodeSegment* cs = nullptr;
+    if (!wasm::InInterruptibleCode(cx, pc, &cs))
+        return;
+
+    cx->simulator()->trigger_wasm_interrupt();
+}
+
 template<bool EnableStopSimAt>
 void
 Simulator::execute()
@@ -4653,16 +4949,15 @@ Simulator::execute()
         } else {
             if (single_stepping_)
                 single_step_callback_(single_step_callback_arg_, this, (void*)program_counter);
+            if (MOZ_UNLIKELY(JitOptions.simulatorAlwaysInterrupt))
+                FakeInterruptHandler();
             SimInstruction* instr = reinterpret_cast<SimInstruction*>(program_counter);
             instructionDecode(instr);
             icount_++;
 
-            int32_t rpc = resume_pc_;
-            if (MOZ_UNLIKELY(rpc != 0)) {
-                // AsmJS signal handler ran and we have to adjust the pc.
-                JSRuntime::innermostWasmActivation()->setResumePC((void*)get_pc());
-                set_pc(rpc);
-                resume_pc_ = 0;
+            if (MOZ_UNLIKELY(wasm_interrupt_)) {
+                handleWasmInterrupt();
+                wasm_interrupt_ = false;
             }
         }
         program_counter = get_pc();
@@ -4838,26 +5133,22 @@ Simulator::call(uint8_t* entry, int argument_count, ...)
 Simulator*
 Simulator::Current()
 {
-    return TlsPerThreadData.get()->simulator();
+    JSContext* cx = TlsContext.get();
+    MOZ_ASSERT(CurrentThreadCanAccessRuntime(cx->runtime()));
+    return cx->simulator();
 }
 
 } // namespace jit
 } // namespace js
 
 js::jit::Simulator*
-JSRuntime::simulator() const
+JSContext::simulator() const
 {
     return simulator_;
 }
 
 uintptr_t*
-JSRuntime::addressOfSimulatorStackLimit()
+JSContext::addressOfSimulatorStackLimit()
 {
     return simulator_->addressOfStackLimit();
-}
-
-js::jit::Simulator*
-js::PerThreadData::simulator() const
-{
-    return runtime_->simulator();
 }

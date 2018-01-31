@@ -16,13 +16,27 @@ GetUserMediaRequest::GetUserMediaRequest(
     nsPIDOMWindowInner* aInnerWindow,
     const nsAString& aCallID,
     const MediaStreamConstraints& aConstraints,
-    bool aIsSecure)
+    bool aIsSecure,
+    bool aIsHandlingUserInput)
   : mInnerWindowID(aInnerWindow->WindowID())
   , mOuterWindowID(aInnerWindow->GetOuterWindow()->WindowID())
   , mCallID(aCallID)
   , mConstraints(new MediaStreamConstraints(aConstraints))
   , mIsSecure(aIsSecure)
+  , mIsHandlingUserInput(aIsHandlingUserInput)
 {
+}
+
+GetUserMediaRequest::GetUserMediaRequest(
+    nsPIDOMWindowInner* aInnerWindow,
+    const nsAString& aRawId,
+    const nsAString& aMediaSource)
+  : mRawID(aRawId)
+  , mMediaSource(aMediaSource)
+{
+  if (aInnerWindow && aInnerWindow->GetOuterWindow()) {
+    mOuterWindowID = aInnerWindow->GetOuterWindow()->WindowID();
+  }
 }
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_0(GetUserMediaRequest)
@@ -49,6 +63,16 @@ void GetUserMediaRequest::GetCallID(nsString& retval)
   retval = mCallID;
 }
 
+void GetUserMediaRequest::GetRawID(nsString& retval)
+{
+  retval = mRawID;
+}
+
+void GetUserMediaRequest::GetMediaSource(nsString& retval)
+{
+  retval = mMediaSource;
+}
+
 uint64_t GetUserMediaRequest::WindowID()
 {
   return mOuterWindowID;
@@ -62,6 +86,11 @@ uint64_t GetUserMediaRequest::InnerWindowID()
 bool GetUserMediaRequest::IsSecure()
 {
   return mIsSecure;
+}
+
+bool GetUserMediaRequest::IsHandlingUserInput() const
+{
+  return mIsHandlingUserInput;
 }
 
 void

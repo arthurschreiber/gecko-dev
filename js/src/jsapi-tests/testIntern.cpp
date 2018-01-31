@@ -4,6 +4,7 @@
 
 #include "jsatom.h"
 
+#include "gc/FreeOp.h"
 #include "gc/Marking.h"
 #include "jsapi-tests/tests.h"
 #include "vm/String.h"
@@ -40,9 +41,9 @@ BEGIN_TEST(testPinAcrossGC)
 }
 
 static void
-FinalizeCallback(JSFreeOp* fop, JSFinalizeStatus status, bool isZoneGC, void* data)
+FinalizeCallback(JSFreeOp* fop, JSFinalizeStatus status, void* data)
 {
     if (status == JSFINALIZE_GROUP_START)
-        sw.strOk = js::gc::IsMarkedUnbarriered(&sw.str);
+        sw.strOk = js::gc::IsMarkedUnbarriered(fop->runtime(), &sw.str);
 }
 END_TEST(testPinAcrossGC)

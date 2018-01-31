@@ -6,13 +6,12 @@ function test()
 {
   waitForExplicitFinish();
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.selectedBrowser.addEventListener("load", function onLoad() {
-    gBrowser.selectedBrowser.removeEventListener("load", onLoad, true);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(function () {
     openScratchpad(runTests);
-  }, true);
+  });
 
-  content.location = "data:text/html;charset=utf8,<p>test inspect() in Scratchpad</p>";
+  gBrowser.loadURI("data:text/html;charset=utf8,<p>test inspect() in Scratchpad</p>");
 }
 
 function runTests()

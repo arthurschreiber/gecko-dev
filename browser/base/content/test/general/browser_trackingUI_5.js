@@ -8,7 +8,7 @@ const PB_PREF = "privacy.trackingprotection.pbmode.enabled";
 const TRACKING_PAGE = "http://tracking.example.org/browser/browser/base/content/test/general/trackingPage.html";
 var TrackingProtection = null;
 var browser = null;
-var {UrlClassifierTestUtils} = Cu.import("resource://testing-common/UrlClassifierTestUtils.jsm", {});
+var {UrlClassifierTestUtils} = ChromeUtils.import("resource://testing-common/UrlClassifierTestUtils.jsm", {});
 
 registerCleanupFunction(function() {
   TrackingProtection = browser = null;
@@ -71,19 +71,19 @@ function testTrackingPageUnblocked() {
   ok(hidden("#tracking-blocked"), "labelTrackingBlocked is hidden");
 }
 
-add_task(function* testExceptionAddition() {
-  yield UrlClassifierTestUtils.addTestTrackers();
-  let privateWin = yield promiseOpenAndLoadWindow({private: true}, true);
+add_task(async function testExceptionAddition() {
+  await UrlClassifierTestUtils.addTestTrackers();
+  let privateWin = await promiseOpenAndLoadWindow({private: true}, true);
   browser = privateWin.gBrowser;
-  let tab = browser.selectedTab = browser.addTab();
+  let tab = await BrowserTestUtils.openNewForegroundTab({ gBrowser: browser, waitForLoad: true, waitForStateStop: true });
 
   TrackingProtection = browser.ownerGlobal.TrackingProtection;
-  yield pushPrefs([PB_PREF, true]);
+  await pushPrefs([PB_PREF, true]);
 
   ok(TrackingProtection.enabled, "TP is enabled after setting the pref");
 
   info("Load a test page containing tracking elements");
-  yield promiseTabLoadEvent(tab, TRACKING_PAGE);
+  await promiseTabLoadEvent(tab, TRACKING_PAGE);
 
   testTrackingPage(tab.ownerGlobal);
 
@@ -92,30 +92,30 @@ add_task(function* testExceptionAddition() {
   clickButton("#tracking-action-unblock");
   is(identityPopupState(), "closed", "foobar");
 
-  yield tabReloadPromise;
+  await tabReloadPromise;
   testTrackingPageUnblocked();
 
   info("Test that the exception is remembered across tabs in the same private window");
   tab = browser.selectedTab = browser.addTab();
 
   info("Load a test page containing tracking elements");
-  yield promiseTabLoadEvent(tab, TRACKING_PAGE);
+  await promiseTabLoadEvent(tab, TRACKING_PAGE);
   testTrackingPageUnblocked();
 
-  yield promiseWindowClosed(privateWin);
+  await promiseWindowClosed(privateWin);
 });
 
-add_task(function* testExceptionPersistence() {
+add_task(async function testExceptionPersistence() {
   info("Open another private browsing window");
-  let privateWin = yield promiseOpenAndLoadWindow({private: true}, true);
+  let privateWin = await promiseOpenAndLoadWindow({private: true}, true);
   browser = privateWin.gBrowser;
-  let tab = browser.selectedTab = browser.addTab();
+  let tab = await BrowserTestUtils.openNewForegroundTab({ gBrowser: browser, waitForLoad: true, waitForStateStop: true });
 
   TrackingProtection = browser.ownerGlobal.TrackingProtection;
   ok(TrackingProtection.enabled, "TP is still enabled");
 
   info("Load a test page containing tracking elements");
-  yield promiseTabLoadEvent(tab, TRACKING_PAGE);
+  await promiseTabLoadEvent(tab, TRACKING_PAGE);
 
   testTrackingPage(tab.ownerGlobal);
 
@@ -124,7 +124,7 @@ add_task(function* testExceptionPersistence() {
   clickButton("#tracking-action-unblock");
   is(identityPopupState(), "closed", "foobar");
 
-  yield tabReloadPromise;
+  await tabReloadPromise;
   testTrackingPageUnblocked();
 
   privateWin.close();

@@ -3,21 +3,22 @@
 
 "use strict";
 
-const Profiler = Cc["@mozilla.org/tools/profiler;1"].getService(Ci.nsIProfiler);
-
 function check_actors(expect) {
-  do_check_eq(expect, DebuggerServer.tabActorFactories.hasOwnProperty("registeredActor1"));
-  do_check_eq(expect, DebuggerServer.tabActorFactories.hasOwnProperty("registeredActor2"));
+  Assert.equal(expect,
+               DebuggerServer.tabActorFactories.hasOwnProperty("registeredActor1"));
+  Assert.equal(expect,
+               DebuggerServer.tabActorFactories.hasOwnProperty("registeredActor2"));
 
-  do_check_eq(expect, DebuggerServer.globalActorFactories.hasOwnProperty("registeredActor2"));
-  do_check_eq(expect, DebuggerServer.globalActorFactories.hasOwnProperty("registeredActor1"));
+  Assert.equal(expect,
+               DebuggerServer.globalActorFactories.hasOwnProperty("registeredActor2"));
+  Assert.equal(expect,
+               DebuggerServer.globalActorFactories.hasOwnProperty("registeredActor1"));
 }
 
-function run_test()
-{
+function run_test() {
   // Allow incoming connections.
   DebuggerServer.init();
-  DebuggerServer.addBrowserActors();
+  DebuggerServer.registerAllActors();
 
   add_test(test_deprecated_api);
   add_test(test_lazy_api);
@@ -32,12 +33,9 @@ function test_deprecated_api() {
 
   check_actors(true);
 
-  check_except(() => {
-    DebuggerServer.registerModule("xpcshell-test/registertestactors-01");
-  });
-  check_except(() => {
-    DebuggerServer.registerModule("xpcshell-test/registertestactors-02");
-  });
+  // Calling registerModule again is just a no-op and doesn't throw
+  DebuggerServer.registerModule("xpcshell-test/registertestactors-01");
+  DebuggerServer.registerModule("xpcshell-test/registertestactors-02");
 
   DebuggerServer.unregisterModule("xpcshell-test/registertestactors-01");
   DebuggerServer.unregisterModule("xpcshell-test/registertestactors-02");
@@ -61,41 +59,41 @@ function test_lazy_api() {
       isActorInstanciated = true;
     }
   }
-  Services.obs.addObserver(onActorEvent, "actor", false);
+  Services.obs.addObserver(onActorEvent, "actor");
   DebuggerServer.registerModule("xpcshell-test/registertestactors-03", {
     prefix: "lazy",
     constructor: "LazyActor",
     type: { global: true, tab: true }
   });
   // The actor is immediatly registered, but not loaded
-  do_check_true(DebuggerServer.tabActorFactories.hasOwnProperty("lazyActor"));
-  do_check_true(DebuggerServer.globalActorFactories.hasOwnProperty("lazyActor"));
-  do_check_false(isActorLoaded);
-  do_check_false(isActorInstanciated);
+  Assert.ok(DebuggerServer.tabActorFactories.hasOwnProperty("lazyActor"));
+  Assert.ok(DebuggerServer.globalActorFactories.hasOwnProperty("lazyActor"));
+  Assert.ok(!isActorLoaded);
+  Assert.ok(!isActorInstanciated);
 
   let client = new DebuggerClient(DebuggerServer.connectPipe());
   client.connect().then(function onConnect() {
-    client.listTabs(onListTabs);
+    client.listTabs().then(onListTabs);
   });
-  function onListTabs(aResponse) {
+  function onListTabs(response) {
     // On listTabs, the actor is still not loaded,
     // but we can see its name in the list of available actors
-    do_check_false(isActorLoaded);
-    do_check_false(isActorInstanciated);
-    do_check_true("lazyActor" in aResponse);
+    Assert.ok(!isActorLoaded);
+    Assert.ok(!isActorInstanciated);
+    Assert.ok("lazyActor" in response);
 
     let {LazyFront} = require("xpcshell-test/registertestactors-03");
-    let front = LazyFront(client, aResponse);
+    let front = LazyFront(client, response);
     front.hello().then(onRequest);
   }
-  function onRequest(aResponse) {
-    do_check_eq(aResponse, "world");
+  function onRequest(response) {
+    Assert.equal(response, "world");
 
     // Finally, the actor is loaded on the first request being made to it
-    do_check_true(isActorLoaded);
-    do_check_true(isActorInstanciated);
+    Assert.ok(isActorLoaded);
+    Assert.ok(isActorInstanciated);
 
-    Services.obs.removeObserver(onActorEvent, "actor", false);
+    Services.obs.removeObserver(onActorEvent, "actor");
     client.close().then(() => run_next_test());
   }
 }
@@ -105,8 +103,8 @@ function cleanup() {
 
   // Check that all actors are unregistered on server destruction
   check_actors(false);
-  do_check_false(DebuggerServer.tabActorFactories.hasOwnProperty("lazyActor"));
-  do_check_false(DebuggerServer.globalActorFactories.hasOwnProperty("lazyActor"));
+  Assert.ok(!DebuggerServer.tabActorFactories.hasOwnProperty("lazyActor"));
+  Assert.ok(!DebuggerServer.globalActorFactories.hasOwnProperty("lazyActor"));
 
   run_next_test();
 }

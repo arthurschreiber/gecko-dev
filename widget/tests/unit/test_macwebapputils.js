@@ -10,8 +10,8 @@ var Cc = Components.classes;
 var Cu = Components.utils;
 var Cr = Components.results;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 function test_find_app()
 {
@@ -21,8 +21,8 @@ function test_find_app()
 
   let path;
   path = mwaUtils.pathForAppWithIdentifier(sig);
-  do_print("TextEdit path: " + path + "\n");
-  do_check_neq(path, "");
+  info("TextEdit path: " + path + "\n");
+  Assert.notEqual(path, "");
 }
 
 function test_dont_find_fake_app()
@@ -33,7 +33,7 @@ function test_dont_find_fake_app()
 
   let path;
   path = mwaUtils.pathForAppWithIdentifier(sig);
-  do_check_eq(path, "");
+  Assert.equal(path, "");
 }
 
 

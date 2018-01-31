@@ -13,6 +13,7 @@
 #include "nsChromeProtocolHandler.h"
 #include "nsChromeRegistry.h"
 #include "nsCOMPtr.h"
+#include "nsContentUtils.h"
 #include "nsThreadUtils.h"
 #include "nsIChannel.h"
 #include "nsIChromeRegistry.h"
@@ -75,13 +76,16 @@ nsChromeProtocolHandler::NewURI(const nsACString &aSpec,
 
     // Chrome: URLs (currently) have no additional structure beyond that provided
     // by standard URLs, so there is no "outer" given to CreateInstance
-
-    RefPtr<mozilla::net::nsStandardURL> surl = new mozilla::net::nsStandardURL();
-
-    nsresult rv = surl->Init(nsIStandardURL::URLTYPE_STANDARD, -1, aSpec,
-                             aCharset, aBaseURI);
-    if (NS_FAILED(rv))
+    nsresult rv;
+    nsCOMPtr<nsIURL> surl;
+    rv = NS_MutateURI(new mozilla::net::nsStandardURL::Mutator())
+           .Apply<nsIStandardURLMutator>(&nsIStandardURLMutator::Init,
+                                         nsIStandardURL::URLTYPE_STANDARD, -1,
+                                         nsCString(aSpec), aCharset, aBaseURI, nullptr)
+           .Finalize(surl);
+    if (NS_FAILED(rv)) {
         return rv;
+    }
 
     // Canonify the "chrome:" URL; e.g., so that we collapse
     // "chrome://navigator/content/" and "chrome://navigator/content"
@@ -91,7 +95,7 @@ nsChromeProtocolHandler::NewURI(const nsACString &aSpec,
     if (NS_FAILED(rv))
         return rv;
 
-    surl->SetMutable(false);
+    NS_TryToSetImmutable(surl);
 
     surl.forget(result);
     return NS_OK;
@@ -105,6 +109,8 @@ nsChromeProtocolHandler::NewChannel2(nsIURI* aURI,
     nsresult rv;
 
     NS_ENSURE_ARG_POINTER(aURI);
+    NS_ENSURE_ARG_POINTER(aLoadInfo);
+
     NS_PRECONDITION(aResult, "Null out param");
 
 #ifdef DEBUG
@@ -145,6 +151,12 @@ nsChromeProtocolHandler::NewChannel2(nsIURI* aURI,
         return rv;
     }
 
+    // We don't want to allow the inner protocol handler modify the result principal URI
+    // since we want either |aURI| or anything pre-set by upper layers to prevail.
+    nsCOMPtr<nsIURI> savedResultPrincipalURI;
+    rv = aLoadInfo->GetResultPrincipalURI(getter_AddRefs(savedResultPrincipalURI));
+    NS_ENSURE_SUCCESS(rv, rv);
+
     rv = NS_NewChannelInternal(getter_AddRefs(result),
                                resolvedURI,
                                aLoadInfo);
@@ -168,9 +180,8 @@ nsChromeProtocolHandler::NewChannel2(nsIURI* aURI,
 
     // Make sure that the channel remembers where it was
     // originally loaded from.
-    nsLoadFlags loadFlags = 0;
-    result->GetLoadFlags(&loadFlags);
-    result->SetLoadFlags(loadFlags & ~nsIChannel::LOAD_REPLACE);
+    rv = aLoadInfo->SetResultPrincipalURI(savedResultPrincipalURI);
+    NS_ENSURE_SUCCESS(rv, rv);
     rv = result->SetOriginalURI(aURI);
     if (NS_FAILED(rv)) return rv;
 
@@ -178,19 +189,9 @@ nsChromeProtocolHandler::NewChannel2(nsIURI* aURI,
     // property of the result
     nsCOMPtr<nsIURL> url = do_QueryInterface(aURI);
     nsAutoCString path;
-    rv = url->GetPath(path);
-    if (StringBeginsWith(path, NS_LITERAL_CSTRING("/content/")))
-    {
-        nsCOMPtr<nsIScriptSecurityManager> securityManager =
-                 do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID, &rv);
-        if (NS_FAILED(rv)) return rv;
-
-        nsCOMPtr<nsIPrincipal> principal;
-        rv = securityManager->GetSystemPrincipal(getter_AddRefs(principal));
-        if (NS_FAILED(rv)) return rv;
-
-        nsCOMPtr<nsISupports> owner = do_QueryInterface(principal);
-        result->SetOwner(owner);
+    rv = url->GetPathQueryRef(path);
+    if (StringBeginsWith(path, NS_LITERAL_CSTRING("/content/"))) {
+        result->SetOwner(nsContentUtils::GetSystemPrincipal());
     }
 
     // XXX Removed dependency-tracking code from here, because we're not

@@ -7,13 +7,13 @@ var EXPORTED_SYMBOLS = ["Addon", "STATE_ENABLED", "STATE_DISABLED"];
 
 const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
-Cu.import("resource://gre/modules/AddonManager.jsm");
-Cu.import("resource://gre/modules/addons/AddonRepository.jsm");
-Cu.import("resource://gre/modules/NetUtil.jsm");
-Cu.import("resource://services-common/async.js");
-Cu.import("resource://services-sync/addonutils.js");
-Cu.import("resource://services-sync/util.js");
-Cu.import("resource://tps/logger.jsm");
+ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
+ChromeUtils.import("resource://gre/modules/addons/AddonRepository.jsm");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://services-common/async.js");
+ChromeUtils.import("resource://services-sync/addonutils.js");
+ChromeUtils.import("resource://services-sync/util.js");
+ChromeUtils.import("resource://tps/logger.jsm");
 
 const ADDONSGETURL = "http://127.0.0.1:4567/";
 const STATE_ENABLED = 1;
@@ -54,21 +54,13 @@ Addon.prototype = {
 
   uninstall: function uninstall() {
     // find our addon locally
-    let cb = Async.makeSyncCallback();
-    AddonManager.getAddonByID(this.id, cb);
-    let addon = Async.waitForSyncCallback(cb);
-
-    Logger.AssertTrue(!!addon, 'could not find addon ' + this.id + ' to uninstall');
-
-    cb = Async.makeSpinningCallback();
-    AddonUtils.uninstallAddon(addon, cb);
-    cb.wait();
+    let addon = Async.promiseSpinningly(AddonManager.getAddonByID(this.id));
+    Logger.AssertTrue(!!addon, "could not find addon " + this.id + " to uninstall");
+    Async.promiseSpinningly(AddonUtils.uninstallAddon(addon));
   },
 
   find: function find(state) {
-    let cb = Async.makeSyncCallback();
-    AddonManager.getAddonByID(this.id, cb);
-    let addon = Async.waitForSyncCallback(cb);
+    let addon = Async.promiseSpinningly(AddonManager.getAddonByID(this.id));
 
     if (!addon) {
       Logger.logInfo("Could not find add-on with ID: " + this.id);
@@ -118,9 +110,7 @@ Addon.prototype = {
       throw new Error("Unknown flag to setEnabled: " + flag);
     }
 
-    let cb = Async.makeSpinningCallback();
-    AddonUtils.updateUserDisabled(this.addon, userDisabled, cb);
-    cb.wait();
+    AddonUtils.updateUserDisabled(this.addon, userDisabled);
 
     return true;
   }

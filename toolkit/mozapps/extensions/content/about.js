@@ -8,8 +8,10 @@
 
 /* import-globals-from ../../../content/contentAreaUtils.js */
 
+/* exported init, loadHomepage */
+
 var Cu = Components.utils;
-Cu.import("resource://gre/modules/AddonManager.jsm");
+ChromeUtils.import("resource://gre/modules/AddonManager.jsm");
 
 function init() {
   var addon = window.arguments[0];

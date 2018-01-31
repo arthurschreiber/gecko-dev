@@ -25,12 +25,6 @@ XPCJSRuntime::AddWrappedJSRoot(nsXPCWrappedJS* wrappedJS)
     wrappedJS->AddToRootSet(&mWrappedJSRoots);
 }
 
-inline void
-XPCJSRuntime::AddObjectHolderRoot(XPCJSObjectHolder* holder)
-{
-    holder->AddToRootSet(&mObjectHolderRoots);
-}
-
 /***************************************************************************/
 
 inline bool
@@ -39,24 +33,24 @@ XPCCallContext::IsValid() const
     return mState != INIT_FAILED;
 }
 
-inline XPCJSRuntime*
-XPCCallContext::GetRuntime() const
+inline XPCJSContext*
+XPCCallContext::GetContext() const
 {
-    CHECK_STATE(HAVE_RUNTIME);
-    return mXPCJSRuntime;
+    CHECK_STATE(HAVE_CONTEXT);
+    return mXPCJSContext;
 }
 
 inline JSContext*
 XPCCallContext::GetJSContext() const
 {
-    CHECK_STATE(HAVE_RUNTIME);
+    CHECK_STATE(HAVE_CONTEXT);
     return mJSContext;
 }
 
 inline XPCCallContext*
 XPCCallContext::GetPrevCallContext() const
 {
-    CHECK_STATE(HAVE_RUNTIME);
+    CHECK_STATE(HAVE_CONTEXT);
     return mPrevCallContext;
 }
 
@@ -99,11 +93,11 @@ XPCCallContext::GetTearOff() const
     return mTearOff;
 }
 
-inline XPCNativeScriptableInfo*
-XPCCallContext::GetScriptableInfo() const
+inline nsIXPCScriptable*
+XPCCallContext::GetScriptable() const
 {
     CHECK_STATE(HAVE_OBJECT);
-    return mScriptableInfo;
+    return mScriptable;
 }
 
 inline bool
@@ -175,7 +169,7 @@ XPCCallContext::GetRetVal() const
 }
 
 inline void
-XPCCallContext::SetRetVal(JS::Value val)
+XPCCallContext::SetRetVal(const JS::Value& val)
 {
     CHECK_STATE(HAVE_ARGS);
     if (mRetVal)
@@ -185,29 +179,29 @@ XPCCallContext::SetRetVal(JS::Value val)
 inline jsid
 XPCCallContext::GetResolveName() const
 {
-    CHECK_STATE(HAVE_RUNTIME);
-    return XPCJSRuntime::Get()->GetResolveName();
+    CHECK_STATE(HAVE_CONTEXT);
+    return GetContext()->GetResolveName();
 }
 
 inline jsid
 XPCCallContext::SetResolveName(JS::HandleId name)
 {
-    CHECK_STATE(HAVE_RUNTIME);
-    return XPCJSRuntime::Get()->SetResolveName(name);
+    CHECK_STATE(HAVE_CONTEXT);
+    return GetContext()->SetResolveName(name);
 }
 
 inline XPCWrappedNative*
 XPCCallContext::GetResolvingWrapper() const
 {
     CHECK_STATE(HAVE_OBJECT);
-    return XPCJSRuntime::Get()->GetResolvingWrapper();
+    return GetContext()->GetResolvingWrapper();
 }
 
 inline XPCWrappedNative*
 XPCCallContext::SetResolvingWrapper(XPCWrappedNative* w)
 {
     CHECK_STATE(HAVE_OBJECT);
-    return XPCJSRuntime::Get()->SetResolvingWrapper(w);
+    return GetContext()->SetResolvingWrapper(w);
 }
 
 inline uint16_t
@@ -366,20 +360,6 @@ XPCNativeSet::FindMember(JS::HandleId name,
 }
 
 inline XPCNativeInterface*
-XPCNativeSet::FindNamedInterface(jsid name) const
-{
-    XPCNativeInterface* const * pp = mInterfaces;
-
-    for (int i = (int) mInterfaceCount; i > 0; i--, pp++) {
-        XPCNativeInterface* iface = *pp;
-
-        if (name == iface->GetName())
-            return iface;
-    }
-    return nullptr;
-}
-
-inline XPCNativeInterface*
 XPCNativeSet::FindInterfaceWithIID(const nsIID& iid) const
 {
     XPCNativeInterface* const * pp = mInterfaces;
@@ -446,34 +426,18 @@ XPCNativeSet::MatchesSetUpToInterface(const XPCNativeSet* other,
     return false;
 }
 
-inline void XPCNativeSet::Mark()
-{
-    mMarked = 1;
-}
-
-#ifdef DEBUG
-inline void XPCNativeSet::ASSERT_NotMarked()
-{
-    MOZ_ASSERT(!IsMarked(), "bad");
-}
-#endif
-
 /***************************************************************************/
 
 inline
 JSObject* XPCWrappedNativeTearOff::GetJSObjectPreserveColor() const
 {
-    return mJSObject.getPtr();
+    return mJSObject.unbarrieredGetPtr();
 }
 
 inline
 JSObject* XPCWrappedNativeTearOff::GetJSObject()
 {
-    JSObject* obj = GetJSObjectPreserveColor();
-    if (obj) {
-      JS::ExposeObjectToActiveJS(obj);
-    }
-    return obj;
+    return mJSObject;
 }
 
 inline
@@ -536,10 +500,10 @@ xpc_ForcePropertyResolve(JSContext* cx, JS::HandleObject obj, jsid idArg)
 }
 
 inline jsid
-GetRTIdByIndex(JSContext* cx, unsigned index)
+GetJSIDByIndex(JSContext* cx, unsigned index)
 {
-  XPCJSRuntime* rt = nsXPConnect::XPConnect()->GetRuntime();
-  return rt->GetStringID(index);
+    XPCJSRuntime* xpcrt = nsXPConnect::GetRuntimeInstance();
+    return xpcrt->GetStringID(index);
 }
 
 inline

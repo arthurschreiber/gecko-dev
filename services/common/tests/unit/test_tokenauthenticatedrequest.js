@@ -1,10 +1,10 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-Cu.import("resource://services-crypto/utils.js");
-Cu.import("resource://services-common/async.js");
-Cu.import("resource://services-common/rest.js");
-Cu.import("resource://services-common/utils.js");
+ChromeUtils.import("resource://services-crypto/utils.js");
+ChromeUtils.import("resource://services-common/async.js");
+ChromeUtils.import("resource://services-common/rest.js");
+ChromeUtils.import("resource://services-common/utils.js");
 
 function run_test() {
   initTestLogging("Trace");
@@ -24,13 +24,13 @@ add_test(function test_authenticated_request() {
 
   let nonce = btoa(CryptoUtils.generateRandomBytes(16));
   let ts = Math.floor(Date.now() / 1000);
-  let extra = {ts: ts, nonce: nonce};
+  let extra = {ts, nonce};
 
   let auth;
 
   let server = httpd_setup({"/foo": function(request, response) {
-      do_check_true(request.hasHeader("Authorization"));
-      do_check_eq(auth, request.getHeader("Authorization"));
+      Assert.ok(request.hasHeader("Authorization"));
+      Assert.equal(auth, request.getHeader("Authorization"));
 
       response.setStatusLine(request.httpVersion, 200, "OK");
       response.bodyOutputStream.write(message, message.length);
@@ -40,13 +40,13 @@ add_test(function test_authenticated_request() {
   let sig = CryptoUtils.computeHTTPMACSHA1(id, key, method, uri, extra);
   auth = sig.getHeader();
 
-  let req = new TokenAuthenticatedRESTRequest(uri, {id: id, key: key}, extra);
+  let req = new TokenAuthenticatedRESTRequest(uri, {id, key}, extra);
   let cb = Async.makeSpinningCallback();
   req.get(cb);
   let result = cb.wait();
 
-  do_check_eq(null, result);
-  do_check_eq(message, req.response.body);
+  Assert.equal(null, result);
+  Assert.equal(message, req.response.body);
 
   server.stop(run_next_test);
 });

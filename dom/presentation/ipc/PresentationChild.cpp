@@ -1,5 +1,5 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,14 +59,18 @@ PresentationChild::DeallocPPresentationRequestChild(PPresentationRequestChild* a
   return true;
 }
 
-bool PresentationChild::RecvPPresentationBuilderConstructor(
+mozilla::ipc::IPCResult
+PresentationChild::RecvPPresentationBuilderConstructor(
   PPresentationBuilderChild* aActor,
   const nsString& aSessionId,
   const uint8_t& aRole)
 {
   // Child will build the session transport
   PresentationBuilderChild* actor = static_cast<PresentationBuilderChild*>(aActor);
-  return NS_WARN_IF(NS_FAILED(actor->Init())) ? false : true;
+  if (NS_WARN_IF(NS_FAILED(actor->Init()))) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
 }
 
 PPresentationBuilderChild*
@@ -88,16 +92,20 @@ PresentationChild::DeallocPPresentationBuilderChild(PPresentationBuilderChild* a
 }
 
 
-bool
-PresentationChild::RecvNotifyAvailableChange(const bool& aAvailable)
+mozilla::ipc::IPCResult
+PresentationChild::RecvNotifyAvailableChange(
+                                        nsTArray<nsString>&& aAvailabilityUrls,
+                                        const bool& aAvailable)
 {
   if (mService) {
-    Unused << NS_WARN_IF(NS_FAILED(mService->NotifyAvailableChange(aAvailable)));
+    Unused <<
+      NS_WARN_IF(NS_FAILED(mService->NotifyAvailableChange(aAvailabilityUrls,
+                                                           aAvailable)));
   }
-  return true;
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 PresentationChild::RecvNotifySessionStateChange(const nsString& aSessionId,
                                                 const uint16_t& aState,
                                                 const nsresult& aReason)
@@ -107,27 +115,42 @@ PresentationChild::RecvNotifySessionStateChange(const nsString& aSessionId,
                                                                       aState,
                                                                       aReason)));
   }
-  return true;
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 PresentationChild::RecvNotifyMessage(const nsString& aSessionId,
-                                     const nsCString& aData)
+                                     const nsCString& aData,
+                                     const bool& aIsBinary)
 {
   if (mService) {
-    Unused << NS_WARN_IF(NS_FAILED(mService->NotifyMessage(aSessionId, aData)));
+    Unused << NS_WARN_IF(NS_FAILED(mService->NotifyMessage(aSessionId,
+                                                           aData,
+                                                           aIsBinary)));
   }
-  return true;
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 PresentationChild::RecvNotifySessionConnect(const uint64_t& aWindowId,
                                             const nsString& aSessionId)
 {
   if (mService) {
     Unused << NS_WARN_IF(NS_FAILED(mService->NotifySessionConnect(aWindowId, aSessionId)));
   }
-  return true;
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult
+PresentationChild::RecvNotifyCloseSessionTransport(const nsString& aSessionId,
+                                                   const uint8_t& aRole,
+                                                   const nsresult& aReason)
+{
+  if (mService) {
+    Unused << NS_WARN_IF(NS_FAILED(
+      mService->CloseContentSessionTransport(aSessionId, aRole, aReason)));
+  }
+  return IPC_OK();
 }
 
 /*
@@ -155,11 +178,11 @@ PresentationRequestChild::ActorDestroy(ActorDestroyReason aWhy)
   mCallback = nullptr;
 }
 
-bool
+mozilla::ipc::IPCResult
 PresentationRequestChild::Recv__delete__(const nsresult& aResult)
 {
   if (mActorDestroyed) {
-    return true;
+    return IPC_OK();
   }
 
   if (mCallback) {
@@ -168,12 +191,12 @@ PresentationRequestChild::Recv__delete__(const nsresult& aResult)
     }
   }
 
-  return true;
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 PresentationRequestChild::RecvNotifyRequestUrlSelected(const nsString& aUrl)
 {
   Unused << NS_WARN_IF(NS_FAILED(mCallback->NotifySuccess(aUrl)));
-  return true;
+  return IPC_OK();
 }

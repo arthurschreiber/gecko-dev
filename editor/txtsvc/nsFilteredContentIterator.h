@@ -12,7 +12,7 @@
 #include "nsISupportsImpl.h"
 #include "nscore.h"
 
-class nsIAtom;
+class nsAtom;
 class nsIDOMNode;
 class nsIDOMRange;
 class nsINode;
@@ -32,6 +32,10 @@ public:
   /* nsIContentIterator */
   virtual nsresult Init(nsINode* aRoot) override;
   virtual nsresult Init(nsIDOMRange* aRange) override;
+  virtual nsresult Init(nsINode* aStartContainer, uint32_t aStartOffset,
+                        nsINode* aEndContainer, uint32_t aEndOffset) override;
+  virtual nsresult Init(const mozilla::RawRangeBoundary& aStart,
+                        const mozilla::RawRangeBoundary& aEnd) override;
   virtual void First() override;
   virtual void Last() override;
   virtual void Next() override;
@@ -49,21 +53,26 @@ protected:
 
   virtual ~nsFilteredContentIterator();
 
+  /**
+   * Callers must guarantee that mRange isn't nullptr and it's positioned.
+   */
+  nsresult InitWithRange();
+
   // enum to give us the direction
   typedef enum {eDirNotSet, eForward, eBackward} eDirectionType;
-  nsresult AdvanceNode(nsIDOMNode* aNode, nsIDOMNode*& aNewNode, eDirectionType aDir);
-  void CheckAdvNode(nsIDOMNode* aNode, bool& aDidSkip, eDirectionType aDir);
+  nsresult AdvanceNode(nsINode* aNode, nsINode*& aNewNode, eDirectionType aDir);
+  void CheckAdvNode(nsINode* aNode, bool& aDidSkip, eDirectionType aDir);
   nsresult SwitchDirections(bool aChangeToForward);
 
   nsCOMPtr<nsIContentIterator> mCurrentIterator;
   nsCOMPtr<nsIContentIterator> mIterator;
   nsCOMPtr<nsIContentIterator> mPreIterator;
 
-  nsCOMPtr<nsIAtom> mBlockQuoteAtom;
-  nsCOMPtr<nsIAtom> mScriptAtom;
-  nsCOMPtr<nsIAtom> mTextAreaAtom;
-  nsCOMPtr<nsIAtom> mSelectAreaAtom;
-  nsCOMPtr<nsIAtom> mMapAtom;
+  RefPtr<nsAtom> mBlockQuoteAtom;
+  RefPtr<nsAtom> mScriptAtom;
+  RefPtr<nsAtom> mTextAreaAtom;
+  RefPtr<nsAtom> mSelectAreaAtom;
+  RefPtr<nsAtom> mMapAtom;
 
   nsCOMPtr<nsITextServicesFilter> mFilter;
   RefPtr<nsRange>               mRange;

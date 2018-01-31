@@ -20,7 +20,12 @@
 #include "nsReadableUtils.h"
 #include "nsStringFwd.h"
 
-class nsIAtom;
+// Workaround for windows headers
+#ifdef SetProp
+#undef SetProp
+#endif
+
+class nsAtom;
 class nsIDOMDocument;
 
 namespace mozilla {
@@ -31,13 +36,18 @@ using namespace dom;
  * mozilla::TypeInState
  *******************************************************************/
 
-NS_IMPL_CYCLE_COLLECTION(TypeInState, mLastSelectionContainer)
-NS_IMPL_CYCLE_COLLECTING_ADDREF(TypeInState)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(TypeInState)
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TypeInState)
-  NS_INTERFACE_MAP_ENTRY(nsISelectionListener)
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-NS_INTERFACE_MAP_END
+NS_IMPL_CYCLE_COLLECTION_CLASS(TypeInState)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(TypeInState)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mLastSelectionContainer)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(TypeInState)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLastSelectionContainer)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(TypeInState, AddRef)
+NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(TypeInState, Release)
 
 TypeInState::TypeInState()
   : mRelativeFontSize(0)
@@ -68,11 +78,8 @@ TypeInState::UpdateSelState(Selection* aSelection)
                        &mLastSelectionOffset);
 }
 
-
-NS_IMETHODIMP
-TypeInState::NotifySelectionChanged(nsIDOMDocument* aDOMDocument,
-                                    nsISelection* aSelection,
-                                    int16_t aReason)
+void
+TypeInState::OnSelectionChange(Selection& aSelection)
 {
   // XXX: Selection currently generates bogus selection changed notifications
   // XXX: (bug 140303). It can notify us when the selection hasn't actually
@@ -83,50 +90,44 @@ TypeInState::NotifySelectionChanged(nsIDOMDocument* aDOMDocument,
   // XXX:
   // XXX: This code temporarily fixes the problem where clicking the mouse in
   // XXX: the same location clears the type-in-state.
-  RefPtr<Selection> selection =
-    aSelection ? aSelection->AsSelection() : nullptr;
 
-  if (aSelection) {
-    int32_t rangeCount = selection->RangeCount();
+  // TODO: We can make this use nsINode instead of nsIDOMNode.
+  if (aSelection.IsCollapsed() && aSelection.RangeCount()) {
+    nsCOMPtr<nsIDOMNode> selNode;
+    int32_t selOffset = 0;
 
-    if (selection->Collapsed() && rangeCount) {
-      nsCOMPtr<nsIDOMNode> selNode;
-      int32_t selOffset = 0;
-
-      nsresult result =
-        EditorBase::GetStartNodeAndOffset(selection, getter_AddRefs(selNode),
-                                          &selOffset);
-
-      NS_ENSURE_SUCCESS(result, result);
-
-      if (selNode && selNode == mLastSelectionContainer && selOffset == mLastSelectionOffset)
-      {
-        // We got a bogus selection changed notification!
-        return NS_OK;
-      }
-
-      mLastSelectionContainer = selNode;
-      mLastSelectionOffset = selOffset;
+    nsresult rv =
+      EditorBase::GetStartNodeAndOffset(&aSelection, getter_AddRefs(selNode),
+                                        &selOffset);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return;
     }
-    else
-    {
-      mLastSelectionContainer = nullptr;
-      mLastSelectionOffset = 0;
+
+    if (selNode &&
+        selNode == mLastSelectionContainer &&
+        selOffset == mLastSelectionOffset) {
+      // We got a bogus selection changed notification!
+      return;
     }
+
+    mLastSelectionContainer = selNode;
+    mLastSelectionOffset = selOffset;
+  } else {
+    mLastSelectionContainer = nullptr;
+    mLastSelectionOffset = 0;
   }
 
   Reset();
-  return NS_OK;
 }
 
 void
 TypeInState::Reset()
 {
-  for(uint32_t i = 0, n = mClearedArray.Length(); i < n; i++) {
+  for (size_t i = 0, n = mClearedArray.Length(); i < n; i++) {
     delete mClearedArray[i];
   }
   mClearedArray.Clear();
-  for(uint32_t i = 0, n = mSetArray.Length(); i < n; i++) {
+  for (size_t i = 0, n = mSetArray.Length(); i < n; i++) {
     delete mSetArray[i];
   }
   mSetArray.Clear();
@@ -134,8 +135,8 @@ TypeInState::Reset()
 
 
 void
-TypeInState::SetProp(nsIAtom* aProp,
-                     const nsAString& aAttr,
+TypeInState::SetProp(nsAtom* aProp,
+                     nsAtom* aAttr,
                      const nsAString& aValue)
 {
   // special case for big/small, these nest
@@ -167,12 +168,12 @@ void
 TypeInState::ClearAllProps()
 {
   // null prop means "all" props
-  ClearProp(nullptr, EmptyString());
+  ClearProp(nullptr, nullptr);
 }
 
 void
-TypeInState::ClearProp(nsIAtom* aProp,
-                       const nsAString& aAttr)
+TypeInState::ClearProp(nsAtom* aProp,
+                       nsAtom* aAttr)
 {
   // if it's already cleared we are done
   if (IsPropCleared(aProp, aAttr)) {
@@ -194,10 +195,10 @@ TypeInState::ClearProp(nsIAtom* aProp,
  * TakeClearProperty() hands back next property item on the clear list.
  * Caller assumes ownership of PropItem and must delete it.
  */
-PropItem*
+UniquePtr<PropItem>
 TypeInState::TakeClearProperty()
 {
-  uint32_t count = mClearedArray.Length();
+  size_t count = mClearedArray.Length();
   if (!count) {
     return nullptr;
   }
@@ -205,24 +206,24 @@ TypeInState::TakeClearProperty()
   --count; // indices are zero based
   PropItem* propItem = mClearedArray[count];
   mClearedArray.RemoveElementAt(count);
-  return propItem;
+  return UniquePtr<PropItem>(propItem);
 }
 
 /**
  * TakeSetProperty() hands back next poroperty item on the set list.
  * Caller assumes ownership of PropItem and must delete it.
  */
-PropItem*
+UniquePtr<PropItem>
 TypeInState::TakeSetProperty()
 {
-  uint32_t count = mSetArray.Length();
+  size_t count = mSetArray.Length();
   if (!count) {
     return nullptr;
   }
   count--; // indices are zero based
   PropItem* propItem = mSetArray[count];
   mSetArray.RemoveElementAt(count);
-  return propItem;
+  return UniquePtr<PropItem>(propItem);
 }
 
 /**
@@ -240,94 +241,73 @@ TypeInState::TakeRelativeFontSize()
 void
 TypeInState::GetTypingState(bool& isSet,
                             bool& theSetting,
-                            nsIAtom* aProp)
-{
-  GetTypingState(isSet, theSetting, aProp, EmptyString(), nullptr);
-}
-
-void
-TypeInState::GetTypingState(bool& isSet,
-                            bool& theSetting,
-                            nsIAtom* aProp,
-                            const nsString& aAttr,
+                            nsAtom* aProp,
+                            nsAtom* aAttr,
                             nsString* aValue)
 {
-  if (IsPropSet(aProp, aAttr, aValue))
-  {
+  if (IsPropSet(aProp, aAttr, aValue)) {
     isSet = true;
     theSetting = true;
-  }
-  else if (IsPropCleared(aProp, aAttr))
-  {
+  } else if (IsPropCleared(aProp, aAttr)) {
     isSet = true;
     theSetting = false;
-  }
-  else
-  {
+  } else {
     isSet = false;
   }
 }
 
 void
-TypeInState::RemovePropFromSetList(nsIAtom* aProp,
-                                   const nsAString& aAttr)
+TypeInState::RemovePropFromSetList(nsAtom* aProp,
+                                   nsAtom* aAttr)
 {
   int32_t index;
-  if (!aProp)
-  {
+  if (!aProp) {
     // clear _all_ props
-    for(uint32_t i = 0, n = mSetArray.Length(); i < n; i++) {
+    for (size_t i = 0, n = mSetArray.Length(); i < n; i++) {
       delete mSetArray[i];
     }
     mSetArray.Clear();
     mRelativeFontSize=0;
-  }
-  else if (FindPropInList(aProp, aAttr, nullptr, mSetArray, index))
-  {
+  } else if (FindPropInList(aProp, aAttr, nullptr, mSetArray, index)) {
     delete mSetArray[index];
     mSetArray.RemoveElementAt(index);
   }
 }
 
-
 void
-TypeInState::RemovePropFromClearedList(nsIAtom* aProp,
-                                       const nsAString& aAttr)
+TypeInState::RemovePropFromClearedList(nsAtom* aProp,
+                                       nsAtom* aAttr)
 {
   int32_t index;
-  if (FindPropInList(aProp, aAttr, nullptr, mClearedArray, index))
-  {
+  if (FindPropInList(aProp, aAttr, nullptr, mClearedArray, index)) {
     delete mClearedArray[index];
     mClearedArray.RemoveElementAt(index);
   }
 }
 
-
 bool
-TypeInState::IsPropSet(nsIAtom* aProp,
-                       const nsAString& aAttr,
+TypeInState::IsPropSet(nsAtom* aProp,
+                       nsAtom* aAttr,
                        nsAString* outValue)
 {
   int32_t i;
   return IsPropSet(aProp, aAttr, outValue, i);
 }
 
-
 bool
-TypeInState::IsPropSet(nsIAtom* aProp,
-                       const nsAString& aAttr,
+TypeInState::IsPropSet(nsAtom* aProp,
+                       nsAtom* aAttr,
                        nsAString* outValue,
                        int32_t& outIndex)
 {
   // linear search.  list should be short.
-  uint32_t i, count = mSetArray.Length();
-  for (i=0; i<count; i++)
-  {
+  size_t count = mSetArray.Length();
+  for (size_t i = 0; i < count; i++) {
     PropItem *item = mSetArray[i];
-    if ( (item->tag == aProp) &&
-         (item->attr == aAttr) )
-    {
-      if (outValue) *outValue = item->value;
+    if (item->tag == aProp && item->attr == aAttr) {
+      if (outValue) {
+        *outValue = item->value;
+      }
       outIndex = i;
       return true;
     }
@@ -337,8 +317,8 @@ TypeInState::IsPropSet(nsIAtom* aProp,
 
 
 bool
-TypeInState::IsPropCleared(nsIAtom* aProp,
-                           const nsAString& aAttr)
+TypeInState::IsPropCleared(nsAtom* aProp,
+                           nsAtom* aAttr)
 {
   int32_t i;
   return IsPropCleared(aProp, aAttr, i);
@@ -346,14 +326,14 @@ TypeInState::IsPropCleared(nsIAtom* aProp,
 
 
 bool
-TypeInState::IsPropCleared(nsIAtom* aProp,
-                           const nsAString& aAttr,
+TypeInState::IsPropCleared(nsAtom* aProp,
+                           nsAtom* aAttr,
                            int32_t& outIndex)
 {
-  if (FindPropInList(aProp, aAttr, nullptr, mClearedArray, outIndex))
+  if (FindPropInList(aProp, aAttr, nullptr, mClearedArray, outIndex)) {
     return true;
-  if (FindPropInList(0, EmptyString(), nullptr, mClearedArray, outIndex))
-  {
+  }
+  if (FindPropInList(nullptr, nullptr, nullptr, mClearedArray, outIndex)) {
     // special case for all props cleared
     outIndex = -1;
     return true;
@@ -362,21 +342,20 @@ TypeInState::IsPropCleared(nsIAtom* aProp,
 }
 
 bool
-TypeInState::FindPropInList(nsIAtom* aProp,
-                            const nsAString& aAttr,
+TypeInState::FindPropInList(nsAtom* aProp,
+                            nsAtom* aAttr,
                             nsAString* outValue,
                             nsTArray<PropItem*>& aList,
                             int32_t& outIndex)
 {
   // linear search.  list should be short.
-  uint32_t i, count = aList.Length();
-  for (i=0; i<count; i++)
-  {
+  size_t count = aList.Length();
+  for (size_t i = 0; i < count; i++) {
     PropItem *item = aList[i];
-    if ( (item->tag == aProp) &&
-         (item->attr == aAttr) )
-    {
-      if (outValue) *outValue = item->value;
+    if (item->tag == aProp && item->attr == aAttr) {
+      if (outValue) {
+        *outValue = item->value;
+      }
       outIndex = i;
       return true;
     }
@@ -390,12 +369,13 @@ TypeInState::FindPropInList(nsIAtom* aProp,
 
 PropItem::PropItem()
   : tag(nullptr)
+  , attr(nullptr)
 {
   MOZ_COUNT_CTOR(PropItem);
 }
 
-PropItem::PropItem(nsIAtom* aTag,
-                   const nsAString& aAttr,
+PropItem::PropItem(nsAtom* aTag,
+                   nsAtom* aAttr,
                    const nsAString &aValue)
   : tag(aTag)
   , attr(aAttr)

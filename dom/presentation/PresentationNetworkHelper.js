@@ -7,8 +7,8 @@
 
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
-Cu.import("resource://gre/modules/Messaging.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Messaging.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 const NETWORKHELPER_CID = Components.ID("{5fb96caa-6d49-4f6b-9a4b-65dd0d51f92d}");
 
@@ -19,7 +19,7 @@ PresentationNetworkHelper.prototype = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIPresentationNetworkHelper]),
 
   getWifiIPAddress: function(aListener) {
-    Messaging.sendRequestForResult({type: "Wifi:GetIPAddress"})
+    EventDispatcher.instance.sendRequestForResult({type: "Wifi:GetIPAddress"})
              .then(result => aListener.onGetWifiIPAddress(result),
                    err => aListener.onError(err));
   }

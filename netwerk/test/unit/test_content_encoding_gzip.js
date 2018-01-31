@@ -1,5 +1,5 @@
-Cu.import("resource://testing-common/httpd.js");
-Cu.import("resource://gre/modules/NetUtil.jsm");
+ChromeUtils.import("resource://testing-common/httpd.js");
+ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 var httpserver = new HttpServer();
 var index = 0;
@@ -69,7 +69,7 @@ function startIter() {
 
 function completeIter(request, data, ctx) {
     if (!(tests[index].flags & CL_EXPECT_FAILURE)) {
-	do_check_eq(data.length, tests[index].datalen);
+	Assert.equal(data.length, tests[index].datalen);
     }
     if (++index < tests.length) {
 	startIter();

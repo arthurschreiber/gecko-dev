@@ -4,26 +4,23 @@ var gNextTest = null;
 var gTestBrowser = null;
 var gPluginHost = Components.classes["@mozilla.org/plugin/host;1"]
                     .getService(Components.interfaces.nsIPluginHost);
-var gPermissionManager = Components.classes["@mozilla.org/permissionmanager;1"]
-                           .getService(Components.interfaces.nsIPermissionManager);
 var gTestPermissionString = gPluginHost.getPermissionStringForType("application/x-test");
 var gSecondTestPermissionString = gPluginHost.getPermissionStringForType("application/x-second-test");
 
 function doOnPageLoad(url, continuation) {
   gNextTest = continuation;
-  gTestBrowser.addEventListener("load", pageLoad, true);
-  gTestBrowser.contentWindow.location = url;
+  BrowserTestUtils.browserLoaded(gTestBrowser).then(pageLoad);
+  gTestBrowser.loadURI(url);
 }
 
 function pageLoad() {
-  gTestBrowser.removeEventListener("load", pageLoad);
   // The plugin events are async dispatched and can come after the load event
   // This just allows the events to fire before we then go on to test the states
   executeSoon(gNextTest);
 }
 
 function doOnOpenPageInfo(continuation) {
-  Services.obs.addObserver(pageInfoObserve, "page-info-dialog-loaded", false);
+  Services.obs.addObserver(pageInfoObserve, "page-info-dialog-loaded");
   gNextTest = continuation;
   // An explanation: it looks like the test harness complains about leaked
   // windows if we don't keep a reference to every window we've opened.
@@ -38,8 +35,8 @@ function pageInfoObserve(win, topic, data) {
 }
 
 function finishTest() {
-  gPermissionManager.remove(makeURI("http://127.0.0.1:8888/"), gTestPermissionString);
-  gPermissionManager.remove(makeURI("http://127.0.0.1:8888/"), gSecondTestPermissionString);
+  Services.perms.remove(makeURI("http://127.0.0.1:8888/"), gTestPermissionString);
+  Services.perms.remove(makeURI("http://127.0.0.1:8888/"), gSecondTestPermissionString);
   Services.prefs.clearUserPref("plugins.click_to_play");
   gBrowser.removeCurrentTab();
 
@@ -47,7 +44,6 @@ function finishTest() {
   gNextTest = null;
   gTestBrowser = null;
   gPluginHost = null;
-  gPermissionManager = null;
 
   executeSoon(finish);
 }
@@ -57,19 +53,19 @@ function test() {
   Services.prefs.setBoolPref("plugins.click_to_play", true);
   setTestPluginEnabledState(Ci.nsIPluginTag.STATE_CLICKTOPLAY);
   setTestPluginEnabledState(Ci.nsIPluginTag.STATE_ENABLED, "Second Test Plug-in");
-  gBrowser.selectedTab = gBrowser.addTab();
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
   gTestBrowser = gBrowser.selectedBrowser;
-  gPermissionManager.remove(makeURI("http://127.0.0.1:8888/"), gTestPermissionString);
-  gPermissionManager.remove(makeURI("http://127.0.0.1:8888/"), gSecondTestPermissionString);
+  Services.perms.remove(makeURI("http://127.0.0.1:8888/"), gTestPermissionString);
+  Services.perms.remove(makeURI("http://127.0.0.1:8888/"), gSecondTestPermissionString);
   doOnPageLoad(gHttpTestRoot + "plugin_two_types.html", testPart1a);
 }
 
 // The first test plugin is CtP and the second test plugin is enabled.
 function testPart1a() {
-  let test = gTestBrowser.contentDocument.getElementById("test");
-  let objLoadingContent = test.QueryInterface(Ci.nsIObjectLoadingContent);
+  let testElement = gTestBrowser.contentDocumentAsCPOW.getElementById("test");
+  let objLoadingContent = testElement.QueryInterface(Ci.nsIObjectLoadingContent);
   ok(!objLoadingContent.activated, "part 1a: Test plugin should not be activated");
-  let secondtest = gTestBrowser.contentDocument.getElementById("secondtestA");
+  let secondtest = gTestBrowser.contentDocumentAsCPOW.getElementById("secondtestA");
   objLoadingContent = secondtest.QueryInterface(Ci.nsIObjectLoadingContent);
   ok(objLoadingContent.activated, "part 1a: Second Test plugin should be activated");
 
@@ -80,7 +76,6 @@ function testPart1b() {
   let testRadioGroup = gPageInfo.document.getElementById(gTestPermissionString + "RadioGroup");
   let testRadioDefault = gPageInfo.document.getElementById(gTestPermissionString + "#0");
 
-  var qString = "#" + gTestPermissionString.replace(':', '\\:') + "\\#0";
   is(testRadioGroup.selectedItem, testRadioDefault, "part 1b: Test radio group should be set to 'Default'");
   let testRadioAllow = gPageInfo.document.getElementById(gTestPermissionString + "#1");
   testRadioGroup.selectedItem = testRadioAllow;
@@ -98,11 +93,11 @@ function testPart1b() {
 
 // Now, the Test plugin should be allowed, and the Test2 plugin should be CtP
 function testPart2() {
-  let test = gTestBrowser.contentDocument.getElementById("test").
+  let testElement = gTestBrowser.contentDocumentAsCPOW.getElementById("test").
     QueryInterface(Ci.nsIObjectLoadingContent);
-  ok(test.activated, "part 2: Test plugin should be activated");
+  ok(testElement.activated, "part 2: Test plugin should be activated");
 
-  let secondtest = gTestBrowser.contentDocument.getElementById("secondtestA").
+  let secondtest = gTestBrowser.contentDocumentAsCPOW.getElementById("secondtestA").
     QueryInterface(Ci.nsIObjectLoadingContent);
   ok(!secondtest.activated, "part 2: Second Test plugin should not be activated");
   is(secondtest.pluginFallbackType, Ci.nsIObjectLoadingContent.PLUGIN_CLICK_TO_PLAY,
@@ -127,13 +122,13 @@ function testPart2() {
 
 // Now, all the things should be blocked
 function testPart3() {
-  let test = gTestBrowser.contentDocument.getElementById("test").
+  let testElement = gTestBrowser.contentDocumentAsCPOW.getElementById("test").
     QueryInterface(Ci.nsIObjectLoadingContent);
-  ok(!test.activated, "part 3: Test plugin should not be activated");
-  is(test.pluginFallbackType, Ci.nsIObjectLoadingContent.PLUGIN_DISABLED,
+  ok(!testElement.activated, "part 3: Test plugin should not be activated");
+  is(testElement.pluginFallbackType, Ci.nsIObjectLoadingContent.PLUGIN_DISABLED,
     "part 3: Test plugin should be marked as PLUGIN_DISABLED");
 
-  let secondtest = gTestBrowser.contentDocument.getElementById("secondtestA").
+  let secondtest = gTestBrowser.contentDocumentAsCPOW.getElementById("secondtestA").
     QueryInterface(Ci.nsIObjectLoadingContent);
 
   ok(!secondtest.activated, "part 3: Second Test plugin should not be activated");
@@ -141,8 +136,8 @@ function testPart3() {
      "part 3: Second test plugin should be marked as PLUGIN_DISABLED");
 
   // reset permissions
-  gPermissionManager.remove(makeURI("http://127.0.0.1:8888/"), gTestPermissionString);
-  gPermissionManager.remove(makeURI("http://127.0.0.1:8888/"), gSecondTestPermissionString);
+  Services.perms.remove(makeURI("http://127.0.0.1:8888/"), gTestPermissionString);
+  Services.perms.remove(makeURI("http://127.0.0.1:8888/"), gSecondTestPermissionString);
   // check that changing the permissions affects the radio state in the
   // open Page Info window
   let testRadioGroup = gPageInfo.document.getElementById(gTestPermissionString + "RadioGroup");
@@ -159,8 +154,8 @@ function testPart3() {
 // immediately influences Page Info.
 function testPart4a() {
   // simulate "allow" from the doorhanger
-  gPermissionManager.add(gTestBrowser.currentURI, gTestPermissionString, Ci.nsIPermissionManager.ALLOW_ACTION);
-  gPermissionManager.add(gTestBrowser.currentURI, gSecondTestPermissionString, Ci.nsIPermissionManager.ALLOW_ACTION);
+  Services.perms.add(gTestBrowser.currentURI, gTestPermissionString, Ci.nsIPermissionManager.ALLOW_ACTION);
+  Services.perms.add(gTestBrowser.currentURI, gSecondTestPermissionString, Ci.nsIPermissionManager.ALLOW_ACTION);
 
   // check (again) that changing the permissions affects the radio state in the
   // open Page Info window

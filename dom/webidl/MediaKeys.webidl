@@ -18,7 +18,11 @@ enum MediaKeySessionType {
   // persistent-usage-record,
 };
 
-[Pref="media.eme.apiVisible"]
+// https://github.com/WICG/media-capabilities/blob/master/eme-extension-policy-check.md
+dictionary MediaKeysPolicy {
+  DOMString minHdcpVersion = "";
+};
+
 interface MediaKeys {
   readonly attribute DOMString keySystem;
 
@@ -26,5 +30,8 @@ interface MediaKeys {
   MediaKeySession createSession(optional MediaKeySessionType sessionType = "temporary");
 
   [NewObject]
-  Promise<void> setServerCertificate((ArrayBufferView or ArrayBuffer) serverCertificate);
+  Promise<void> setServerCertificate(BufferSource serverCertificate);
+
+  [Pref="media.eme.hdcp-policy-check.enabled", NewObject]
+  Promise<MediaKeyStatus> getStatusForPolicy(optional MediaKeysPolicy policy);
 };

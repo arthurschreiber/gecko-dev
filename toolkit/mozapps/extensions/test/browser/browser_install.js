@@ -8,15 +8,11 @@ var gManagerWindow;
 var gCategoryUtilities;
 
 var gApp = document.getElementById("bundle_brand").getString("brandShortName");
-var gSearchCount = 0;
 
 function test() {
   requestLongerTimeout(2);
   waitForExplicitFinish();
 
-  // Turn on searching for this test
-  Services.prefs.setIntPref(PREF_SEARCH_MAXRESULTS, 15);
-  Services.prefs.setCharPref("extensions.getAddons.search.url", TESTROOT + "browser_install.xml");
   // Allow http update checks
   Services.prefs.setBoolPref("extensions.checkUpdateSecurity", false);
 
@@ -46,7 +42,7 @@ function installAddon(aCallback) {
   AddonManager.getInstallForURL(TESTROOT + "addons/browser_install1_2.xpi",
                                 function(aInstall) {
     aInstall.addListener({
-      onInstallEnded: function() {
+      onInstallEnded() {
         executeSoon(aCallback);
       }
     });
@@ -57,14 +53,14 @@ function installAddon(aCallback) {
 function installUpgrade(aCallback) {
   AddonManager.getAddonByID("install1@tests.mozilla.org", function(aAddon) {
     aAddon.findUpdates({
-      onUpdateAvailable: function(aAddon, aInstall) {
+      onUpdateAvailable(aAddon, aInstall) {
         is(get_list_item_count(), 1, "Should be only one item in the list");
 
         aInstall.addListener({
-          onDownloadEnded: function() {
+          onDownloadEnded() {
             is(get_list_item_count(), 1, "Should be only one item in the list once the update has started");
           },
-          onInstallEnded: function() {
+          onInstallEnded() {
             executeSoon(aCallback);
           }
         });
@@ -78,7 +74,7 @@ function cancelInstall(aCallback) {
   AddonManager.getInstallForURL(TESTROOT + "addons/browser_install1_2.xpi",
                                 function(aInstall) {
     aInstall.addListener({
-      onDownloadEnded: function(aInstall) {
+      onDownloadEnded(aInstall) {
         executeSoon(function() {
           aInstall.cancel();
           aCallback();
@@ -88,33 +84,6 @@ function cancelInstall(aCallback) {
     });
     aInstall.install();
   }, "application/x-xpinstall");
-}
-
-function installSearchResult(aCallback) {
-  var searchBox = gManagerWindow.document.getElementById("header-search");
-  // Search for something different each time
-  searchBox.value = "foo" + gSearchCount;
-  gSearchCount++;
-
-  EventUtils.synthesizeMouseAtCenter(searchBox, { }, gManagerWindow);
-  EventUtils.synthesizeKey("VK_RETURN", { }, gManagerWindow);
-
-  wait_for_view_load(gManagerWindow, function() {
-    let remote = gManagerWindow.document.getElementById("search-filter-remote")
-    EventUtils.synthesizeMouseAtCenter(remote, { }, gManagerWindow);
-
-    let item = get_addon_element(gManagerWindow, "install1@tests.mozilla.org");
-    ok(!!item, "Should see the search result in the list");
-
-    let status = get_node(item, "install-status");
-    EventUtils.synthesizeMouseAtCenter(get_node(status, "install-remote-btn"), {}, gManagerWindow);
-
-    item.mInstall.addListener({
-      onInstallEnded: function() {
-        executeSoon(aCallback);
-      }
-    });
-  });
 }
 
 function get_list_item_count() {
@@ -173,40 +142,6 @@ add_test(function() {
   close_manager(gManagerWindow, function() {
     installAddon(function() {
       open_manager(null, function(aWindow) {
-        gManagerWindow = aWindow;
-        gCategoryUtilities = new CategoryUtilities(gManagerWindow);
-        check_undo_install();
-        run_next_test();
-      });
-    });
-  });
-});
-
-// Install an add-on through the search page and then undo it
-add_test(function() {
-  installSearchResult(function() {
-    check_undo_install();
-    run_next_test();
-  });
-});
-
-// Install an add-on through the search page then switch to the extensions page
-// and then undo it
-add_test(function() {
-  installSearchResult(function() {
-    gCategoryUtilities.openType("extension", function() {
-      check_undo_install();
-      run_next_test();
-    });
-  });
-});
-
-// Install an add-on through the search page then re-open the manager and then
-// undo it
-add_test(function() {
-  installSearchResult(function() {
-    close_manager(gManagerWindow, function() {
-        open_manager("addons://list/extension", function(aWindow) {
         gManagerWindow = aWindow;
         gCategoryUtilities = new CategoryUtilities(gManagerWindow);
         check_undo_install();

@@ -8,15 +8,15 @@
  */
 
 const { Task } = require("devtools/shared/task");
-const { Heritage } = require("devtools/client/shared/widgets/view-helpers");
+const { extend } = require("devtools/shared/extend");
 const LineGraphWidget = require("devtools/client/shared/widgets/LineGraphWidget");
 const MountainGraphWidget = require("devtools/client/shared/widgets/MountainGraphWidget");
 const { CanvasGraphUtils } = require("devtools/client/shared/widgets/Graphs");
 
-const promise = require("promise");
-const EventEmitter = require("devtools/shared/event-emitter");
+const defer = require("devtools/shared/defer");
+const EventEmitter = require("devtools/shared/old-event-emitter");
 
-const { colorUtils } = require("devtools/shared/css-color");
+const { colorUtils } = require("devtools/shared/css/color");
 const { getColor } = require("devtools/client/shared/theme");
 const ProfilerGlobal = require("devtools/client/performance/modules/global");
 const { MarkersOverview } = require("devtools/client/performance/modules/widgets/markers-overview");
@@ -25,10 +25,8 @@ const { createTierGraphDataFromFrameNode } = require("devtools/client/performanc
 /**
  * For line graphs
  */
-// px
-const HEIGHT = 35;
-// px
-const STROKE_WIDTH = 1;
+const HEIGHT = 35; // px
+const STROKE_WIDTH = 1; // px
 const DAMPEN_VALUES = 0.95;
 const CLIPHEAD_LINE_COLOR = "#666";
 const SELECTION_LINE_COLOR = "#555";
@@ -39,12 +37,9 @@ const MEMORY_GRAPH_COLOR_NAME = "graphs-blue";
 /**
  * For timeline overview
  */
-// px
-const MARKERS_GRAPH_HEADER_HEIGHT = 14;
-// px
-const MARKERS_GRAPH_ROW_HEIGHT = 10;
-// px
-const MARKERS_GROUP_VERTICAL_PADDING = 4;
+const MARKERS_GRAPH_HEADER_HEIGHT = 14; // px
+const MARKERS_GRAPH_ROW_HEIGHT = 10; // px
+const MARKERS_GROUP_VERTICAL_PADDING = 4; // px
 
 /**
  * For optimization graph
@@ -64,7 +59,7 @@ function PerformanceGraph(parent, metric) {
   this.setTheme();
 }
 
-PerformanceGraph.prototype = Heritage.extend(LineGraphWidget.prototype, {
+PerformanceGraph.prototype = extend(LineGraphWidget.prototype, {
   strokeWidth: STROKE_WIDTH,
   dampenValuesFactor: DAMPEN_VALUES,
   fixedHeight: HEIGHT,
@@ -113,7 +108,7 @@ function FramerateGraph(parent) {
   PerformanceGraph.call(this, parent, ProfilerGlobal.L10N.getStr("graphs.fps"));
 }
 
-FramerateGraph.prototype = Heritage.extend(PerformanceGraph.prototype, {
+FramerateGraph.prototype = extend(PerformanceGraph.prototype, {
   mainColor: FRAMERATE_GRAPH_COLOR_NAME,
   setPerformanceData: function ({ duration, ticks }, resolution) {
     this.dataDuration = duration;
@@ -131,7 +126,7 @@ function MemoryGraph(parent) {
   PerformanceGraph.call(this, parent, ProfilerGlobal.L10N.getStr("graphs.memory"));
 }
 
-MemoryGraph.prototype = Heritage.extend(PerformanceGraph.prototype, {
+MemoryGraph.prototype = extend(PerformanceGraph.prototype, {
   mainColor: MEMORY_GRAPH_COLOR_NAME,
   setPerformanceData: function ({ duration, memory }) {
     this.dataDuration = duration;
@@ -143,7 +138,7 @@ function TimelineGraph(parent, filter) {
   MarkersOverview.call(this, parent, filter);
 }
 
-TimelineGraph.prototype = Heritage.extend(MarkersOverview.prototype, {
+TimelineGraph.prototype = extend(MarkersOverview.prototype, {
   headerHeight: MARKERS_GRAPH_HEADER_HEIGHT,
   rowHeight: MARKERS_GRAPH_ROW_HEIGHT,
   groupPadding: MARKERS_GROUP_VERTICAL_PADDING,
@@ -224,7 +219,7 @@ GraphsController.prototype = {
       return;
     }
 
-    this._rendering = promise.defer();
+    this._rendering = defer();
     for (let graph of (yield this._getEnabled())) {
       yield graph.setPerformanceData(recordingData, resolution);
       this.emit("rendered", graph.graphName);
@@ -444,7 +439,7 @@ function OptimizationsGraph(parent) {
   this.setTheme();
 }
 
-OptimizationsGraph.prototype = Heritage.extend(MountainGraphWidget.prototype, {
+OptimizationsGraph.prototype = extend(MountainGraphWidget.prototype, {
 
   render: Task.async(function* (threadNode, frameNode) {
     // Regardless if we draw or clear the graph, wait

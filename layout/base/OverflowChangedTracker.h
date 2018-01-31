@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -112,12 +113,12 @@ public:
         // Take a faster path that doesn't require unioning the overflow areas
         // of our children.
 
-        NS_ASSERTION(frame->Properties().Get(
+        NS_ASSERTION(frame->GetProperty(
                        nsIFrame::DebugInitialOverflowPropertyApplied()),
                      "InitialOverflowProperty must be set first.");
 
         nsOverflowAreas* overflow =
-          frame->Properties().Get(nsIFrame::InitialOverflowProperty());
+          frame->GetProperty(nsIFrame::InitialOverflowProperty());
         if (overflow) {
           // FinishAndStoreOverflow will change the overflow areas passed in,
           // so make a copy.
@@ -139,6 +140,14 @@ public:
       // children.
       if (overflowChanged) {
         nsIFrame *parent = frame->GetParent();
+        while (parent &&
+               parent != mSubtreeRoot &&
+               parent->Combines3DTransformWithAncestors()) {
+          // Passing frames in between the frame and the establisher of
+          // 3D rendering context.
+          parent = parent->GetParent();
+          MOZ_ASSERT(parent, "Root frame should never return true for Combines3DTransformWithAncestors");
+        }
         if (parent && parent != mSubtreeRoot) {
           Entry* parentEntry = mEntryList.find(Entry(parent, entry->mDepth - 1));
           if (parentEntry) {

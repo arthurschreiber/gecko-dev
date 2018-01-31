@@ -12,6 +12,8 @@
 #include "base/command_line.h"
 #include "base/string_util.h"
 #include "nsDebugImpl.h"
+#include "nsThreadManager.h"
+#include "ClearOnShutdown.h"
 
 #if defined(XP_MACOSX)
 #include "nsCocoaFeatures.h"
@@ -23,7 +25,6 @@ extern "C" CGError CGSSetDebugOptions(int options);
 #ifdef XP_WIN
 bool ShouldProtectPluginCurrentDirectory(char16ptr_t pluginFilePath);
 #if defined(MOZ_SANDBOX)
-#define TARGET_SANDBOX_EXPORTS
 #include "mozilla/sandboxTarget.h"
 #endif
 #endif
@@ -40,7 +41,7 @@ namespace plugins {
 
 
 bool
-PluginProcessChild::Init()
+PluginProcessChild::Init(int aArgc, char* aArgv[])
 {
     nsDebugImpl::SetMultiprocessMode("NPAPI");
 
@@ -107,6 +108,14 @@ PluginProcessChild::Init()
 
     pluginFilename = WideToUTF8(values[0]);
 
+    // We don't initialize XPCOM but we need the thread manager and the
+    // logging framework for the FunctionBroker.
+    NS_SetMainThread();
+    mozilla::TimeStamp::Startup();
+    NS_LogInit();
+    mozilla::LogModule::Init();
+    nsThreadManager::get().Init();
+
 #if defined(MOZ_SANDBOX)
     // This is probably the earliest we would want to start the sandbox.
     // As we attempt to tighten the sandbox, we may need to consider moving this
@@ -142,6 +151,18 @@ PluginProcessChild::Init()
 void
 PluginProcessChild::CleanUp()
 {
+#if defined(OS_WIN)
+    MOZ_ASSERT(NS_IsMainThread());
+
+    // Shutdown components we started in Init.  Note that KillClearOnShutdown
+    // is an event that is regularly part of XPCOM shutdown.  We do not
+    // call XPCOM's shutdown but we need this event to be sent to avoid
+    // leaking objects labeled as ClearOnShutdown.
+    nsThreadManager::get().Shutdown();
+    mozilla::KillClearOnShutdown(ShutdownPhase::ShutdownFinal);
+    NS_LogTerm();
+#endif
+
     nsRegion::ShutdownStatic();
 }
 

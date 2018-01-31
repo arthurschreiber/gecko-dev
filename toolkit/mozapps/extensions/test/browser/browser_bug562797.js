@@ -2,6 +2,9 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* eslint max-nested-callbacks: ["warn", 12] */
+/* eslint-disable mozilla/no-cpows-in-tests */
+
 /**
  * Tests that history navigation works for the add-ons manager.
  */
@@ -12,7 +15,7 @@ const SECOND_URL = "https://example.com/" + RELATIVE_DIR + "releaseNotes.xhtml";
 var gLoadCompleteCallback = null;
 
 var gProgressListener = {
-  onStateChange: function(aWebProgress, aRequest, aStateFlags, aStatus) {
+  onStateChange(aWebProgress, aRequest, aStateFlags, aStatus) {
     // Only care about the network stop status events
     if (!(aStateFlags & (Ci.nsIWebProgressListener.STATE_IS_NETWORK)) ||
         !(aStateFlags & (Ci.nsIWebProgressListener.STATE_STOP)))
@@ -23,10 +26,10 @@ var gProgressListener = {
     gLoadCompleteCallback = null;
   },
 
-  onLocationChange: function() { },
-  onSecurityChange: function() { },
-  onProgressChange: function() { },
-  onStatusChange: function() { },
+  onLocationChange() { },
+  onSecurityChange() { },
+  onProgressChange() { },
+  onStatusChange() { },
 
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebProgressListener,
                                          Ci.nsISupportsWeakReference]),
@@ -58,23 +61,27 @@ function test() {
 
   Services.prefs.setCharPref(PREF_DISCOVERURL, MAIN_URL);
 
-  var gProvider = new MockProvider();
-  gProvider.createAddons([{
-    id: "test1@tests.mozilla.org",
-    name: "Test add-on 1",
-    description: "foo"
-  },
-  {
-    id: "test2@tests.mozilla.org",
-    name: "Test add-on 2",
-    description: "bar"
-  },
-  {
-    id: "test3@tests.mozilla.org",
-    name: "Test add-on 3",
-    type: "theme",
-    description: "bar"
-  }]);
+  SpecialPowers.pushPrefEnv({"set": [
+      ["dom.ipc.processCount", 1],
+    ]}, () => {
+    var gProvider = new MockProvider();
+    gProvider.createAddons([{
+      id: "test1@tests.mozilla.org",
+      name: "Test add-on 1",
+      description: "foo"
+    },
+    {
+      id: "test2@tests.mozilla.org",
+      name: "Test add-on 2",
+      description: "bar"
+    },
+    {
+      id: "test3@tests.mozilla.org",
+      name: "Test add-on 3",
+      type: "theme",
+      description: "bar"
+    }]);
+  });
 
   run_next_test();
 }
@@ -83,44 +90,25 @@ function end_test() {
   finish();
 }
 
-function go_back(aManager) {
-  if (gUseInContentUI) {
-    gBrowser.goBack();
-  } else {
-    EventUtils.synthesizeMouseAtCenter(aManager.document.getElementById("back-btn"),
-                                       { }, aManager);
-  }
+function go_back() {
+  gBrowser.goBack();
 }
 
-function go_back_backspace(aManager) {
+function go_back_backspace() {
     EventUtils.synthesizeKey("VK_BACK_SPACE", {});
 }
 
-function go_forward_backspace(aManager) {
+function go_forward_backspace() {
     EventUtils.synthesizeKey("VK_BACK_SPACE", {shiftKey: true});
 }
 
-function go_forward(aManager) {
-  if (gUseInContentUI) {
-    gBrowser.goForward();
-  } else {
-    EventUtils.synthesizeMouseAtCenter(aManager.document.getElementById("forward-btn"),
-                                       { }, aManager);
-  }
+function go_forward() {
+  gBrowser.goForward();
 }
 
-function check_state(aManager, canGoBack, canGoForward) {
-  var doc = aManager.document;
-
-  if (gUseInContentUI) {
-    is(gBrowser.canGoBack, canGoBack, "canGoBack should be correct");
-    is(gBrowser.canGoForward, canGoForward, "canGoForward should be correct");
-  }
-
-  if (!is_hidden(doc.getElementById("back-btn"))) {
-    is(!doc.getElementById("back-btn").disabled, canGoBack, "Back button should have the right state");
-    is(!doc.getElementById("forward-btn").disabled, canGoForward, "Forward button should have the right state");
-  }
+function check_state(canGoBack, canGoForward) {
+  is(gBrowser.canGoBack, canGoBack, "canGoBack should be correct");
+  is(gBrowser.canGoForward, canGoForward, "canGoForward should be correct");
 }
 
 function is_in_list(aManager, view, canGoBack, canGoForward) {
@@ -129,17 +117,7 @@ function is_in_list(aManager, view, canGoBack, canGoForward) {
   is(doc.getElementById("categories").selectedItem.value, view, "Should be on the right category");
   is(get_current_view(aManager).id, "list-view", "Should be on the right view");
 
-  check_state(aManager, canGoBack, canGoForward);
-}
-
-function is_in_search(aManager, query, canGoBack, canGoForward) {
-  var doc = aManager.document;
-
-  is(doc.getElementById("categories").selectedItem.value, "addons://search/", "Should be on the right category");
-  is(get_current_view(aManager).id, "search-view", "Should be on the right view");
-  is(doc.getElementById("header-search").value, query, "Should have used the right query");
-
-  check_state(aManager, canGoBack, canGoForward);
+  check_state(canGoBack, canGoForward);
 }
 
 function is_in_detail(aManager, view, canGoBack, canGoForward) {
@@ -148,7 +126,7 @@ function is_in_detail(aManager, view, canGoBack, canGoForward) {
   is(doc.getElementById("categories").selectedItem.value, view, "Should be on the right category");
   is(get_current_view(aManager).id, "detail-view", "Should be on the right view");
 
-  check_state(aManager, canGoBack, canGoForward);
+  check_state(canGoBack, canGoForward);
 }
 
 function is_in_discovery(aManager, url, canGoBack, canGoForward) {
@@ -164,7 +142,7 @@ function is_in_discovery(aManager, url, canGoBack, canGoForward) {
 
   is(spec, url, "Should have loaded the right url");
 
-  check_state(aManager, canGoBack, canGoForward);
+  check_state(canGoBack, canGoForward);
 }
 
 function double_click_addon_element(aManager, aId) {
@@ -187,19 +165,19 @@ add_test(function() {
       info("Part 2");
       is_in_list(aManager, "addons://list/plugin", true, false);
 
-      go_back(aManager);
+      go_back();
 
       wait_for_view_load(aManager, function(aManager) {
         info("Part 3");
         is_in_list(aManager, "addons://list/extension", false, true);
 
-        go_forward(aManager);
+        go_forward();
 
         wait_for_view_load(aManager, function(aManager) {
           info("Part 4");
           is_in_list(aManager, "addons://list/plugin", true, false);
 
-          go_back(aManager);
+          go_back();
 
           wait_for_view_load(aManager, function(aManager) {
             info("Part 5");
@@ -211,7 +189,7 @@ add_test(function() {
               info("Part 6");
               is_in_detail(aManager, "addons://list/extension", true, false);
 
-              go_back(aManager);
+              go_back();
 
               wait_for_view_load(aManager, function(aManager) {
                 info("Part 7");
@@ -228,18 +206,7 @@ add_test(function() {
 });
 
 // Tests that browsing to the add-ons manager from a website and going back works
-// Only relevant for in-content UI
 add_test(function() {
-  if (!gUseInContentUI) {
-    run_next_test();
-    return;
-  }
-
-  function promiseViewLoad(manager) {
-    return new Promise(resolve => {
-      wait_for_view_load(manager, resolve);
-    });
-  }
 
   function promiseManagerLoaded(manager) {
     return new Promise(resolve => {
@@ -247,18 +214,18 @@ add_test(function() {
     });
   }
 
-  Task.spawn(function*() {
+  (async function() {
     info("Part 1");
-    yield BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/", true, true);
+    await BrowserTestUtils.openNewForegroundTab(gBrowser, "http://example.com/", true, true);
 
     info("Part 2");
     ok(!gBrowser.canGoBack, "Should not be able to go back");
     ok(!gBrowser.canGoForward, "Should not be able to go forward");
 
-    yield BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:addons");
-    yield BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+    await BrowserTestUtils.loadURI(gBrowser.selectedBrowser, "about:addons");
+    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 
-    let manager = yield promiseManagerLoaded(gBrowser.contentWindow.wrappedJSObject);
+    let manager = await promiseManagerLoaded(gBrowser.contentWindow.wrappedJSObject);
 
     info("Part 3");
     is_in_list(manager, "addons://list/extension", true, false);
@@ -273,7 +240,7 @@ add_test(function() {
     }
 
     go_back(manager);
-    yield promiseLoaded;
+    await promiseLoaded;
 
     info("Part 4");
     is(gBrowser.currentURI.spec, "http://example.com/", "Should be showing the webpage");
@@ -282,14 +249,14 @@ add_test(function() {
 
     promiseLoaded = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
     go_forward(manager);
-    yield promiseLoaded;
+    await promiseLoaded;
 
-    manager = yield promiseManagerLoaded(gBrowser.contentWindow.wrappedJSObject);
+    manager = await promiseManagerLoaded(gBrowser.contentWindow.wrappedJSObject);
     info("Part 5");
     is_in_list(manager, "addons://list/extension", true, false);
 
     close_manager(manager, run_next_test);
-  });
+  })();
 });
 
 // Tests simple forward and back navigation and that the right heading and
@@ -298,7 +265,7 @@ add_test(function() {
 // loaded in a tab
 add_test(function() {
 
-  if (!gUseInContentUI || (Services.prefs.getIntPref("browser.backspace_action") != 0)) {
+  if (Services.prefs.getIntPref("browser.backspace_action") != 0) {
     run_next_test();
     return;
   }
@@ -313,19 +280,19 @@ add_test(function() {
       info("Part 2");
       is_in_list(aManager, "addons://list/plugin", true, false);
 
-      go_back_backspace(aManager);
+      go_back_backspace();
 
       wait_for_view_load(aManager, function(aManager) {
         info("Part 3");
         is_in_list(aManager, "addons://list/extension", false, true);
 
-        go_forward_backspace(aManager);
+        go_forward_backspace();
 
         wait_for_view_load(aManager, function(aManager) {
           info("Part 4");
           is_in_list(aManager, "addons://list/plugin", true, false);
 
-          go_back_backspace(aManager);
+          go_back_backspace();
 
           wait_for_view_load(aManager, function(aManager) {
             info("Part 5");
@@ -337,7 +304,7 @@ add_test(function() {
               info("Part 6");
               is_in_detail(aManager, "addons://list/extension", true, false);
 
-              go_back_backspace(aManager);
+              go_back_backspace();
 
               wait_for_view_load(aManager, function(aManager) {
                 info("Part 7");
@@ -366,7 +333,7 @@ add_test(function() {
       info("Part 2");
       is_in_list(aManager, "addons://list/extension", true, false);
 
-      go_back(aManager);
+      go_back();
 
       wait_for_view_load(aManager, function(aManager) {
         info("Part 3");
@@ -392,13 +359,13 @@ add_test(function() {
       info("Part 2");
       is_in_list(aManager, "addons://list/plugin", true, false);
 
-      go_back(aManager);
+      go_back();
 
       wait_for_view_load(aManager, function(aManager) {
         info("Part 3");
         is_in_list(aManager, "addons://list/extension", false, true);
 
-        go_forward(aManager);
+        go_forward();
 
         wait_for_view_load(aManager, function(aManager) {
           info("Part 4");
@@ -411,129 +378,70 @@ add_test(function() {
   });
 });
 
+function wait_for_page_show(browser) {
+  let promise = new Promise(resolve => {
+    let removeFunc;
+    let listener = () => {
+      removeFunc();
+      resolve();
+    };
+    removeFunc = BrowserTestUtils.addContentEventListener(browser, "pageshow", listener, false,
+                                                          (event) => event.target.location == "http://example.com/",
+                                                          false, false);
+  });
+  return promise;
+}
+
 // Tests than navigating to a website and then going back returns to the
 // previous view
-// Only relevant for in-content UI
 add_test(function() {
-  if (!gUseInContentUI) {
-    run_next_test();
-    return;
-  }
 
   open_manager("addons://list/plugin", function(aManager) {
     info("Part 1");
     is_in_list(aManager, "addons://list/plugin", false, false);
 
     gBrowser.loadURI("http://example.com/");
-    gBrowser.addEventListener("pageshow", function(event) {
-      if (event.target.location != "http://example.com/")
-        return;
-      gBrowser.removeEventListener("pageshow", arguments.callee, false);
+    wait_for_page_show(gBrowser.selectedBrowser).then(() => {
       info("Part 2");
 
       executeSoon(function() {
         ok(gBrowser.canGoBack, "Should be able to go back");
         ok(!gBrowser.canGoForward, "Should not be able to go forward");
 
-        go_back(aManager);
+        go_back();
 
-        gBrowser.addEventListener("pageshow", function(event) {
+        gBrowser.addEventListener("pageshow", function listener(event) {
           if (event.target.location != "about:addons")
             return;
-          gBrowser.removeEventListener("pageshow", arguments.callee, false);
+          gBrowser.removeEventListener("pageshow", listener);
 
           wait_for_view_load(gBrowser.contentWindow.wrappedJSObject, function(aManager) {
             info("Part 3");
             is_in_list(aManager, "addons://list/plugin", false, true);
 
-            executeSoon(() => go_forward(aManager));
-            gBrowser.addEventListener("pageshow", function(event) {
-              if (event.target.location != "http://example.com/")
-                return;
-              gBrowser.removeEventListener("pageshow", arguments.callee, false);
+            executeSoon(() => go_forward());
+            wait_for_page_show(gBrowser.selectedBrowser).then(() => {
               info("Part 4");
 
               executeSoon(function() {
                 ok(gBrowser.canGoBack, "Should be able to go back");
                 ok(!gBrowser.canGoForward, "Should not be able to go forward");
 
-                go_back(aManager);
+                go_back();
 
-                gBrowser.addEventListener("pageshow", function(event) {
+                gBrowser.addEventListener("pageshow", function listener(event) {
                   if (event.target.location != "about:addons")
                     return;
-                  gBrowser.removeEventListener("pageshow", arguments.callee, false);
+                  gBrowser.removeEventListener("pageshow", listener);
                   wait_for_view_load(gBrowser.contentWindow.wrappedJSObject, function(aManager) {
                     info("Part 5");
                     is_in_list(aManager, "addons://list/plugin", false, true);
 
                     close_manager(aManager, run_next_test);
                   });
-                }, false);
+                });
               });
-            }, false);
-          });
-        }, false);
-      });
-    }, false);
-  });
-});
-
-// Tests that going back to search results works
-add_test(function() {
-  // Before we open the add-ons manager, we should make sure that no filter
-  // has been set. If one is set, we remove it.
-  // This is for the check below, from bug 611459.
-  let store = Cc["@mozilla.org/xul/xulstore;1"].getService(Ci.nsIXULStore);
-  store.removeValue("about:addons", "search-filter-radiogroup", "value");
-
-  open_manager("addons://list/extension", function(aManager) {
-    info("Part 1");
-    is_in_list(aManager, "addons://list/extension", false, false);
-
-    var search = aManager.document.getElementById("header-search");
-    search.focus();
-    search.value = "bar";
-    EventUtils.synthesizeKey("VK_RETURN", {}, aManager);
-
-    wait_for_view_load(aManager, function(aManager) {
-      // Remote search is meant to be checked by default (bug 611459), so we
-      // confirm that and then switch to a local search.
-      var localFilter = aManager.document.getElementById("search-filter-local");
-      var remoteFilter = aManager.document.getElementById("search-filter-remote");
-
-      is(remoteFilter.selected, true, "Remote filter should be set by default");
-
-      var list = aManager.document.getElementById("search-list");
-      list.ensureElementIsVisible(localFilter);
-      EventUtils.synthesizeMouseAtCenter(localFilter, { }, aManager);
-
-      is(localFilter.selected, true, "Should have changed to local filter");
-
-      // Now we continue with the normal test.
-
-      info("Part 2");
-      is_in_search(aManager, "bar", true, false);
-      check_all_in_list(aManager, ["test2@tests.mozilla.org", "test3@tests.mozilla.org"]);
-
-      double_click_addon_element(aManager, "test2@tests.mozilla.org");
-
-      wait_for_view_load(aManager, function(aManager) {
-        info("Part 3");
-        is_in_detail(aManager, "addons://search/", true, false);
-
-        go_back(aManager);
-        wait_for_view_load(aManager, function(aManager) {
-          info("Part 4");
-          is_in_search(aManager, "bar", true, true);
-          check_all_in_list(aManager, ["test2@tests.mozilla.org", "test3@tests.mozilla.org"]);
-
-          go_forward(aManager);
-          wait_for_view_load(aManager, function(aManager) {
-            info("Part 5");
-            is_in_detail(aManager, "addons://search/", true, false);
-
-            close_manager(aManager, run_next_test);
+            });
           });
         });
       });
@@ -541,80 +449,8 @@ add_test(function() {
   });
 });
 
-// Tests that going back from a webpage to a detail view loaded from a search
-// result works
-// Only relevant for in-content UI
-add_test(function() {
-  if (!gUseInContentUI) {
-    run_next_test();
-    return;
-  }
-
-  open_manager("addons://list/extension", function(aManager) {
-    info("Part 1");
-    is_in_list(aManager, "addons://list/extension", false, false);
-
-    var search = aManager.document.getElementById("header-search");
-    search.focus();
-    search.value = "bar";
-    EventUtils.synthesizeKey("VK_RETURN", {});
-
-    wait_for_view_load(aManager, function(aManager) {
-      info("Part 2");
-      is_in_search(aManager, "bar", true, false);
-      check_all_in_list(aManager, ["test2@tests.mozilla.org", "test3@tests.mozilla.org"]);
-
-      double_click_addon_element(aManager, "test2@tests.mozilla.org");
-
-      wait_for_view_load(aManager, function(aManager) {
-        info("Part 3");
-        is_in_detail(aManager, "addons://search/", true, false);
-
-        gBrowser.loadURI("http://example.com/");
-        gBrowser.addEventListener("pageshow", function(event) {
-          if (event.target.location != "http://example.com/")
-            return;
-          gBrowser.removeEventListener("pageshow", arguments.callee, false);
-
-          info("Part 4");
-          executeSoon(function() {
-            ok(gBrowser.canGoBack, "Should be able to go back");
-            ok(!gBrowser.canGoForward, "Should not be able to go forward");
-
-            go_back(aManager);
-            gBrowser.addEventListener("pageshow", function(event) {
-                if (event.target.location != "about:addons")
-                return;
-              gBrowser.removeEventListener("pageshow", arguments.callee, false);
-
-              wait_for_view_load(gBrowser.contentWindow.wrappedJSObject, function(aManager) {
-                info("Part 5");
-                is_in_detail(aManager, "addons://search/", true, true);
-
-                go_back(aManager);
-                wait_for_view_load(aManager, function(aManager) {
-                  info("Part 6");
-                  is_in_search(aManager, "bar", true, true);
-                  check_all_in_list(aManager, ["test2@tests.mozilla.org", "test3@tests.mozilla.org"]);
-
-                  close_manager(aManager, run_next_test);
-                });
-              });
-            }, false);
-          });
-        }, false);
-      });
-    });
-  });
-});
-
 // Tests that refreshing a list view does not affect the history
-// Only relevant for in-content UI
 add_test(function() {
-  if (!gUseInContentUI) {
-    run_next_test();
-    return;
-  }
 
   open_manager("addons://list/extension", function(aManager) {
     info("Part 1");
@@ -627,16 +463,16 @@ add_test(function() {
       is_in_list(aManager, "addons://list/plugin", true, false);
 
       gBrowser.reload();
-      gBrowser.addEventListener("pageshow", function(event) {
+      gBrowser.addEventListener("pageshow", function listener(event) {
         if (event.target.location != "about:addons")
           return;
-        gBrowser.removeEventListener("pageshow", arguments.callee, false);
+        gBrowser.removeEventListener("pageshow", listener);
 
         wait_for_view_load(gBrowser.contentWindow.wrappedJSObject, function(aManager) {
           info("Part 3");
           is_in_list(aManager, "addons://list/plugin", true, false);
 
-          go_back(aManager);
+          go_back();
           wait_for_view_load(aManager, function(aManager) {
             info("Part 4");
             is_in_list(aManager, "addons://list/extension", false, true);
@@ -644,18 +480,13 @@ add_test(function() {
             close_manager(aManager, run_next_test);
           });
         });
-      }, false);
+      });
     });
   });
 });
 
 // Tests that refreshing a detail view does not affect the history
-// Only relevant for in-content UI
 add_test(function() {
-  if (!gUseInContentUI) {
-    run_next_test();
-    return;
-  }
 
   open_manager(null, function(aManager) {
     info("Part 1");
@@ -668,16 +499,16 @@ add_test(function() {
       is_in_detail(aManager, "addons://list/extension", true, false);
 
       gBrowser.reload();
-      gBrowser.addEventListener("pageshow", function(event) {
+      gBrowser.addEventListener("pageshow", function listener(event) {
         if (event.target.location != "about:addons")
           return;
-        gBrowser.removeEventListener("pageshow", arguments.callee, false);
+        gBrowser.removeEventListener("pageshow", listener);
 
         wait_for_view_load(gBrowser.contentWindow.wrappedJSObject, function(aManager) {
           info("Part 3");
           is_in_detail(aManager, "addons://list/extension", true, false);
 
-          go_back(aManager);
+          go_back();
           wait_for_view_load(aManager, function(aManager) {
             info("Part 4");
             is_in_list(aManager, "addons://list/extension", false, true);
@@ -685,7 +516,7 @@ add_test(function() {
             close_manager(aManager, run_next_test);
           });
         });
-      }, false);
+      });
     });
   });
 });
@@ -707,40 +538,13 @@ add_test(function() {
                                          { }, aManager);
 
       wait_for_view_load(aManager, function() {
-        if (gUseInContentUI) {
-          // TODO until bug 590661 is fixed the back button will be enabled
-          // when displaying in content
-          is_in_list(aManager, "addons://list/extension", true, false);
-        } else {
-          is_in_list(aManager, "addons://list/extension", false, false);
-        }
+        // TODO until bug 590661 is fixed the back button will be enabled
+        // when displaying in content
+        is_in_list(aManager, "addons://list/extension", true, false);
 
         close_manager(aManager, run_next_test);
       });
     });
-  });
-});
-
-// Tests that the back and forward buttons only show up for windowed mode
-add_test(function() {
-  open_manager(null, function(aManager) {
-    var doc = aManager.document;
-
-    if (gUseInContentUI) {
-      var btn = document.getElementById("back-button");
-      if (!btn || is_hidden(btn)) {
-        is_element_visible(doc.getElementById("back-btn"), "Back button should not be hidden");
-        is_element_visible(doc.getElementById("forward-btn"), "Forward button should not be hidden");
-      } else {
-        is_element_hidden(doc.getElementById("back-btn"), "Back button should be hidden");
-        is_element_hidden(doc.getElementById("forward-btn"), "Forward button should be hidden");
-      }
-    } else {
-      is_element_visible(doc.getElementById("back-btn"), "Back button should not be hidden");
-      is_element_visible(doc.getElementById("forward-btn"), "Forward button should not be hidden");
-    }
-
-    close_manager(aManager, run_next_test);
   });
 });
 
@@ -783,12 +587,12 @@ add_test(function() {
           wait_for_view_load(aManager, function(aManager) {
             is_in_list(aManager, "addons://list/plugin", true, false);
 
-            go_back(aManager);
+            go_back();
 
             wait_for_view_load(aManager, function(aManager) {
               is_in_discovery(aManager, SECOND_URL, true, true);
 
-              go_back(aManager);
+              go_back();
 
               waitForLoad(aManager, function() {
                 is_in_discovery(aManager, MAIN_URL, false, true);
@@ -799,10 +603,10 @@ add_test(function() {
           });
         });
 
-        go_forward(aManager);
+        go_forward();
       });
 
-      go_back(aManager);
+      go_back();
     });
   });
 });
@@ -831,22 +635,22 @@ add_test(function() {
             wait_for_view_load(aManager, function(aManager) {
               is_in_list(aManager, "addons://list/plugin", true, false);
 
-              go_back(aManager);
+              go_back();
 
               wait_for_view_load(aManager, function(aManager) {
                 is_in_discovery(aManager, SECOND_URL, true, true);
 
-                go_back(aManager);
+                go_back();
 
                 waitForLoad(aManager, function() {
                   is_in_discovery(aManager, MAIN_URL, true, true);
 
-                  go_back(aManager);
+                  go_back();
 
                   wait_for_view_load(aManager, function(aManager) {
                     is_in_list(aManager, "addons://list/plugin", false, true);
 
-                    go_forward(aManager);
+                    go_forward();
 
                     wait_for_view_load(aManager, function(aManager) {
                       is_in_discovery(aManager, MAIN_URL, true, true);
@@ -857,7 +661,7 @@ add_test(function() {
                         close_manager(aManager, run_next_test);
                       });
 
-                      go_forward(aManager);
+                      go_forward();
                     });
                   });
                 });
@@ -865,49 +669,13 @@ add_test(function() {
             });
           });
 
-          go_forward(aManager);
+          go_forward();
         });
 
-        go_back(aManager);
+        go_back();
       });
     });
   });
-});
-
-// Tests that when displaying in-content and opened in the background the back
-// and forward buttons still appear when switching tabs
-add_test(function() {
-  if (!gUseInContentUI) {
-    run_next_test();
-    return;
-  }
-
-  var tab = gBrowser.addTab("about:addons");
-  var browser = gBrowser.getBrowserForTab(tab);
-
-  browser.addEventListener("pageshow", function(event) {
-    if (event.target.location.href != "about:addons")
-      return;
-    browser.removeEventListener("pageshow", arguments.callee, true);
-
-    wait_for_manager_load(browser.contentWindow.wrappedJSObject, function() {
-      wait_for_view_load(browser.contentWindow.wrappedJSObject, function(aManager) {
-        gBrowser.selectedTab = tab;
-
-        var doc = aManager.document;
-        var btn = document.getElementById("back-button");
-        if (!btn || is_hidden(btn)) {
-          is_element_visible(doc.getElementById("back-btn"), "Back button should not be hidden");
-          is_element_visible(doc.getElementById("forward-btn"), "Forward button should not be hidden");
-        } else {
-          is_element_hidden(doc.getElementById("back-btn"), "Back button should be hidden");
-          is_element_hidden(doc.getElementById("forward-btn"), "Forward button should be hidden");
-        }
-
-        close_manager(aManager, run_next_test);
-      });
-    });
-  }, true);
 });
 
 // Tests that refreshing the disicovery pane integrates properly with history
@@ -928,22 +696,22 @@ add_test(function() {
         waitForLoad(aManager, function() {
           is_in_discovery(aManager, MAIN_URL, true, false);
 
-          go_back(aManager);
+          go_back();
 
           waitForLoad(aManager, function() {
             is_in_discovery(aManager, SECOND_URL, true, true);
 
-            go_back(aManager);
+            go_back();
 
             waitForLoad(aManager, function() {
               is_in_discovery(aManager, MAIN_URL, true, true);
 
-              go_back(aManager);
+              go_back();
 
               wait_for_view_load(aManager, function(aManager) {
                 is_in_list(aManager, "addons://list/plugin", false, true);
 
-                go_forward(aManager);
+                go_forward();
 
                 wait_for_view_load(aManager, function(aManager) {
                   is_in_discovery(aManager, MAIN_URL, true, true);
@@ -956,10 +724,10 @@ add_test(function() {
 
                       close_manager(aManager, run_next_test);
                     });
-                    go_forward(aManager);
+                    go_forward();
                   });
 
-                  go_forward(aManager);
+                  go_forward();
                 });
               });
             });

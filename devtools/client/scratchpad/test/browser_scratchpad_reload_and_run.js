@@ -16,13 +16,12 @@ function test()
   waitForExplicitFinish();
   Services.prefs.setBoolPref(DEVTOOLS_CHROME_ENABLED, true);
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.selectedBrowser.addEventListener("load", function onLoad() {
-    gBrowser.selectedBrowser.removeEventListener("load", onLoad, true);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(function () {
     openScratchpad(runTests);
-  }, true);
+  });
 
-  content.location = "data:text/html,Scratchpad test for bug 740948";
+  gBrowser.loadURI("data:text/html,Scratchpad test for bug 740948");
 }
 
 function runTests()
@@ -54,22 +53,18 @@ function runTests()
 
   let browser = gBrowser.selectedBrowser;
 
-  let deferred = promise.defer();
-  browser.addEventListener("DOMWindowCreated", function onWindowCreated() {
-    browser.removeEventListener("DOMWindowCreated", onWindowCreated, true);
-
-    browser.contentWindow.addEventListener("foo", function onFoo() {
-      browser.contentWindow.removeEventListener("foo", onFoo, true);
-
+  let deferred = defer();
+  browser.contentWindowAsCPOW.addEventListener("DOMWindowCreated", function () {
+    browser.contentWindowAsCPOW.addEventListener("foo", function () {
       is(browser.contentWindow.document.body.innerHTML, "Modified text",
         "After reloading, HTML is different.");
 
       Services.prefs.clearUserPref(DEVTOOLS_CHROME_ENABLED);
       deferred.resolve();
-    }, true);
-  }, true);
+    }, {capture: true, once: true});
+  }, {capture: true, once: true});
 
-  ok(browser.contentWindow.document.body.innerHTML !== "Modified text",
+  ok(browser.contentWindowAsCPOW.document.body.innerHTML !== "Modified text",
       "Before reloading, HTML is intact.");
   sp.reloadAndRun().then(deferred.promise).then(finish);
 }

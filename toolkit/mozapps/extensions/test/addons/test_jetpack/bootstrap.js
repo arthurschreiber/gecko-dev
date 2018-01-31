@@ -1,4 +1,5 @@
-Components.utils.import("resource://gre/modules/Services.jsm");
+/* exported startup, shutdown, install, uninstall */
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function install(data, reason) {
   Services.prefs.setIntPref("jetpacktest.installed_version", 1);

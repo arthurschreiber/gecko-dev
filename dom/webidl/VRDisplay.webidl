@@ -116,9 +116,8 @@ interface VRStageParameters {
 
 [Pref="dom.vr.enabled",
  HeaderFile="mozilla/dom/VRDisplay.h"]
-interface VRPose {
-  readonly attribute DOMHighResTimeStamp timestamp;
-
+interface VRPose
+{
   /**
    * position, linearVelocity, and linearAcceleration are 3-component vectors.
    * position is relative to a sitting space. Transforming this point with
@@ -133,6 +132,29 @@ interface VRPose {
   /* angularVelocity and angularAcceleration are the components of 3-dimensional vectors. */
   [Constant, Throws] readonly attribute Float32Array? angularVelocity;
   [Constant, Throws] readonly attribute Float32Array? angularAcceleration;
+};
+
+[Constructor,
+ Pref="dom.vr.enabled",
+ HeaderFile="mozilla/dom/VRDisplay.h"]
+interface VRFrameData {
+  readonly attribute DOMHighResTimeStamp timestamp;
+
+  [Throws, Pure] readonly attribute Float32Array leftProjectionMatrix;
+  [Throws, Pure] readonly attribute Float32Array leftViewMatrix;
+
+  [Throws, Pure] readonly attribute Float32Array rightProjectionMatrix;
+  [Throws, Pure] readonly attribute Float32Array rightViewMatrix;
+
+  [Pure] readonly attribute VRPose pose;
+};
+
+[Constructor,
+ Pref="dom.vr.test.enabled",
+ HeaderFile="mozilla/dom/VRDisplay.h"]
+interface VRSubmitFrameResult {
+  readonly attribute unsigned long frameNum;
+  readonly attribute DOMString? base64Image;
 };
 
 [Pref="dom.vr.enabled",
@@ -161,6 +183,26 @@ interface VREyeParameters {
 [Pref="dom.vr.enabled",
  HeaderFile="mozilla/dom/VRDisplay.h"]
 interface VRDisplay : EventTarget {
+  /**
+   * presentingGroups is a bitmask indicating which VR session groups
+   * have an active VR presentation.
+   */
+  [ChromeOnly] readonly attribute unsigned long presentingGroups;
+  /**
+   * Setting groupMask causes submitted frames by VR sessions that
+   * aren't included in the bitmasked groups to be ignored.
+   * Non-chrome content is not aware of the value of groupMask.
+   * VRDisplay.RequestAnimationFrame will still fire for VR sessions
+   * that are hidden by groupMask, enabling their performance to be
+   * measured by chrome UI that is presented in other groups.
+   * This is expected to be used in cases where chrome UI is presenting
+   * information during link traversal or presenting options when content
+   * performance is too low for comfort.
+   * The VR refresh / VSync cycle is driven by the visible content
+   * and the non-visible content may have a throttled refresh rate.
+   */
+  [ChromeOnly] attribute unsigned long groupMask;
+
   readonly attribute boolean isConnected;
   readonly attribute boolean isPresenting;
 
@@ -190,6 +232,12 @@ interface VRDisplay : EventTarget {
   [Constant] readonly attribute DOMString displayName;
 
   /**
+   * Populates the passed VRFrameData with the information required to render
+   * the current frame.
+   */
+  boolean getFrameData(VRFrameData frameData);
+
+  /**
    * Return a VRPose containing the future predicted pose of the VRDisplay
    * when the current frame will be presented. Subsequent calls to getPose()
    * MUST return a VRPose with the same values until the next call to
@@ -200,12 +248,8 @@ interface VRDisplay : EventTarget {
    */
   [NewObject] VRPose getPose();
 
-  /**
-   * Return the current instantaneous pose of the VRDisplay, with no
-   * prediction applied.  Every call to getImmediatePose() may
-   * return a different value, even within a single frame.
-   */
-  [NewObject] VRPose getImmediatePose();
+  [Pref="dom.vr.test.enabled"]
+  boolean getSubmitFrameResult(VRSubmitFrameResult result);
 
   /**
    * Reset the pose for this display, treating its current position and
@@ -251,7 +295,7 @@ interface VRDisplay : EventTarget {
    * Begin presenting to the VRDisplay. Must be called in response to a user gesture.
    * Repeat calls while already presenting will update the VRLayers being displayed.
    */
-  [Throws] Promise<void> requestPresent(sequence<VRLayer> layers);
+  [Throws, NeedsCallerType] Promise<void> requestPresent(sequence<VRLayer> layers);
 
   /**
    * Stops presenting to the VRDisplay.
@@ -269,5 +313,5 @@ interface VRDisplay : EventTarget {
    * canvas as any other operation that uses its source image, and canvases
    * created without preserveDrawingBuffer set to true will be cleared.
    */
-  void submitFrame(optional VRPose pose);
+  void submitFrame();
 };

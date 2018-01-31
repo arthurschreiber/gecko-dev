@@ -45,8 +45,8 @@
 const {classes: Cc, interfaces: Ci, utils: Cu, manager: Cm} = Components;
 this.EXPORTED_SYMBOLS = ["pktApi"];
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/Services.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 
 var pktApi = (function() {
@@ -56,7 +56,7 @@ var pktApi = (function() {
      */
 
     // Base url for all api calls
-    var pocketAPIhost = Services.prefs.getCharPref("extensions.pocket.api");    // api.getpocket.com
+    var pocketAPIhost = Services.prefs.getCharPref("extensions.pocket.api"); // api.getpocket.com
     var pocketSiteHost = Services.prefs.getCharPref("extensions.pocket.site"); // getpocket.com
     var baseAPIUrl = "https://" + pocketAPIhost + "/v3";
 
@@ -88,7 +88,7 @@ var pktApi = (function() {
                 }
             }
         return out;
-    }
+    };
 
     var parseJSON = function(jsonString) {
         try {
@@ -101,8 +101,7 @@ var pktApi = (function() {
             if (o && typeof o === "object" && o !== null) {
                 return o;
             }
-        }
-        catch (e) { }
+        } catch (e) { }
 
         return undefined;
     };
@@ -125,7 +124,7 @@ var pktApi = (function() {
         if (!prefBranch.prefHasUserValue(key))
             return undefined;
 
-        return prefBranch.getComplexValue(key, Components.interfaces.nsISupportsString).data;
+        return prefBranch.getStringPref(key);
      }
 
      /**
@@ -141,12 +140,9 @@ var pktApi = (function() {
 
         if (!value)
             prefBranch.clearUserPref(key);
-        else
-        {
+        else {
             // We use complexValue as tags can have utf-8 characters in them
-            var str = Components.classes["@mozilla.org/supports-string;1"].createInstance(Components.interfaces.nsISupportsString);
-            str.data = value;
-            prefBranch.setComplexValue(key, Components.interfaces.nsISupportsString, str);
+            prefBranch.setStringPref(key, value);
         }
     }
 
@@ -159,9 +155,7 @@ var pktApi = (function() {
      *  The return format: { cookieName:cookieValue, cookieName:cookieValue, ... }
     */
     function getCookiesFromPocket() {
-
-        var cookieManager = Cc["@mozilla.org/cookiemanager;1"].getService(Ci.nsICookieManager2);
-        var pocketCookies = cookieManager.getCookiesFromHost(pocketSiteHost, {});
+        var pocketCookies = Services.cookies.getCookiesFromHost(pocketSiteHost, {});
         var cookies = {};
         while (pocketCookies.hasMoreElements()) {
             var cookie = pocketCookies.getNext().QueryInterface(Ci.nsICookie2);
@@ -178,20 +172,20 @@ var pktApi = (function() {
         var pocketCookies = getCookiesFromPocket();
 
         // If no cookie was found just return undefined
-        if (typeof pocketCookies['ftv1'] === "undefined") {
+        if (typeof pocketCookies.ftv1 === "undefined") {
             return undefined;
         }
 
         // Check if a new user logged in in the meantime and clearUserData if so
-        var sessionId = pocketCookies['fsv1'];
-        var lastSessionId = getSetting('fsv1');
+        var sessionId = pocketCookies.fsv1;
+        var lastSessionId = getSetting("fsv1");
         if (sessionId !== lastSessionId) {
             clearUserData();
             setSetting("fsv1", sessionId);
         }
 
         // Return access token
-        return pocketCookies['ftv1'];
+        return pocketCookies.ftv1;
     }
 
     /**
@@ -203,7 +197,7 @@ var pktApi = (function() {
         if (typeof premiumStatus === "undefined") {
             // Premium status is not in settings try get it from cookie
             var pocketCookies = getCookiesFromPocket();
-            premiumStatus = pocketCookies['ps'];
+            premiumStatus = pocketCookies.ps;
         }
         return premiumStatus;
     }
@@ -254,9 +248,7 @@ var pktApi = (function() {
 
         var url = baseAPIUrl + options.path;
         var data = options.data || {};
-        data.locale_lang = Cc["@mozilla.org/chrome/chrome-registry;1"].
-             getService(Ci.nsIXULChromeRegistry).
-             getSelectedLocale("browser");
+        data.locale_lang = Services.locale.getAppLocaleAsLangTag();
         data.consumer_key = oAuthConsumerKey;
 
         var request = Components.classes["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Components.interfaces.nsIXMLHttpRequest);
@@ -294,8 +286,8 @@ var pktApi = (function() {
         };
 
         // Set headers
-        request.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-        request.setRequestHeader('X-Accept', ' application/json');
+        request.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+        request.setRequestHeader("X-Accept", " application/json");
 
         // Serialize and Fire off the request
         var str = [];
@@ -332,12 +324,12 @@ var pktApi = (function() {
      */
     function addLink(url, options) {
 
-        var since = getSetting('latestSince');
+        var since = getSetting("latestSince");
         var accessToken = getAccessToken();
 
         var sendData = {
             access_token: accessToken,
-            url: url,
+            url,
             since: since ? since : 0
         };
 
@@ -348,13 +340,13 @@ var pktApi = (function() {
         return apiRequest({
             path: "/firefox/save",
             data: sendData,
-            success: function(data) {
+            success(data) {
 
                 // Update premium status, tags and since
                 var tags = data.tags;
                 if ((typeof tags !== "undefined") && Array.isArray(tags)) {
                     // If a tagslist is in the response replace the tags
-                    setSetting('tags', JSON.stringify(data.tags));
+                    setSetting("tags", JSON.stringify(data.tags));
                 }
 
                 // Update premium status
@@ -365,7 +357,7 @@ var pktApi = (function() {
                 }
 
                 // Save since value for further requests
-                setSetting('latestSince', data.since);
+                setSetting("latestSince", data.since);
 
                 if (options.success) {
                     options.success.apply(options, Array.apply(null, arguments));
@@ -404,7 +396,7 @@ var pktApi = (function() {
     function sendAction(action, options) {
         // Options can have an 'actionInfo' object. This actionInfo object gets
         // passed through to the action object that will be send to the API endpoint
-        if (typeof options.actionInfo !== 'undefined') {
+        if (typeof options.actionInfo !== "undefined") {
             action = extend(action, options.actionInfo);
         }
         return sendActions([action], options);
@@ -458,7 +450,7 @@ var pktApi = (function() {
      * @return {Boolean} Returns Boolean whether the api call started sucessfully
      */
     function addTagsToURL(url, tags, options) {
-        return addTags({url: url}, tags, options);
+        return addTags({url}, tags, options);
     }
 
     /**
@@ -475,7 +467,7 @@ var pktApi = (function() {
         // Tags add action
         var action = {
             action: "tags_add",
-            tags: tags
+            tags
         };
         action = extend(action, actionPart);
 
@@ -520,10 +512,10 @@ var pktApi = (function() {
         var tagsFromSettings = function() {
             var tagsJSON = getSetting("tags");
             if (typeof tagsJSON !== "undefined") {
-                return JSON.parse(tagsJSON)
+                return JSON.parse(tagsJSON);
             }
             return [];
-        }
+        };
 
         var sortedUsedTagsFromSettings = function() {
             // Get and Sort used tags
@@ -554,7 +546,7 @@ var pktApi = (function() {
             }
 
             return usedTags;
-        }
+        };
 
         if (callback) {
             var tags = tagsFromSettings();
@@ -584,7 +576,7 @@ var pktApi = (function() {
      * @return {Boolean} Returns Boolean whether the api call started sucessfully
      */
     function getSuggestedTagsForURL(url, options) {
-        return getSuggestedTags({url: url}, options);
+        return getSuggestedTags({url}, options);
     }
 
     /**
@@ -600,7 +592,21 @@ var pktApi = (function() {
 
         return apiRequest({
             path: "/getSuggestedTags",
-            data: data,
+            data,
+            success: options.success,
+            error: options.error
+        });
+    }
+
+    /**
+     * Helper function to get a user's pocket stories
+     * @return {Boolean} Returns Boolean whether the api call started sucessfully
+     */
+    function retrieve(data = {}, options = {}) {
+        const requestData = Object.assign({}, data, {access_token: getAccessToken()});
+        return apiRequest({
+            path: "/get",
+            data: requestData,
             success: options.success,
             error: options.error
         });
@@ -610,45 +616,48 @@ var pktApi = (function() {
      * Helper function to get current signup AB group the user is in
      */
     function getSignupPanelTabTestVariant() {
-        return getSimpleTestOption('panelTab', 0.1, 'tab');
+        return getMultipleTestOption("panelSignUp", {control: 1, v1: 8, v2: 1 });
     }
 
-    function getSimpleTestOption(testName, threshold, testOptionName) {
+    function getMultipleTestOption(testName, testOptions) {
         // Get the test from preferences if we've already assigned the user to a test
-        var settingName = 'test.' + testName;
+        var settingName = "test." + testName;
         var assignedValue = getSetting(settingName);
+        var valArray = [];
 
         // If not assigned yet, pick and store a value
-        if (!assignedValue)
-        {
-            if (Math.random() <= threshold) {
-                assignedValue = testOptionName;
-            }
-            else {
-                assignedValue = 'control';
-            }
+        if (!assignedValue) {
+            // Get a weighted array of test variants from the testOptions object
+            Object.keys(testOptions).forEach(function(key) {
+              for (var i = 0; i < testOptions[key]; i++) {
+                valArray.push(key);
+              }
+            });
 
-            setSetting('test.'+testName, assignedValue);
+            // Get a random test variant and set the user to it
+            assignedValue = valArray[Math.floor(Math.random() * valArray.length)];
+            setSetting(settingName, assignedValue);
         }
 
         return assignedValue;
-    }
 
+    }
 
     /**
      * Public functions
      */
     return {
-        isUserLoggedIn : isUserLoggedIn,
-        clearUserData: clearUserData,
-        addLink: addLink,
-        deleteItem: deleteItem,
-        addTagsToItem: addTagsToItem,
-        addTagsToURL: addTagsToURL,
-        getTags: getTags,
-        isPremiumUser: isPremiumUser,
-        getSuggestedTagsForItem: getSuggestedTagsForItem,
-        getSuggestedTagsForURL: getSuggestedTagsForURL,
-        getSignupPanelTabTestVariant: getSignupPanelTabTestVariant,
+        isUserLoggedIn,
+        clearUserData,
+        addLink,
+        deleteItem,
+        addTagsToItem,
+        addTagsToURL,
+        getTags,
+        isPremiumUser,
+        getSuggestedTagsForItem,
+        getSuggestedTagsForURL,
+        getSignupPanelTabTestVariant,
+        retrieve,
     };
 }());

@@ -18,6 +18,7 @@ namespace mozilla {
 namespace dom {
 
 class Blob;
+class DOMString;
 class FormData;
 class URLSearchParams;
 class XMLHttpRequestUpload;
@@ -53,9 +54,8 @@ public:
   Open(const nsACString& aMethod, const nsAString& aUrl, ErrorResult& aRv) = 0;
 
   virtual void
-  Open(const nsACString& aMethod, const nsAString& aUrl,
-       bool aAsync, const Optional<nsAString>& aUser,
-       const Optional<nsAString>& aPassword, ErrorResult& aRv) = 0;
+  Open(const nsACString& aMethod, const nsAString& aUrl, bool aAsync,
+       const nsAString& aUser, const nsAString& aPassword, ErrorResult& aRv) = 0;
 
   virtual void
   SetRequestHeader(const nsACString& aHeader, const nsACString& aValue,
@@ -77,32 +77,12 @@ public:
   GetUpload(ErrorResult& aRv) = 0;
 
   virtual void
-  Send(JSContext* aCx, ErrorResult& aRv) = 0;
-
-  virtual void
-  Send(JSContext* aCx, const ArrayBuffer& aArrayBuffer, ErrorResult& aRv) = 0;
-
-  virtual void
-  Send(JSContext* aCx, const ArrayBufferView& aArrayBufferView,
+  Send(JSContext* aCx,
+       const Nullable<DocumentOrBlobOrArrayBufferViewOrArrayBufferOrFormDataOrURLSearchParamsOrUSVString>& aData,
        ErrorResult& aRv) = 0;
 
   virtual void
-  Send(JSContext* aCx, Blob& aBlob, ErrorResult& aRv) = 0;
-
-  virtual void
-  Send(JSContext* aCx, URLSearchParams& aURLSearchParams, ErrorResult& aRv) = 0;
-
-  virtual void
-  Send(JSContext* aCx, nsIDocument& aDoc, ErrorResult& aRv) = 0;
-
-  virtual void
-  Send(JSContext* aCx, const nsAString& aString, ErrorResult& aRv) = 0;
-
-  virtual void
-  Send(JSContext* aCx, FormData& aFormData, ErrorResult& aRv) = 0;
-
-  virtual void
-  Send(JSContext* aCx, nsIInputStream* aStream, ErrorResult& aRv) = 0;
+  SendInputStream(nsIInputStream* aInputStream, ErrorResult& aRv) = 0;
 
   virtual void
   Abort(ErrorResult& aRv) = 0;
@@ -139,7 +119,7 @@ public:
               ErrorResult& aRv) = 0;
 
   virtual void
-  GetResponseText(nsAString& aResponseText, ErrorResult& aRv) = 0;
+  GetResponseText(DOMString& aResponseText, ErrorResult& aRv) = 0;
 
   virtual nsIDocument*
   GetResponseXML(ErrorResult& aRv) = 0;
@@ -167,6 +147,9 @@ public:
 
   virtual void
   SetOriginAttributes(const mozilla::dom::OriginAttributesDictionary& aAttrs) = 0;
+
+  virtual uint16_t
+  ErrorCode() const = 0;
 
   virtual bool
   MozAnon() const = 0;

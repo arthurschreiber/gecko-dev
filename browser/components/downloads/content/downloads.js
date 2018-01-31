@@ -3,6 +3,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* eslint-env mozilla/browser-window */
 
 /**
  * Handles the Downloads panel user interface for each browser window.
@@ -63,30 +64,28 @@
 
 var { classes: Cc, interfaces: Ci, utils: Cu, results: Cr } = Components;
 
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "DownloadsCommon",
-                                  "resource:///modules/DownloadsCommon.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "DownloadsViewUI",
-                                  "resource:///modules/DownloadsViewUI.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
-                                  "resource://gre/modules/FileUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
-                                  "resource://gre/modules/NetUtil.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
-                                  "resource://gre/modules/PlacesUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "Services",
-                                  "resource://gre/modules/Services.jsm");
+ChromeUtils.defineModuleGetter(this, "DownloadsViewUI",
+                               "resource:///modules/DownloadsViewUI.jsm");
+ChromeUtils.defineModuleGetter(this, "DownloadsSubview",
+                               "resource:///modules/DownloadsSubview.jsm");
+ChromeUtils.defineModuleGetter(this, "FileUtils",
+                               "resource://gre/modules/FileUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "NetUtil",
+                               "resource://gre/modules/NetUtil.jsm");
+ChromeUtils.defineModuleGetter(this, "PlacesUtils",
+                               "resource://gre/modules/PlacesUtils.jsm");
+ChromeUtils.defineModuleGetter(this, "Services",
+                               "resource://gre/modules/Services.jsm");
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadsPanel
+// DownloadsPanel
 
 /**
  * Main entry point for the downloads panel interface.
  */
-const DownloadsPanel = {
-  //////////////////////////////////////////////////////////////////////////////
-  //// Initialization and termination
+var DownloadsPanel = {
+  // Initialization and termination
 
   /**
    * Internal state of the downloads panel, based on one of the kState
@@ -140,7 +139,7 @@ const DownloadsPanel = {
     }
     this._state = this.kStateHidden;
 
-    window.addEventListener("unload", this.onWindowUnload, false);
+    window.addEventListener("unload", this.onWindowUnload);
 
     // Load and resume active downloads if required.  If there are downloads to
     // be shown in the panel, they will be loaded asynchronously.
@@ -175,7 +174,7 @@ const DownloadsPanel = {
       return;
     }
 
-    window.removeEventListener("unload", this.onWindowUnload, false);
+    window.removeEventListener("unload", this.onWindowUnload);
 
     // Ensure that the panel is closed before shutting down.
     this.hidePanel();
@@ -192,8 +191,7 @@ const DownloadsPanel = {
     DownloadsCommon.log("DownloadsPanel terminated.");
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// Panel interface
+  // Panel interface
 
   /**
    * Main panel element in the browser window, or null if the panel overlay
@@ -225,15 +223,10 @@ const DownloadsPanel = {
       return;
     }
 
-    this.initialize(() => {
-      let downloadsFooterButtons =
-        document.getElementById("downloadsFooterButtons");
-      if (DownloadsCommon.showPanelDropmarker) {
-        downloadsFooterButtons.classList.remove("downloadsHideDropmarker");
-      } else {
-        downloadsFooterButtons.classList.add("downloadsHideDropmarker");
-      }
+    // As a belt-and-suspenders check, ensure the button is not hidden.
+    DownloadsButton.unhide();
 
+    this.initialize(() => {
       // Delay displaying the panel because this function will sometimes be
       // called while another window is closing (like the window for selecting
       // whether to save or open the file), and that would cause the panel to
@@ -308,28 +301,15 @@ const DownloadsPanel = {
         this.keyFocusing = false;
         break;
       case "keydown":
-        return this._onKeyDown(aEvent);
+        this._onKeyDown(aEvent);
+        break;
       case "keypress":
-        return this._onKeyPress(aEvent);
-      case "popupshown":
-        if (this.setHeightToFitOnShow) {
-          this.setHeightToFitOnShow = false;
-          this.setHeightToFit();
-        }
+        this._onKeyPress(aEvent);
         break;
     }
   },
 
-  setHeightToFit() {
-    if (this._state == this.kStateShown) {
-      DownloadsBlockedSubview.view.setHeightToFit();
-    } else {
-      this.setHeightToFitOnShow = true;
-    }
-  },
-
-  //////////////////////////////////////////////////////////////////////////////
-  //// Callback functions from DownloadsView
+  // Callback functions from DownloadsView
 
   /**
    * Called after data loading finished.
@@ -338,8 +318,7 @@ const DownloadsPanel = {
     this._openPopupIfDataReady();
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// User interface event functions
+  // User interface event functions
 
   onWindowUnload() {
     // This function is registered as an event listener, we can't use "this".
@@ -389,26 +368,7 @@ const DownloadsPanel = {
     this._state = this.kStateHidden;
   },
 
-  onFooterPopupShowing(aEvent) {
-    let itemClearList = document.getElementById("downloadsDropdownItemClearList");
-    if (DownloadsCommon.getData(window).canRemoveFinished) {
-      itemClearList.removeAttribute("hidden");
-    } else {
-      itemClearList.setAttribute("hidden", "true");
-    }
-    DownloadsViewController.updateCommands();
-
-    document.getElementById("downloadsFooter")
-      .setAttribute("showingdropdown", true);
-  },
-
-  onFooterPopupHidden(aEvent) {
-    document.getElementById("downloadsFooter")
-      .removeAttribute("showingdropdown");
-  },
-
-  //////////////////////////////////////////////////////////////////////////////
-  //// Related operations
+  // Related operations
 
   /**
    * Shows or focuses the user interface dedicated to downloads history.
@@ -422,15 +382,7 @@ const DownloadsPanel = {
     BrowserDownloadsUI();
   },
 
-  openDownloadsFolder() {
-    Downloads.getPreferredDownloadsDirectory().then(downloadsPath => {
-      DownloadsCommon.showDirectory(new FileUtils.File(downloadsPath));
-    }).catch(Cu.reportError);
-    this.hidePanel();
-  },
-
-  //////////////////////////////////////////////////////////////////////////////
-  //// Internal functions
+  // Internal functions
 
   /**
    * Attach event listeners to a panel element. These listeners should be
@@ -439,12 +391,10 @@ const DownloadsPanel = {
    */
   _attachEventListeners() {
     // Handle keydown to support accel-V.
-    this.panel.addEventListener("keydown", this, false);
+    this.panel.addEventListener("keydown", this);
     // Handle keypress to be able to preventDefault() events before they reach
     // the richlistbox, for keyboard navigation.
-    this.panel.addEventListener("keypress", this, false);
-    // Handle height adjustment on show.
-    this.panel.addEventListener("popupshown", this, false);
+    this.panel.addEventListener("keypress", this);
   },
 
   /**
@@ -452,9 +402,8 @@ const DownloadsPanel = {
    * is called automatically on panel termination.
    */
   _unattachEventListeners() {
-    this.panel.removeEventListener("keydown", this, false);
-    this.panel.removeEventListener("keypress", this, false);
-    this.panel.removeEventListener("popupshown", this, false);
+    this.panel.removeEventListener("keydown", this);
+    this.panel.removeEventListener("keypress", this);
   },
 
   _onKeyPress(aEvent) {
@@ -598,7 +547,7 @@ const DownloadsPanel = {
       // without any notification, and there would be no way to either open or
       // close the panel any more.  To prevent this, check if the window is
       // minimized and in that case force the panel to the closed state.
-      if (window.windowState == Ci.nsIDOMChromeWindow.STATE_MINIMIZED) {
+      if (window.windowState == window.STATE_MINIMIZED) {
         DownloadsButton.releaseAnchor();
         this._state = this.kStateHidden;
         return;
@@ -608,6 +557,9 @@ const DownloadsPanel = {
         DownloadsCommon.error("Downloads button cannot be found.");
         return;
       }
+
+      let onBookmarksToolbar = !!anchor.closest("#PersonalToolbar");
+      this.panel.classList.toggle("bookmarks-toolbar", onBookmarksToolbar);
 
       // When the panel is opened, we check if the target files of visible items
       // still exist, and update the allowed items interactions accordingly.  We
@@ -625,14 +577,13 @@ const DownloadsPanel = {
 
 XPCOMUtils.defineConstant(this, "DownloadsPanel", DownloadsPanel);
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadsOverlayLoader
+// DownloadsOverlayLoader
 
 /**
  * Allows loading the downloads panel and the status indicator interfaces on
  * demand, to improve startup performance.
  */
-const DownloadsOverlayLoader = {
+var DownloadsOverlayLoader = {
   /**
    * We cannot load two overlays at the same time, thus we use a queue of
    * pending load requests.
@@ -705,22 +656,30 @@ const DownloadsOverlayLoader = {
 
 XPCOMUtils.defineConstant(this, "DownloadsOverlayLoader", DownloadsOverlayLoader);
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadsView
+// DownloadsView
 
 /**
  * Builds and updates the downloads list widget, responding to changes in the
  * download state and real-time data.  In addition, handles part of the user
  * interaction events raised by the downloads list widget.
  */
-const DownloadsView = {
-  //////////////////////////////////////////////////////////////////////////////
-  //// Functions handling download items in the list
+var DownloadsView = {
+  // Functions handling download items in the list
 
   /**
    * Maximum number of items shown by the list at any given time.
    */
-  kItemCountLimit: 3,
+  kItemCountLimit: 5,
+
+  /**
+   * Indicates whether there is an open contextMenu for a download item.
+   */
+  contextMenuOpen: false,
+
+  /**
+   * Indicates whether there is a DownloadsBlockedSubview open.
+   */
+  subViewOpen: false,
 
   /**
    * Indicates whether we are still loading downloads data asynchronously.
@@ -781,22 +740,21 @@ const DownloadsView = {
     return this.downloadsHistory = document.getElementById("downloadsHistory");
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// Callback functions from DownloadsData
+  // Callback functions from DownloadsData
 
   /**
    * Called before multiple downloads are about to be loaded.
    */
-  onDataLoadStarting() {
-    DownloadsCommon.log("onDataLoadStarting called for DownloadsView.");
+  onDownloadBatchStarting() {
+    DownloadsCommon.log("onDownloadBatchStarting called for DownloadsView.");
     this.loading = true;
   },
 
   /**
    * Called after data loading finished.
    */
-  onDataLoadCompleted() {
-    DownloadsCommon.log("onDataLoadCompleted called for DownloadsView.");
+  onDownloadBatchEnded() {
+    DownloadsCommon.log("onDownloadBatchEnded called for DownloadsView.");
 
     this.loading = false;
 
@@ -815,33 +773,17 @@ const DownloadsView = {
    *
    * @param aDownload
    *        Download object that was just added.
-   * @param aNewest
-   *        When true, indicates that this item is the most recent and should be
-   *        added in the topmost position.  This happens when a new download is
-   *        started.  When false, indicates that the item is the least recent
-   *        and should be appended.  The latter generally happens during the
-   *        asynchronous data load.
    */
-  onDownloadAdded(download, aNewest) {
-    DownloadsCommon.log("A new download data item was added - aNewest =",
-                        aNewest);
+  onDownloadAdded(download) {
+    DownloadsCommon.log("A new download data item was added");
 
-    if (aNewest) {
-      this._downloads.unshift(download);
-    } else {
-      this._downloads.push(download);
-    }
+    this._downloads.unshift(download);
 
-    let itemsNowOverflow = this._downloads.length > this.kItemCountLimit;
-    if (aNewest || !itemsNowOverflow) {
-      // The newly added item is visible in the panel and we must add the
-      // corresponding element.  This is either because it is the first item, or
-      // because it was added at the bottom but the list still doesn't overflow.
-      this._addViewItem(download, aNewest);
-    }
-    if (aNewest && itemsNowOverflow) {
-      // If the list overflows, remove the last item from the panel to make room
-      // for the new one that we just added at the top.
+    // The newly added item is visible in the panel and we must add the
+    // corresponding element. If the list overflows, remove the last item from
+    // the panel to make room for the new one that we just added at the top.
+    this._addViewItem(download, true);
+    if (this._downloads.length > this.kItemCountLimit) {
       this._removeViewItem(this._downloads[this.kItemCountLimit]);
     }
 
@@ -849,13 +791,6 @@ const DownloadsView = {
     // every item, because the interface won't be visible until load finishes.
     if (!this.loading) {
       this._itemCountChanged();
-    }
-  },
-
-  onDownloadStateChanged(download) {
-    let viewItem = this._visibleViewItems.get(download);
-    if (viewItem) {
-      viewItem.onStateChanged();
     }
   },
 
@@ -889,9 +824,6 @@ const DownloadsView = {
     }
 
     this._itemCountChanged();
-
-    // Adjust the panel height if we removed items.
-    DownloadsPanel.setHeightToFit();
   },
 
   /**
@@ -908,8 +840,7 @@ const DownloadsView = {
    * Creates a new view item associated with the specified data item, and adds
    * it to the top or the bottom of the list.
    */
-  _addViewItem(download, aNewest)
-  {
+  _addViewItem(download, aNewest) {
     DownloadsCommon.log("Adding a new DownloadsViewItem to the downloads list.",
                         "aNewest =", aNewest);
 
@@ -940,8 +871,7 @@ const DownloadsView = {
     this._itemsForElements.delete(element);
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// User interface event functions
+  // User interface event functions
 
   /**
    * Helper function to do commands on a specific download item.
@@ -1000,20 +930,59 @@ const DownloadsView = {
   },
 
   /**
+   * Event handlers to keep track of context menu state (open/closed) for
+   * download items.
+   */
+  onContextPopupShown(aEvent) {
+    // Ignore events raised by nested popups.
+    if (aEvent.target != aEvent.currentTarget) {
+      return;
+    }
+
+    DownloadsCommon.log("Context menu has shown.");
+    this.contextMenuOpen = true;
+  },
+
+  onContextPopupHidden(aEvent) {
+    // Ignore events raised by nested popups.
+    if (aEvent.target != aEvent.currentTarget) {
+      return;
+    }
+
+    DownloadsCommon.log("Context menu has hidden.");
+    this.contextMenuOpen = false;
+  },
+
+  /**
    * Mouse listeners to handle selection on hover.
    */
   onDownloadMouseOver(aEvent) {
-    if (aEvent.originalTarget.parentNode == this.richListBox) {
-      this.richListBox.selectedItem = aEvent.originalTarget;
+    if (aEvent.originalTarget.classList.contains("downloadButton")) {
+      aEvent.target.classList.add("downloadHoveringButton");
+
+      let button = aEvent.originalTarget;
+      let tooltip = button.getAttribute("tooltiptext");
+      if (tooltip) {
+        button.setAttribute("aria-label", tooltip);
+        button.removeAttribute("tooltiptext");
+      }
+    }
+    if (!(this.contextMenuOpen || this.subViewOpen) &&
+        aEvent.target.parentNode == this.richListBox) {
+      this.richListBox.selectedItem = aEvent.target;
     }
   },
 
   onDownloadMouseOut(aEvent) {
-    if (aEvent.originalTarget.parentNode == this.richListBox) {
+    if (aEvent.originalTarget.classList.contains("downloadButton")) {
+      aEvent.target.classList.remove("downloadHoveringButton");
+    }
+    if (!(this.contextMenuOpen || this.subViewOpen) &&
+        aEvent.target.parentNode == this.richListBox) {
       // If the destination element is outside of the richlistitem, clear the
       // selection.
       let element = aEvent.relatedTarget;
-      while (element && element != aEvent.originalTarget) {
+      while (element && element != aEvent.target) {
         element = element.parentNode;
       }
       if (!element) {
@@ -1033,6 +1002,11 @@ const DownloadsView = {
     // Set the state attribute so that only the appropriate items are displayed.
     let contextMenu = document.getElementById("downloadsContextMenu");
     contextMenu.setAttribute("state", element.getAttribute("state"));
+    if (element.hasAttribute("exists")) {
+      contextMenu.setAttribute("exists", "true");
+    } else {
+      contextMenu.removeAttribute("exists");
+    }
     contextMenu.classList.toggle("temporary-block",
                                  element.classList.contains("temporary-block"));
   },
@@ -1060,12 +1034,11 @@ const DownloadsView = {
 
     aEvent.stopPropagation();
   },
-}
+};
 
 XPCOMUtils.defineConstant(this, "DownloadsView", DownloadsView);
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadsViewItem
+// DownloadsViewItem
 
 /**
  * Builds and updates a single item in the downloads list widget, responding to
@@ -1079,6 +1052,7 @@ XPCOMUtils.defineConstant(this, "DownloadsView", DownloadsView);
  */
 function DownloadsViewItem(download, aElement) {
   this.download = download;
+  this.downloadState = DownloadsCommon.stateOfDownload(download);
   this.element = aElement;
   this.element._shell = this;
 
@@ -1096,11 +1070,12 @@ DownloadsViewItem.prototype = {
    */
   _element: null,
 
-  onStateChanged() {
-    this._updateState();
-  },
-
   onChanged() {
+    let newState = DownloadsCommon.stateOfDownload(this.download);
+    if (this.downloadState != newState) {
+      this.downloadState = newState;
+      this._updateState();
+    }
     this._updateProgress();
   },
 
@@ -1128,7 +1103,6 @@ DownloadsViewItem.prototype = {
         return partFile.exists();
       }
       case "cmd_delete":
-      case "downloadsCmd_cancel":
       case "downloadsCmd_copyLocation":
       case "downloadsCmd_doDefault":
         return true;
@@ -1145,14 +1119,7 @@ DownloadsViewItem.prototype = {
     }
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// Item commands
-
-  cmd_delete() {
-    DownloadsCommon.removeAndFinalizeDownload(this.download);
-    PlacesUtils.bhistory.removePage(
-                           NetUtil.newURI(this.download.source.url));
-  },
+  // Item commands
 
   downloadsCmd_unblock() {
     DownloadsPanel.hidePanel();
@@ -1215,17 +1182,15 @@ DownloadsViewItem.prototype = {
   },
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadsViewController
+// DownloadsViewController
 
 /**
  * Handles part of the user interaction events raised by the downloads list
  * widget, in particular the "commands" that apply to multiple items, and
  * dispatches the commands that apply to individual items.
  */
-const DownloadsViewController = {
-  //////////////////////////////////////////////////////////////////////////////
-  //// Initialization and termination
+var DownloadsViewController = {
+  // Initialization and termination
 
   initialize() {
     window.controllers.insertControllerAt(0, this);
@@ -1235,8 +1200,7 @@ const DownloadsViewController = {
     window.controllers.removeController(this);
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// nsIController
+  // nsIController
 
   supportsCommand(aCommand) {
     if (aCommand === "downloadsCmd_clearList") {
@@ -1299,8 +1263,7 @@ const DownloadsViewController = {
 
   onEvent() {},
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// Other functions
+  // Other functions
 
   updateCommands() {
     function updateCommandsForObject(object) {
@@ -1314,8 +1277,7 @@ const DownloadsViewController = {
     updateCommandsForObject(DownloadsViewItem.prototype);
   },
 
-  //////////////////////////////////////////////////////////////////////////////
-  //// Selection-independent commands
+  // Selection-independent commands
 
   downloadsCmd_clearList() {
     DownloadsCommon.getData(window).removeFinished();
@@ -1324,14 +1286,13 @@ const DownloadsViewController = {
 
 XPCOMUtils.defineConstant(this, "DownloadsViewController", DownloadsViewController);
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadsSummary
+// DownloadsSummary
 
 /**
  * Manages the summary at the bottom of the downloads panel list if the number
  * of items in the list exceeds the panels limit.
  */
-const DownloadsSummary = {
+var DownloadsSummary = {
 
   /**
    * Sets the active state of the summary. When active, the summary subscribes
@@ -1509,14 +1470,13 @@ const DownloadsSummary = {
 
 XPCOMUtils.defineConstant(this, "DownloadsSummary", DownloadsSummary);
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadsFooter
+// DownloadsFooter
 
 /**
  * Manages events sent to to the footer vbox, which contains both the
  * DownloadsSummary as well as the "Show All Downloads" button.
  */
-const DownloadsFooter = {
+var DownloadsFooter = {
 
   /**
    * Focuses the appropriate element within the footer. If the summary
@@ -1544,10 +1504,6 @@ const DownloadsFooter = {
       } else {
         this._footerNode.removeAttribute("showingsummary");
       }
-      if (!aValue && this._showingSummary) {
-        // Make sure the panel's height shrinks when the summary is hidden.
-        DownloadsPanel.setHeightToFit();
-      }
       this._showingSummary = aValue;
     }
     return aValue;
@@ -1569,13 +1525,12 @@ const DownloadsFooter = {
 XPCOMUtils.defineConstant(this, "DownloadsFooter", DownloadsFooter);
 
 
-////////////////////////////////////////////////////////////////////////////////
-//// DownloadsBlockedSubview
+// DownloadsBlockedSubview
 
 /**
  * Manages the blocked subview that slides in when you click a blocked download.
  */
-const DownloadsBlockedSubview = {
+var DownloadsBlockedSubview = {
 
   get subview() {
     let subview = document.getElementById("downloadsPanel-blockedSubview");
@@ -1628,13 +1583,8 @@ const DownloadsBlockedSubview = {
    *        An array of strings with information about the block.
    */
   toggle(element, title, details) {
-    if (this.view.showingSubView) {
-      this.hide();
-      return;
-    }
-
-    this.element = element;
-    element.setAttribute("showingsubview", "true");
+    DownloadsView.subViewOpen = true;
+    DownloadsViewController.updateCommands();
 
     let e = this.elements;
     let s = DownloadsCommon.strings;
@@ -1653,31 +1603,25 @@ const DownloadsBlockedSubview = {
     // Without this, the mainView is more narrow than the panel once all
     // downloads are removed from the panel.
     document.getElementById("downloadsPanel-mainView").style.minWidth =
-      window.getComputedStyle(this.view).width;
+      window.getComputedStyle(this.subview).width;
   },
 
   handleEvent(event) {
     switch (event.type) {
       case "ViewHiding":
         this.subview.removeEventListener(event.type, this);
-        this.element.removeAttribute("showingsubview");
-        delete this.element;
+        DownloadsView.subViewOpen = false;
+        // If we're going back to the main panel, use showPanel to
+        // focus the proper element.
+        if (this.view.current !== this.subview) {
+          DownloadsPanel.showPanel();
+        }
         break;
       default:
         DownloadsCommon.log("Unhandled DownloadsBlockedSubview event: " +
                             event.type);
         break;
     }
-  },
-
-  /**
-   * Slides out the blocked subview and shows the main view.
-   */
-  hide() {
-    this.view.showMainView();
-    // The point of this is to focus the proper element in the panel now that
-    // the main view is showing again.  showPanel handles that.
-    DownloadsPanel.showPanel();
   },
 
   /**

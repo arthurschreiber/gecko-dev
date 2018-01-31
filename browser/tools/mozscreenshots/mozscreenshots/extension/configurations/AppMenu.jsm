@@ -8,8 +8,7 @@ this.EXPORTED_SYMBOLS = ["AppMenu"];
 
 const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/Task.jsm");
+ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 this.AppMenu = {
 
@@ -17,13 +16,15 @@ this.AppMenu = {
 
   configurations: {
     appMenuClosed: {
-      applyConfig: Task.async(function*() {
+      selectors: ["#appMenu-popup"],
+      async applyConfig() {
         let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
         browserWindow.PanelUI.hide();
-      }),
+      },
     },
 
     appMenuMainView: {
+      selectors: ["#appMenu-popup"],
       applyConfig() {
         let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
         let promise = browserWindow.PanelUI.show();
@@ -33,33 +34,35 @@ this.AppMenu = {
     },
 
     appMenuHistorySubview: {
-      applyConfig() {
+      selectors: ["#appMenu-popup"],
+      async applyConfig() {
         // History has a footer
         if (isCustomizing()) {
-          return Promise.reject("Can't show subviews while customizing");
+          return "Can't show subviews while customizing";
         }
         let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
-        let promise = browserWindow.PanelUI.show();
-        return promise.then(() => {
-          browserWindow.PanelUI.showMainView();
-          browserWindow.document.getElementById("history-panelmenu").click();
-        });
+        await browserWindow.PanelUI.show();
+        browserWindow.PanelUI.showMainView();
+        browserWindow.document.getElementById("history-panelmenu").click();
+
+        return undefined;
       },
 
       verifyConfig: verifyConfigHelper,
     },
 
     appMenuHelpSubview: {
-      applyConfig() {
+      selectors: ["#appMenu-popup"],
+      async applyConfig() {
         if (isCustomizing()) {
-          return Promise.reject("Can't show subviews while customizing");
+          return "Can't show subviews while customizing";
         }
         let browserWindow = Services.wm.getMostRecentWindow("navigator:browser");
-        let promise = browserWindow.PanelUI.show();
-        return promise.then(() => {
-          browserWindow.PanelUI.showMainView();
-          browserWindow.document.getElementById("PanelUI-help").click();
-        });
+        await browserWindow.PanelUI.show();
+        browserWindow.PanelUI.showMainView();
+        browserWindow.document.getElementById("PanelUI-help").click();
+
+        return undefined;
       },
 
       verifyConfig: verifyConfigHelper,
@@ -70,9 +73,9 @@ this.AppMenu = {
 
 function verifyConfigHelper() {
   if (isCustomizing()) {
-    return Promise.reject("AppMenu verifyConfigHelper");
+    return "navigator:browser has the customizing attribute";
   }
-  return Promise.resolve("AppMenu verifyConfigHelper");
+  return undefined;
 }
 
 function isCustomizing() {

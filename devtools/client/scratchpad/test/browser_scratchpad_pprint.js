@@ -6,13 +6,12 @@ function test()
 {
   waitForExplicitFinish();
 
-  gBrowser.selectedTab = gBrowser.addTab();
-  gBrowser.selectedBrowser.addEventListener("load", function onLoad() {
-    gBrowser.selectedBrowser.removeEventListener("load", onLoad, true);
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
+  BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser).then(function () {
     openScratchpad(runTests);
-  }, true);
+  });
 
-  content.location = "data:text/html;charset=utf8,test Scratchpad pretty print.";
+  gBrowser.loadURI("data:text/html;charset=utf8,test Scratchpad pretty print.");
 }
 
 function runTests(sw)
@@ -23,7 +22,7 @@ function runTests(sw)
     const prettyText = sp.getText();
     ok(prettyText.includes("\n"));
     finish();
-  }).then(null, error => {
+  }).catch(error => {
     ok(false, error);
   });
 }

@@ -7,8 +7,8 @@
 
 const { classes: Cc, interfaces: Ci, manager: Cm, utils: Cu, results: Cr } = Components;
 
-Cu.import('resource://gre/modules/XPCOMUtils.jsm');
-Cu.import('resource://gre/modules/Services.jsm');
+ChromeUtils.import('resource://gre/modules/XPCOMUtils.jsm');
+ChromeUtils.import('resource://gre/modules/Services.jsm');
 
 const uuidGenerator = Cc["@mozilla.org/uuid-generator;1"]
                       .getService(Ci.nsIUUIDGenerator);
@@ -49,9 +49,9 @@ const mockControlChannelOfSender = {
         .notifyReconnected();
   },
   sendOffer: function(offer) {
-    Services.tm.mainThread.dispatch(() => {
+    Services.tm.dispatchToMainThread(() => {
       mockControlChannelOfReceiver.onOffer(offer);
-    }, Ci.nsIThread.DISPATCH_NORMAL);
+    });
   },
   onAnswer: function(answer) {
     this._listener
@@ -76,6 +76,18 @@ const mockControlChannelOfSender = {
   },
   reconnect: function(presentationId, url) {
     sendAsyncMessage('start-reconnect', url);
+  },
+  sendIceCandidate: function(candidate) {
+    mockControlChannelOfReceiver.notifyIceCandidate(candidate);
+  },
+  notifyIceCandidate: function(candidate) {
+    if (!this._listener) {
+      return;
+    }
+
+    this._listener
+        .QueryInterface(Ci.nsIPresentationControlChannelListener)
+        .onIceCandidate(candidate);
   },
 };
 
@@ -115,9 +127,9 @@ const mockControlChannelOfReceiver = {
         .onOffer(offer);
   },
   sendAnswer: function(answer) {
-    Services.tm.mainThread.dispatch(() => {
+    Services.tm.dispatchToMainThread(() => {
       mockControlChannelOfSender.onAnswer(answer);
-    }, Ci.nsIThread.DISPATCH_NORMAL);
+    });
   },
   disconnect: function(reason) {
     if (!this._listener) {
@@ -130,7 +142,19 @@ const mockControlChannelOfReceiver = {
     sendAsyncMessage('control-channel-receiver-closed', reason);
   },
   terminate: function(presentaionId) {
-  }
+  },
+  sendIceCandidate: function(candidate) {
+    mockControlChannelOfReceiver.notifyIceCandidate(candidate);
+  },
+  notifyIceCandidate: function(candidate) {
+    if (!this._listener) {
+      return;
+    }
+
+    this._listener
+        .QueryInterface(Ci.nsIPresentationControlChannelListener)
+        .onIceCandidate(candidate);
+  },
 };
 
 const mockDevice = {
@@ -145,7 +169,9 @@ const mockDevice = {
     sendAsyncMessage('control-channel-established');
     return mockControlChannelOfSender;
   },
-  disconnect: function() {},
+  disconnect: function() {
+    sendAsyncMessage('device-disconnected');
+  },
   isRequestedUrlSupported: function(requestedUrl) {
     return true;
   },
@@ -306,7 +332,7 @@ function initMockAndListener() {
     obs.removeObserver(setupRequestPromiseHandler, aTopic);
     mockRequestUIGlue.promise = aSubject;
     sendAsyncMessage('promise-setup-ready');
-  }, 'setup-request-promise', false);
+  }, 'setup-request-promise');
 }
 
 function teardown() {
